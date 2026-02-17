@@ -22,9 +22,13 @@ cd frontend && echo "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" > .env.local && 
 MYCASA_API_PORT=6709 ./start_all.sh
 ```
 _Default port is 6709; setting `MYCASA_API_PORT` is optional._
-If you want to access from another device on the same network:
+Default is localhost-only. If you want to access from another device on the same network:
 ```bash
 MYCASA_PUBLIC_HOST=<your-lan-ip> MYCASA_BIND_HOST=0.0.0.0 ./start_all.sh
+```
+If you previously enabled LAN and want to go back to localhost only:
+```bash
+MYCASA_PUBLIC_HOST=127.0.0.1 MYCASA_BIND_HOST=127.0.0.1 ./start_all.sh
 ```
 
 **Terminal Setup Wizard (recommended)**
@@ -46,7 +50,7 @@ cd frontend; "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" | Out-File -Encoding ut
 ```
 
 ## Requirements
-- Python 3.11+
+- Python 3.11+ (required; 3.9/3.10 will fail)
 - Node.js 18+ (npm)
 - Git
 

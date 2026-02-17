@@ -10,6 +10,27 @@ import subprocess
 from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent
+MIN_PY = (3, 11)
+
+def _ensure_python_version() -> None:
+    if sys.version_info >= MIN_PY:
+        return
+    # Try to re-exec with Python 3.11+ if available
+    candidates = ["python3.11", "python3.12"]
+    for exe in candidates:
+        path = shutil.which(exe)
+        if path:
+            os.execv(path, [path, str(__file__), *sys.argv[1:]])
+    if os.name == "nt":
+        py = shutil.which("py")
+        if py:
+            os.execv(py, [py, "-3.11", str(__file__), *sys.argv[1:]])
+    print("❌ Python 3.11+ required.")
+    print("Install Python 3.11+, then re-run:")
+    print("  macOS:  brew install python@3.11")
+    print("  Ubuntu: sudo apt-get install python3.11 python3.11-venv")
+    print("  Windows: winget install Python.Python.3.11")
+    sys.exit(1)
 
 def _venv_python(venv_dir: Path) -> Path:
     if os.name == "nt":
@@ -30,7 +51,7 @@ def _ensure_deps() -> None:
     venv_dir = REPO_DIR / ".venv"
     venv_py = _venv_python(venv_dir)
     if not venv_py.exists():
-        system_py = shutil.which("python3") or shutil.which("python")
+        system_py = sys.executable or shutil.which("python3.11") or shutil.which("python3") or shutil.which("python")
         if not system_py:
             print("❌ Python not found. Install Python 3.11+ and retry.")
             sys.exit(1)
@@ -41,6 +62,7 @@ def _ensure_deps() -> None:
     os.execv(str(venv_py), [str(venv_py), str(__file__), *sys.argv[1:]])
 
 def main():
+    _ensure_python_version()
     _ensure_deps()
     sys.path.insert(0, str(REPO_DIR))
     from backend.cli.main import cli

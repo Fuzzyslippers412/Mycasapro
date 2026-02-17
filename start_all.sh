@@ -14,13 +14,29 @@ if [ -f ".env" ]; then
 fi
 
 # Resolve Python binary
-PYTHON_BIN="python3"
+PYTHON_BIN="python3.11"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+fi
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
     PYTHON_BIN="python"
 fi
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
-    echo "❌ Python not found. Install Python 3 and try again."
+    echo "❌ Python not found. Install Python 3.11+ and try again."
     exit 1
+fi
+PY_VERSION="$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "")"
+if [ -n "$PY_VERSION" ]; then
+    MAJOR="${PY_VERSION%%.*}"
+    MINOR="${PY_VERSION##*.}"
+    if [ "$MAJOR" -lt 3 ] || { [ "$MAJOR" -eq 3 ] && [ "$MINOR" -lt 11 ]; }; then
+        echo "❌ Python 3.11+ required. Found ${PY_VERSION}."
+        echo "Install Python 3.11+ and retry."
+        echo "  macOS:  brew install python@3.11"
+        echo "  Ubuntu: sudo apt-get install python3.11 python3.11-venv"
+        echo "  Windows: winget install Python.Python.3.11"
+        exit 1
+    fi
 fi
 
 # Colors
@@ -30,30 +46,16 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Host/port configuration
-BIND_HOST="${MYCASA_BIND_HOST:-0.0.0.0}"
+# Default to localhost only; set MYCASA_PUBLIC_HOST + MYCASA_BIND_HOST=0.0.0.0 for LAN access.
+BIND_HOST="${MYCASA_BIND_HOST:-127.0.0.1}"
 API_PORT="${MYCASA_API_PORT:-6709}"
 UI_PORT="${MYCASA_UI_PORT:-3000}"
-PUBLIC_HOST="${MYCASA_PUBLIC_HOST:-}"
-if [ -z "$PUBLIC_HOST" ]; then
-    # Try to detect a LAN IP for cross-device access
-    if command -v python3 >/dev/null 2>&1; then
-        PUBLIC_HOST="$(python3 -c "import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); 
-try:
-    s.connect(('8.8.8.8',80)); print(s.getsockname()[0])
-except Exception:
-    print('')
-finally:
-    s.close()" 2>/dev/null)"
-    fi
-    if [ -z "$PUBLIC_HOST" ]; then
-        PUBLIC_HOST="$(ipconfig getifaddr en0 2>/dev/null || true)"
-    fi
-    if [ -z "$PUBLIC_HOST" ]; then
-        PUBLIC_HOST="$(ipconfig getifaddr en1 2>/dev/null || true)"
-    fi
-    if [ -z "$PUBLIC_HOST" ]; then
-        PUBLIC_HOST="127.0.0.1"
-    fi
+PUBLIC_HOST="${MYCASA_PUBLIC_HOST:-127.0.0.1}"
+
+# Guardrail: if binding to localhost, force PUBLIC_HOST to localhost
+if [ "$BIND_HOST" != "0.0.0.0" ] && [ "$PUBLIC_HOST" != "127.0.0.1" ] && [ "$PUBLIC_HOST" != "localhost" ]; then
+    echo -e "${YELLOW}⚠ PUBLIC_HOST=${PUBLIC_HOST} but bind host is ${BIND_HOST}. Forcing PUBLIC_HOST=127.0.0.1${NC}"
+    PUBLIC_HOST="127.0.0.1"
 fi
 RELOAD_FLAG=""
 if [ "${MYCASA_RELOAD:-0}" = "1" ]; then
