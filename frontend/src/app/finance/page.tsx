@@ -604,7 +604,7 @@ export default function FinancePage() {
               value={lastUpdatedLabel}
               subtitle={portfolio?.source ? `Source: ${portfolio.source}` : "Source unavailable"}
               icon={<IconRefresh size={22} />}
-              color="gray"
+              color="neutral"
               loading={loading}
             />
           </SimpleGrid>
