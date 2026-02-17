@@ -1,0 +1,716 @@
+"""
+MyCasa Pro API - Finance Routes
+Portfolio, bills, spending, and financial management endpoints.
+"""
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Form, Depends
+from api.routes.approvals import request_approval, ApprovalRequest
+from api.helpers.auth import require_auth
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
+from datetime import datetime, date
+import tempfile
+from pathlib import Path
+import re
+from datetime import timedelta
+
+# Optional PDF extraction
+try:
+    import pdfplumber
+    HAS_PDFPLUMBER = True
+except Exception:
+    HAS_PDFPLUMBER = False
+
+router = APIRouter(prefix="/finance", tags=["Finance"])
+
+
+# ============ SCHEMAS ============
+
+class SpendEntry(BaseModel):
+    amount: float = Field(..., gt=0)
+    merchant: Optional[str] = None
+    description: Optional[str] = None
+    funding_source: Optional[str] = None  # Chase Checking, Chase Freedom, etc.
+    payment_rail: Optional[str] = None    # direct, apple_cash, zelle, venmo, ach
+    category: Optional[str] = None        # dining, groceries, housing, etc.
+    is_internal_transfer: bool = False
+    receipt_path: Optional[str] = None
+
+
+class BillPay(BaseModel):
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PortfolioSummary(BaseModel):
+    total_value: float
+    cash: float
+    holdings: List[Dict[str, Any]]
+    day_change: float
+    day_change_pct: float
+    updated_at: datetime
+
+
+class SpendSummary(BaseModel):
+    period_days: int
+    total_spend: float
+    by_category: Dict[str, float]
+    by_funding_source: Dict[str, float]
+    daily_average: float
+    vs_daily_cap: float  # How much under/over daily cap
+
+
+# ============ PORTFOLIO ROUTES ============
+
+@router.get("/portfolio")
+async def get_portfolio(user: dict = Depends(require_auth)):
+    """Get portfolio summary with current values"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    return finance.get_portfolio_summary()
+
+
+@router.get("/portfolio/holdings")
+async def get_holdings():
+    """Get detailed holdings list"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    summary = finance.get_portfolio_summary()
+    return {"holdings": summary.get("holdings", [])}
+
+
+@router.get("/portfolio/performance")
+async def get_portfolio_performance(days: int = 30):
+    """Get portfolio performance over time"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    # If finance agent has performance tracking
+    if hasattr(finance, 'get_performance'):
+        return finance.get_performance(days=days)
+    
+    return {"message": "Performance tracking not yet implemented", "days": days}
+
+
+@router.get("/portfolio/recommendations")
+async def get_investment_recommendations():
+    """
+    Get investment recommendations based on configured recommendation style.
+    
+    Uses FinanceSettings.recommendation_style:
+    - QUICK_FLIP: Focus on momentum and quick gains
+    - ONE_YEAR_PLAN: Medium-term growth
+    - LONG_TERM_HOLD: Buy and hold strategy
+    - BALANCED: Mix of strategies
+    
+    ⚠️ NOT FINANCIAL ADVICE - For educational purposes only
+    """
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    return finance.get_investment_recommendations()
+
+
+# ============ BILLS ROUTES ============
+
+@router.get("/bills")
+async def get_bills(user: dict = Depends(require_auth)):
+    """List bills (upcoming and optionally paid) with authentication required"""
+    """List bills (upcoming and optionally paid)"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    return {"bills": finance.get_bills(include_paid=include_paid)}
+
+
+@router.get("/bills/upcoming")
+async def get_upcoming_bills(days: int = 30):
+    """Get bills due in the next N days"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    all_bills = finance.get_bills(include_paid=False)
+    # Filter to upcoming days (implementation depends on bill structure)
+    return {"bills": all_bills, "days_ahead": days}
+
+
+@router.patch("/bills/{bill_id}/pay")
+async def pay_bill(
+    bill_id: int,
+    body: BillPay = None,
+    background_tasks: BackgroundTasks = None,
+):
+    """Mark a bill as paid"""
+    from api.main import get_manager
+    from core.events_v2 import emit_sync, EventType
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    result = finance.pay_bill(bill_id)
+    
+    emit_sync(EventType.BILL_PAID, "api.finance", {"bill_id": bill_id})
+    
+    return result
+
+
+# ============ SPEND TRACKING ROUTES ============
+
+@router.post("/spend")
+async def add_spend(amount: float,
+    entry: SpendEntry,
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Add a spend entry with three-layer classification:
+    - funding_source: Where money came from (bank account, card)
+    - payment_rail: How money moved (direct, zelle, etc.)
+    - category: What it was for (dining, groceries, etc.)
+    """
+    from api.main import get_manager
+    from core.events_v2 import emit_sync, EventType
+    from core.settings_typed import get_settings_store
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    # Check against daily cap
+    settings = get_settings_store().get()
+    daily_cap = settings.agents.finance.daily_spend_cap
+    
+    # Get today's spend
+    today_summary = finance.get_spend_summary(days=1) if hasattr(finance, 'get_spend_summary') else {}
+    today_total = today_summary.get("total", 0)
+    
+    if today_total + entry.amount > daily_cap and not entry.is_internal_transfer:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "DAILY_CAP_EXCEEDED",
+                "message": f"This spend would exceed daily cap of ${daily_cap:.2f}",
+                "today_total": today_total,
+                "entry_amount": entry.amount,
+                "cap": daily_cap,
+            }
+        )
+    
+    result = finance.add_spend_entry(
+        amount=entry.amount,
+        merchant=entry.merchant,
+        description=entry.description,
+        funding_source=entry.funding_source,
+        payment_rail=entry.payment_rail,
+        consumption_category=entry.category,
+        is_internal_transfer=entry.is_internal_transfer,
+        receipt_path=entry.receipt_path,
+    )
+    
+    emit_sync(EventType.SPEND_ADDED, "api.finance", {
+        "amount": entry.amount,
+        "category": entry.category,
+    })
+    
+    return result
+
+
+@router.post("/spend/parse")
+async def parse_spend_text(payload: Dict[str, Any]):
+    """Parse free-form text into a spend entry suggestion."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Missing text")
+
+    # Simple heuristics (amount + merchant + date)
+    amount = None
+    m = re.search(r"\$?([0-9]+(?:\.[0-9]{1,2})?)", text)
+    if m:
+        amount = float(m.group(1))
+
+    merchant = None
+    # merchant after 'at' or 'from'
+    m2 = re.search(r"\b(?:at|from)\s+([A-Za-z0-9 &.-]{2,})", text)
+    if m2:
+        merchant = m2.group(1).strip()
+
+    # date keywords
+    spend_date = None
+    if "yesterday" in text.lower():
+        spend_date = (date.today() - timedelta(days=1)).isoformat()
+    elif "today" in text.lower():
+        spend_date = date.today().isoformat()
+
+    return {
+        "amount": amount,
+        "merchant": merchant,
+        "description": text,
+        "date": spend_date,
+    }
+
+
+
+@router.post("/spend/upload")
+async def upload_receipt(user: dict = Depends(require_auth),
+    file: UploadFile = File(...),
+    amount: Optional[float] = Form(default=None),
+    merchant: Optional[str] = Form(default=None),
+    category: Optional[str] = Form(default=None),
+    funding_source: Optional[str] = Form(default=None),
+    payment_rail: Optional[str] = Form(default=None),
+):
+    """Upload a receipt (PDF) and store as spend entry."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    await _require_approval("receipt_upload", {"filename": file.filename})
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in [".pdf", ".png", ".jpg", ".jpeg"]:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    # Save file to data/receipts
+    from config.settings import DATA_DIR
+    receipts_dir = DATA_DIR / "receipts"
+    receipts_dir.mkdir(exist_ok=True)
+    dest = receipts_dir / f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+    content = await file.read()
+    dest.write_bytes(content)
+
+    # Try to extract amount/merchant from PDF text if missing
+    extracted_text = ""
+    if ext == ".pdf" and HAS_PDFPLUMBER:
+        try:
+            with pdfplumber.open(dest) as pdf:
+                extracted_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        except Exception:
+            extracted_text = ""
+
+    guess_amount = amount
+    if guess_amount is None:
+        m = re.search(r"\$?([0-9]+(?:\.[0-9]{1,2})?)", extracted_text)
+        if m:
+            guess_amount = float(m.group(1))
+
+    guess_merchant = merchant
+    if guess_merchant is None:
+        m2 = re.search(r"^([A-Za-z0-9 &.-]{2,})", extracted_text.strip())
+        if m2:
+            guess_merchant = m2.group(1).strip()
+
+    from api.main import get_manager
+    manager = get_manager()
+    finance = manager.finance
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+
+    if guess_amount is None:
+        raise HTTPException(status_code=400, detail="Could not detect amount; pass amount manually")
+
+    result = finance.add_spend_entry(
+        amount=guess_amount,
+        merchant=guess_merchant,
+        description=f"Uploaded receipt {file.filename}",
+        funding_source=funding_source,
+        payment_rail=payment_rail,
+        consumption_category=category,
+        receipt_path=str(dest),
+    )
+
+    return {"success": True, "entry": result, "receipt_path": str(dest), "extracted": bool(extracted_text)}
+
+
+@router.get("/spend/summary")
+async def get_spend_summary(days: int = 7):
+    """Get spending summary for the last N days"""
+    from api.main import get_manager
+    from core.settings_typed import get_settings_store
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    summary = finance.get_spend_summary(days=days)
+    
+    # Add cap comparison
+    settings = get_settings_store().get()
+    daily_cap = settings.agents.finance.daily_spend_cap
+    monthly_cap = settings.agents.finance.monthly_spend_cap
+    
+    summary["daily_cap"] = daily_cap
+    summary["monthly_cap"] = monthly_cap
+    summary["daily_average_vs_cap"] = summary.get("daily_average", 0) / daily_cap if daily_cap > 0 else 0
+    
+    return summary
+
+
+@router.get("/spend/report")
+async def get_spend_report(days: int = 30):
+    """Spend report plus portfolio comparison"""
+    from api.main import get_manager
+    manager = get_manager()
+    finance = manager.finance
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+
+    summary = finance.get_spend_summary(days=days)
+    portfolio = finance.get_portfolio_summary()
+    total_value = portfolio.get("total_value", 0) or 0
+    spend = summary.get("total_spend", 0) or 0
+    ratio = (spend / total_value) if total_value else None
+    
+    return {
+        "summary": summary,
+        "portfolio_value": total_value,
+        "spend_to_portfolio_ratio": ratio,
+    }
+
+
+@router.get("/spend/baseline")
+async def get_baseline_status():
+    """Get spending baseline status (for initial tracking period)"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    return finance.get_baseline_status()
+
+
+@router.post("/spend/baseline/complete")
+async def complete_baseline():
+    """Complete baseline week and calculate spending insights"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    return finance.complete_baseline()
+
+
+# ============ SETTINGS ROUTES ============
+
+@router.get("/settings")
+async def get_finance_settings():
+    """Get finance agent settings"""
+    from core.settings_typed import get_settings_store
+    
+    settings = get_settings_store().get()
+    return settings.agents.finance.model_dump()
+
+
+@router.put("/settings")
+async def update_finance_settings(updates: Dict[str, Any]):
+    """Update finance agent settings"""
+    from core.settings_typed import get_settings_store, FinanceSettings
+    
+    store = get_settings_store()
+    settings = store.get()
+    
+    # Validate updates
+    try:
+        # Create new settings with updates
+        current = settings.agents.finance.model_dump()
+        current.update(updates)
+        new_settings = FinanceSettings(**current)
+        
+        # Check for contradictions
+        errors = new_settings.validate_config()
+        if errors:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid configuration",
+                    "errors": errors,
+                }
+            )
+        
+        # Apply updates
+        settings.agents.finance = new_settings
+        store.save(settings)
+        
+        return {"success": True, "settings": new_settings.model_dump()}
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "VALIDATION_ERROR",
+                "message": str(e),
+            }
+        )
+
+
+# ============ RECOMMENDATIONS ============
+
+@router.get("/recommendations")
+async def get_recommendations():
+    """
+    Get investment recommendations based on current settings.
+    Respects recommendation_style and includes disclaimer.
+    """
+    from api.main import get_manager
+    from core.settings_typed import get_settings_store
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    settings = get_settings_store().get()
+    finance_settings = settings.agents.finance
+    
+    # Get framing based on style
+    framing = finance_settings.get_recommendation_framing()
+    
+    # Get recommendations (if agent supports it)
+    recommendations = []
+    if hasattr(finance, 'get_recommendations'):
+        recommendations = finance.get_recommendations(
+            style=finance_settings.recommendation_style.value,
+            risk_tolerance=finance_settings.risk_tolerance.value,
+        )
+    
+    return {
+        "recommendations": recommendations,
+        "style": finance_settings.recommendation_style.value,
+        "framing": framing,
+        "disclaimer": finance_settings.get_disclaimer(),
+    }
+
+
+# ============ LEGACY COMPATIBILITY ============
+# These routes maintain backward compatibility with the old API
+
+legacy_router = APIRouter(tags=["Finance (Legacy)"])
+
+@legacy_router.get("/portfolio")
+async def legacy_get_portfolio():
+    """Legacy portfolio endpoint"""
+    return await get_portfolio()
+
+@legacy_router.get("/bills")
+async def legacy_list_bills(include_paid: bool = False):
+    """Legacy bills endpoint"""
+    return await list_bills(include_paid=include_paid)
+
+@legacy_router.patch("/bills/{bill_id}/pay")
+async def legacy_pay_bill(bill_id: int, background_tasks: BackgroundTasks = None):
+    """Legacy pay bill endpoint"""
+    return await pay_bill(bill_id, background_tasks=background_tasks)
+
+@legacy_router.post("/spend")
+async def legacy_add_spend(
+    amount: float,
+    merchant: Optional[str] = None,
+    description: Optional[str] = None,
+    funding_source: Optional[str] = None,
+    payment_rail: Optional[str] = None,
+    category: Optional[str] = None,
+    is_internal_transfer: bool = False,
+    background_tasks: BackgroundTasks = None,
+):
+    """Legacy spend endpoint (query params instead of body)"""
+    entry = SpendEntry(
+        amount=amount,
+        merchant=merchant,
+        description=description,
+        funding_source=funding_source,
+        payment_rail=payment_rail,
+        category=category,
+        is_internal_transfer=is_internal_transfer,
+    )
+    return await add_spend(entry, background_tasks)
+
+@legacy_router.get("/spend/summary")
+async def legacy_spend_summary(days: int = 7):
+    """Legacy spend summary endpoint"""
+    return await get_spend_summary(days=days)
+
+@legacy_router.get("/spend/baseline")
+async def legacy_baseline_status():
+    """Legacy baseline endpoint"""
+    return await get_baseline_status()
+
+@legacy_router.post("/spend/baseline/complete")
+async def legacy_complete_baseline():
+    """Legacy complete baseline endpoint"""
+    return await complete_baseline()
+
+
+# ============ EDGELAB-STYLE ANALYSIS ============
+
+@router.get("/analyze/{symbol}")
+async def analyze_stock(symbol: str):
+    """Analyze a single stock using EdgeLab-style features"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    return finance.analyze_stock(symbol)
+
+
+@router.get("/analyze-portfolio")
+async def analyze_portfolio():
+    """Run EdgeLab-style analysis on all portfolio holdings"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    return finance.analyze_portfolio_stocks()
+
+
+@router.get("/recommendations")
+async def get_recommendations(symbols: str = None):
+    """Get stock recommendations using EdgeLab-style scoring"""
+    from api.main import get_manager
+    
+    manager = get_manager()
+    finance = manager.finance
+    
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+    
+    watchlist = symbols.split(",") if symbols else None
+    return finance.get_stock_recommendations(watchlist)
+
+
+# ============ POLYMARKET BTC 15M ANALYSIS ============
+
+class PolymarketAnalysisRequest(BaseModel):
+    """Request for Polymarket BTC 15m direction analysis"""
+    market_data: Optional[Dict[str, Any]] = None
+    market_url: Optional[str] = None
+    bankroll_usd: float = 5000
+
+
+@router.post("/polymarket/analyze")
+async def analyze_polymarket_direction(request: PolymarketAnalysisRequest) -> Dict[str, Any]:
+    """
+    Analyze Polymarket BTC 15m direction from URL or JSON data
+    Returns: call, confidence, bet size, reasons
+    """
+    try:
+        from agents.finance import FinanceAgent
+
+        agent = FinanceAgent()
+        result = await agent.analyze_polymarket_direction(
+            market_data=request.market_data,
+            market_url=request.market_url
+        )
+
+        if "error" in result:
+            # Return error in response body, not as HTTP error
+            # This allows frontend to display the message properly
+            return {
+                "call": "ERROR",
+                "confidence": "NONE",
+                "error": result.get("error"),
+                "message": result.get("message", "Analysis failed"),
+                "reasons": [f"Error: {result.get('message', 'Unknown error')}"],
+                "recommended_bet_usd": 0.0,
+                "recommended_bet_pct": 0.0
+            }
+
+        return result
+
+    except Exception as e:
+        error_msg = str(e)
+        # Handle common errors with better messages
+        if "404" in error_msg or "Not Found" in error_msg:
+            return {
+                "call": "ERROR",
+                "confidence": "NONE",
+                "error": "Market not found",
+                "message": "This Polymarket URL is invalid or the market has ended",
+                "reasons": ["❌ Market not found - check the URL or try a different market"],
+                "recommended_bet_usd": 0.0,
+                "recommended_bet_pct": 0.0
+            }
+        return {
+            "call": "ERROR",
+            "confidence": "NONE",
+            "error": str(e),
+            "message": "Analysis failed",
+            "reasons": [f"❌ Error: {str(e)}"],
+            "recommended_bet_usd": 0.0,
+            "recommended_bet_pct": 0.0
+        }
+
+
+@router.get("/polymarket/status")
+async def get_polymarket_skill_status() -> Dict[str, Any]:
+    """Check if Polymarket BTC 15m skill is available"""
+    try:
+        from agents.finance import POLYMARKET_SKILL_AVAILABLE
+        
+        if POLYMARKET_SKILL_AVAILABLE:
+            return {
+                "available": True,
+                "skill": "polymarket_btc_15m",
+                "version": "1.0"
+            }
+        else:
+            return {
+                "available": False,
+                "message": "Skill not installed or import failed"
+            }
+            
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e)
+        }

@@ -1,0 +1,36 @@
+# MyCasa Pro Janitor Agent Definition
+# Internal autonomous reliability, debugging, and security agent
+
+name: mycasa-janitor
+type: monitor
+description: "MyCasa Pro internal reliability, debugging, and security agent"
+
+capabilities:
+  - correctness-checking
+  - reliability-monitoring
+  - security-auditing
+  - incident-management
+  - auto-remediation
+
+commands:
+  status: "cd {workdir} && python3 -c 'from agents.janitor import JanitorAgent; import json; print(json.dumps(JanitorAgent().get_status(), default=str))'"
+  audit: "cd {workdir} && python3 -c 'from agents.janitor import JanitorAgent; import json; print(json.dumps(JanitorAgent().run_audit(), default=str))'"
+  check_correctness: "cd {workdir} && python3 -c 'from agents.janitor import JanitorAgent; import json; print(json.dumps(JanitorAgent().check_correctness(), default=str))'"
+  check_reliability: "cd {workdir} && python3 -c 'from agents.janitor import JanitorAgent; import json; print(json.dumps(JanitorAgent().check_reliability(), default=str))'"
+  check_security: "cd {workdir} && python3 -c 'from agents.janitor import JanitorAgent; import json; print(json.dumps(JanitorAgent().check_security(), default=str))'"
+  incidents: "cd {workdir} && python3 -c 'from agents.janitor import JanitorAgent; j=JanitorAgent(); import json; print(json.dumps(j.get_context(\"incidents\") or {\"active\":[], \"resolved\":[]}, default=str))'"
+
+memory:
+  namespace: mycasa-janitor
+  persist: true
+
+monitoring:
+  enabled: true
+  interval_seconds: 300
+  auto_audit: true
+  
+severity_levels:
+  - P0  # Security/safety
+  - P1  # Data integrity
+  - P2  # Reliability
+  - P3  # Quality/UX

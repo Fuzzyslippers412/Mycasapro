@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Background with rounded corners -->
+  <rect width="32" height="32" rx="8" fill="#6366F1"/>
+  
+  <!-- House shape -->
+  <path d="M16 7L6 15.5V25a1 1 0 001 1h18a1 1 0 001-1V15.5L16 7z" fill="white"/>
+  
+  <!-- Roof peak accent -->
+  <path d="M16 7L6 15.5h20L16 7z" fill="white"/>
+  
+  <!-- Door -->
+  <rect x="13.5" y="18" width="5" height="8" rx="0.75" fill="#6366F1"/>
+  
+  <!-- Door handle -->
+  <circle cx="17" cy="22" r="0.6" fill="white"/>
+  
+  <!-- Window left -->
+  <rect x="8" y="17" width="4" height="3.5" rx="0.5" fill="#6366F1"/>
+  
+  <!-- Window right -->
+  <rect x="20" y="17" width="4" height="3.5" rx="0.5" fill="#6366F1"/>
+  
+  <!-- Window crosses -->
+  <line x1="10" y1="17" x2="10" y2="20.5" stroke="white" stroke-width="0.4"/>
+  <line x1="8" y1="18.75" x2="12" y2="18.75" stroke="white" stroke-width="0.4"/>
+  <line x1="22" y1="17" x2="22" y2="20.5" stroke="white" stroke-width="0.4"/>
+  <line x1="20" y1="18.75" x2="24" y2="18.75" stroke="white" stroke-width="0.4"/>
+</svg>

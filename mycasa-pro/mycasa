@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""
+MyCasa Pro CLI Entry Point
+"""
+import sys
+from pathlib import Path
+
+# Add to path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from backend.cli.main import cli
+
+if __name__ == "__main__":
+    cli()
