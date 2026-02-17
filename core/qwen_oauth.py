@@ -28,6 +28,8 @@ QWEN_OAUTH_SCOPE = "openid profile email model.completion"
 QWEN_OAUTH_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 QWEN_OAUTH_CODE_CHALLENGE_METHOD = "S256"
 DEFAULT_QWEN_RESOURCE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+QWEN_OAUTH_AUTHORIZE_URL = f"{QWEN_OAUTH_BASE_URL}/authorize"
+QWEN_OAUTH_CLIENT_SLUG = "qwen-code"
 
 
 def _now_ms() -> int:
@@ -86,7 +88,11 @@ def request_device_authorization_sync() -> Dict[str, Any]:
         raise RuntimeError(f"Device authorization failed: {response.status_code} {response.text}")
     if "device_code" not in data:
         raise RuntimeError(f"Device authorization failed: {data}")
-    if not data.get("verification_uri_complete") and data.get("verification_uri") and data.get("user_code"):
+    if data.get("user_code"):
+        # Prefer the canonical Qwen authorize URL (matches Qwen Code / OpenClaw flow)
+        user_code = quote(str(data["user_code"]))
+        data["verification_uri_complete"] = f"{QWEN_OAUTH_AUTHORIZE_URL}?user_code={user_code}&client={QWEN_OAUTH_CLIENT_SLUG}"
+    elif not data.get("verification_uri_complete") and data.get("verification_uri") and data.get("user_code"):
         parsed = urlparse(data["verification_uri"])
         query = dict(parse_qsl(parsed.query))
         query.setdefault("user_code", str(data["user_code"]))
