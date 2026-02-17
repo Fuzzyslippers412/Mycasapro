@@ -9,7 +9,8 @@ Local-first home operating system for homeowners and renters. Next.js UI + FastA
 cd /path/to/mycasa-pro
 cp .env.example .env
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt && python install.py install
+python install.py install
+## install.py will install missing Python deps automatically (use --no-deps to skip)
 export MYCASA_API_BASE_URL=http://127.0.0.1:6709 MYCASA_BACKEND_PORT=6709 MYCASA_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 python -m uvicorn api.main:app --host 127.0.0.1 --port 6709
 # new terminal
@@ -21,7 +22,7 @@ cd frontend && echo "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" > .env.local && 
 cd C:\path\to\mycasa-pro
 copy .env.example .env
 py -3.11 -m venv .venv; .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt; python install.py install
+python install.py install
 $env:MYCASA_API_BASE_URL="http://127.0.0.1:6709"; $env:MYCASA_BACKEND_PORT="6709"; $env:MYCASA_CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
 python -m uvicorn api.main:app --host 127.0.0.1 --port 6709
 # new terminal
@@ -33,6 +34,14 @@ cd frontend; "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" | Out-File -Encoding ut
 - Node.js 18+ (npm)
 - Git
 
+## Repo cleanup (recommended before publishing)
+Remove tracked dev artifacts and duplicate folders:
+```bash
+bash scripts/cleanup_repo.sh
+# review output, then apply:
+bash scripts/cleanup_repo.sh --apply
+```
+
 ## Quickstart (macOS / Linux)
 ```bash
 cd /path/to/mycasa-pro
@@ -40,7 +49,6 @@ cp .env.example .env
 
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
 python install.py install
 
 # Backend (terminal 1)
@@ -63,7 +71,6 @@ copy .env.example .env
 
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
 python install.py install
 
 # Backend (terminal 1)

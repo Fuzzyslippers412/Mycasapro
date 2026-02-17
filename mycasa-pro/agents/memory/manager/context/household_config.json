@@ -1,6 +1,0 @@
-{
-  "thresholds": {
-    "auto_approve_cost": 100,
-    "high_alert_cost": 500
-  }
-}

@@ -533,16 +533,15 @@ export function ManagerChat() {
       style={{
         position: "fixed",
         bottom: 16,
-        right: 16,
-        width: expanded ? 420 : 52,
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: expanded ? "min(560px, 92vw)" : 56,
         zIndex: 1000,
         transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
         overflow: "hidden",
-        boxShadow: expanded 
-          ? "0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(99,102,241,0.2)"
-          : "0 4px 16px rgba(0,0,0,0.3)",
-        background: "var(--mantine-color-dark-7)",
-        border: "1px solid var(--mantine-color-dark-4)",
+        boxShadow: expanded ? "var(--chat-panel-shadow)" : "var(--chat-lip-shadow)",
+        background: "var(--chat-lip-bg)",
+        border: "1px solid var(--chat-lip-border)",
       }}
     >
       {/* Compact Header (collapsed) */}
@@ -577,18 +576,18 @@ export function ManagerChat() {
             py="sm"
             justify="space-between"
             style={{
-              background: "linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(79,70,229,0.1) 100%)",
-              borderBottom: "1px solid var(--mantine-color-dark-5)",
+              background: "var(--surface-2)",
+              borderBottom: "1px solid var(--border-1)",
             }}
           >
             <Group gap="xs">
-              <IconSparkles size={18} style={{ color: "var(--mantine-color-indigo-4)" }} />
-              <Text fw={600} size="sm" c="gray.2">Galidima</Text>
+              <IconSparkles size={18} style={{ color: "var(--color-primary)" }} />
+              <Text fw={600} size="sm" style={{ color: "var(--text-primary)" }}>Galidima</Text>
               <Badge size="xs" variant="dot" color="green">Manager</Badge>
             </Group>
             <Group gap={4}>
               {routingStatus && (
-                <Badge size="xs" variant="light" color="indigo">
+                <Badge size="xs" variant="light" color="blue">
                   {routingStatus}
                 </Badge>
               )}
@@ -648,8 +647,9 @@ export function ManagerChat() {
                         radius="lg"
                         style={{
                           background: msg.role === "user"
-                            ? "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)"
-                            : "var(--mantine-color-dark-6)",
+                            ? "linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-primary) 100%)"
+                            : "var(--surface-2)",
+                          border: msg.role === "user" ? "1px solid transparent" : "1px solid var(--border-1)",
                           borderBottomRightRadius: msg.role === "user" ? 4 : undefined,
                           borderBottomLeftRadius: msg.role === "manager" ? 4 : undefined,
                         }}
@@ -672,7 +672,7 @@ export function ManagerChat() {
                         ) : (
                           <TypographyStylesProvider
                             style={{
-                              color: "var(--mantine-color-gray-2)",
+                              color: "var(--text-primary)",
                               fontSize: "0.875rem",
                               lineHeight: 1.5,
                             }}
@@ -700,18 +700,18 @@ export function ManagerChat() {
                                   ),
                                   th: ({ children }) => (
                                     <th style={{ 
-                                      borderBottom: "1px solid var(--mantine-color-dark-4)",
+                                      borderBottom: "1px solid var(--border-1)",
                                       padding: "4px 8px",
                                       textAlign: "left",
                                       fontWeight: 600,
-                                      color: "var(--mantine-color-gray-4)",
+                                      color: "var(--text-secondary)",
                                     }}>
                                       {children}
                                     </th>
                                   ),
                                   td: ({ children }) => (
                                     <td style={{ 
-                                      borderBottom: "1px solid var(--mantine-color-dark-5)",
+                                      borderBottom: "1px solid var(--border-1)",
                                       padding: "4px 8px",
                                     }}>
                                       {children}
@@ -732,7 +732,8 @@ export function ManagerChat() {
                                       <Box
                                         component="pre"
                                         style={{
-                                          background: "var(--mantine-color-dark-8)",
+                                          background: "var(--surface-2)",
+                                          border: "1px solid var(--border-1)",
                                           padding: 8,
                                           borderRadius: 4,
                                           overflowX: "auto",
@@ -744,7 +745,8 @@ export function ManagerChat() {
                                       </Box>
                                     ) : (
                                       <code style={{
-                                        background: "var(--mantine-color-dark-5)",
+                                        background: "var(--surface-2)",
+                                        border: "1px solid var(--border-1)",
                                         padding: "1px 4px",
                                         borderRadius: 3,
                                         fontSize: "0.8em",
@@ -754,11 +756,11 @@ export function ManagerChat() {
                                     );
                                   },
                                   // Style strong/bold
-                                  strong: ({ children }) => <strong style={{ fontWeight: 600, color: "var(--mantine-color-gray-1)" }}>{children}</strong>,
+                                  strong: ({ children }) => <strong style={{ fontWeight: 600, color: "var(--text-primary)" }}>{children}</strong>,
                                   // Style paragraphs
-                                  p: ({ children }) => <Text size="sm" mb={4} style={{ color: "var(--mantine-color-gray-2)" }}>{children}</Text>,
+                                  p: ({ children }) => <Text size="sm" mb={4} style={{ color: "var(--text-primary)" }}>{children}</Text>,
                                   // Style horizontal rules
-                                  hr: () => <Box style={{ borderTop: "1px solid var(--mantine-color-dark-4)", margin: "8px 0" }} />,
+                                  hr: () => <Box style={{ borderTop: "1px solid var(--border-1)", margin: "8px 0" }} />,
                                 }}
                               >
                                 {msg.text}
@@ -789,8 +791,8 @@ export function ManagerChat() {
               px="md"
               py="xs"
               style={{
-                background: "var(--mantine-color-dark-8)",
-                borderTop: "1px solid var(--mantine-color-dark-5)",
+                background: "var(--surface-2)",
+                borderTop: "1px solid var(--border-1)",
                 maxHeight: 180,
                 overflowY: "auto",
               }}
@@ -808,11 +810,11 @@ export function ManagerChat() {
                     borderRadius: 6,
                     transition: "background 0.1s",
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--mantine-color-dark-6)"}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--surface-1)"}
                   onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                 >
                   <Text size="sm">{cmd.emoji}</Text>
-                  <Text size="sm" c="indigo.4" ff="monospace">{cmd.command}</Text>
+                  <Text size="sm" c="blue.6" ff="monospace">{cmd.command}</Text>
                   <Text size="xs" c="dimmed" style={{ flex: 1 }}>{cmd.description}</Text>
                   <Badge size="xs" variant="light" color="gray">{cmd.agent}</Badge>
                 </UnstyledButton>
@@ -825,8 +827,8 @@ export function ManagerChat() {
             <Box
               p="xs"
               style={{
-                borderTop: "1px solid var(--mantine-color-dark-5)",
-                background: "var(--mantine-color-dark-8)",
+                borderTop: "1px solid var(--border-1)",
+                background: "var(--surface-2)",
               }}
             >
               <Group gap="xs" wrap="wrap">
@@ -839,8 +841,8 @@ export function ManagerChat() {
                     style={{
                       position: "relative",
                       opacity: att.uploading ? 0.6 : 1,
-                      background: "var(--mantine-color-dark-7)",
-                      borderColor: att.error ? "var(--mantine-color-red-7)" : "var(--mantine-color-dark-5)",
+                      background: "var(--surface-1)",
+                      borderColor: att.error ? "var(--color-error)" : "var(--border-1)",
                     }}
                   >
                     <Group gap={6}>
@@ -898,8 +900,8 @@ export function ManagerChat() {
           <Box
             p="sm"
             style={{
-              borderTop: pendingAttachments.length > 0 ? "none" : "1px solid var(--mantine-color-dark-5)",
-              background: "var(--mantine-color-dark-8)",
+              borderTop: pendingAttachments.length > 0 ? "none" : "1px solid var(--border-1)",
+              background: "var(--surface-2)",
             }}
           >
             <Group gap="xs">
@@ -972,10 +974,11 @@ export function ManagerChat() {
                 disabled={isLoading || !isAuthenticated}
                 styles={{
                   input: {
-                    background: "var(--mantine-color-dark-6)",
-                    border: "1px solid var(--mantine-color-dark-4)",
+                    background: "var(--surface-1)",
+                    border: "1px solid var(--border-1)",
+                    color: "var(--text-primary)",
                     "&:focus": {
-                      borderColor: "var(--mantine-color-indigo-6)",
+                      borderColor: "var(--color-primary)",
                     },
                   },
                 }}
@@ -1010,8 +1013,8 @@ export function ManagerChat() {
             gap="xs" 
             justify="center"
             style={{ 
-              borderTop: "1px solid var(--mantine-color-dark-6)",
-              background: "var(--mantine-color-dark-8)",
+              borderTop: "1px solid var(--border-1)",
+              background: "var(--surface-2)",
             }}
           >
             {["portfolio", "tasks", "bills"].map((q) => (

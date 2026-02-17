@@ -4,6 +4,12 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 *.log
+.claude/
+.claude-flow/
+.clawdbot/
+.learnings/
+.streamlit/
+.swarm/
 
 # Environments
 .env
@@ -22,6 +28,8 @@ frontend/.next/
 coverage.xml
 htmlcov/
 *.lcov
+.coverage
+debug_report.html
 
 # Local data
 data/
@@ -31,9 +39,20 @@ tmp/
 *.db
 *.db-shm
 *.db-wal
+api.log
+backend.log
+frontend.log
+backend_start.log
+frontend_start.log
 
 # OS
 .DS_Store
 
+# Local MCP config
+.mcp.json
+
 # Vercel
 .vercel/
+
+# Nested repo copy (should not be committed)
+mycasa-pro/

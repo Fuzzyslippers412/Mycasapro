@@ -285,17 +285,15 @@ class MaintenanceAgent(BaseAgent):
             return None
         title = self._extract_task_title(message)
         due_date = self._extract_due_date(message)
-        result = self.create_task(
+        task = self.add_task(
             title=title,
+            description="Created from chat request",
             category="maintenance",
             priority="medium",
-            scheduled_date=due_date,
             due_date=due_date,
-            description="Created from chat request",
         )
-        if not result.get("success"):
-            return {"success": False, "error": result.get("error", "Failed to create task")}
-        task = result.get("task") or {}
+        if not task or not task.get("id"):
+            return {"success": False, "error": "Failed to create task"}
         return {
             "success": True,
             "task_id": task.get("id"),
@@ -384,30 +382,22 @@ class MaintenanceAgent(BaseAgent):
             self._backend_db_ready = True
 
     def list_tasks(self, filters: Optional[Dict[str, Any]] = None, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
-        from backend.storage.database import get_db as get_backend_db
-        from backend.storage.models import TaskDB
-
-        self._ensure_backend_db()
-        with get_backend_db() as db:
-            query = db.query(TaskDB)
+        with get_db() as db:
+            query = db.query(MaintenanceTask)
             if filters:
                 if filters.get("category"):
-                    query = query.filter(TaskDB.category == filters["category"])
+                    query = query.filter(MaintenanceTask.category == filters["category"])
                 if filters.get("status"):
-                    status = self._status_to_db(filters["status"])
-                    if status:
-                        query = query.filter(TaskDB.status == status)
+                    query = query.filter(MaintenanceTask.status == filters["status"])
                 if filters.get("priority"):
-                    query = query.filter(TaskDB.priority == filters["priority"])
-                if filters.get("assigned_to"):
-                    query = query.filter(TaskDB.assigned_agent == filters["assigned_to"])
+                    query = query.filter(MaintenanceTask.priority == filters["priority"])
             tasks = (
-                query.order_by(TaskDB.created_at.desc())
+                query.order_by(MaintenanceTask.created_at.desc())
                 .offset(offset)
                 .limit(limit)
                 .all()
             )
-            return [self._taskdb_to_dict(t) for t in tasks]
+            return [self._task_to_dict(t) for t in tasks]
 
     def add_task(
         self,
@@ -419,45 +409,33 @@ class MaintenanceAgent(BaseAgent):
         assigned_to: Optional[str] = None,
         estimated_duration_hours: Optional[float] = None,
     ) -> Dict[str, Any]:
-        from backend.storage.database import get_db as get_backend_db
-        from backend.storage.models import TaskDB
-
-        self._ensure_backend_db()
-        with get_backend_db() as db:
-            task = TaskDB(
+        due_date = self._coerce_date(due_date)
+        with get_db() as db:
+            task = MaintenanceTask(
                 title=title,
                 description=description,
                 category=category,
                 priority=priority,
                 status="pending",
                 due_date=due_date,
-                assigned_agent=assigned_to,
             )
             if estimated_duration_hours is not None:
                 task.notes = f"estimated_duration_hours={estimated_duration_hours}"
             db.add(task)
             db.flush()
             self.log_action("task_created", f"Created task: {title}")
-            return self._taskdb_to_dict(task)
+            return self._task_to_dict(task)
 
     def get_task(self, task_id: int) -> Optional[Dict[str, Any]]:
-        from backend.storage.database import get_db as get_backend_db
-        from backend.storage.models import TaskDB
-
-        self._ensure_backend_db()
-        with get_backend_db() as db:
-            task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+        with get_db() as db:
+            task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
             if not task:
                 return None
-            return self._taskdb_to_dict(task)
+            return self._task_to_dict(task)
 
     def update_task(self, task_id: int, **updates: Any) -> Dict[str, Any]:
-        from backend.storage.database import get_db as get_backend_db
-        from backend.storage.models import TaskDB
-
-        self._ensure_backend_db()
-        with get_backend_db() as db:
-            task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+        with get_db() as db:
+            task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
             if not task:
                 return {"error": "Task not found"}
             if updates.get("title") is not None:
@@ -469,39 +447,29 @@ class MaintenanceAgent(BaseAgent):
             if updates.get("priority") is not None:
                 task.priority = updates["priority"]
             if updates.get("due_date") is not None:
-                task.due_date = updates["due_date"]
-            if updates.get("assigned_to") is not None:
-                task.assigned_agent = updates["assigned_to"]
+                task.due_date = self._coerce_date(updates["due_date"])
             if updates.get("status") is not None:
-                task.status = self._status_to_db(updates["status"]) or task.status
+                task.status = updates["status"]
             if updates.get("estimated_duration_hours") is not None:
                 task.notes = f"estimated_duration_hours={updates['estimated_duration_hours']}"
             self.log_action("task_updated", f"Updated task: {task_id}")
-            return self._taskdb_to_dict(task)
+            return self._task_to_dict(task)
 
     def complete_task(self, task_id: int, completion_notes: Optional[str] = None) -> Dict[str, Any]:
-        from backend.storage.database import get_db as get_backend_db
-        from backend.storage.models import TaskDB
-
-        self._ensure_backend_db()
-        with get_backend_db() as db:
-            task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+        with get_db() as db:
+            task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
             if not task:
                 return {"error": "Task not found"}
             task.status = "completed"
-            task.completed_date = date.today()
+            task.completed_date = self._today()
             if completion_notes:
                 task.notes = completion_notes
             self.log_action("task_completed", f"Completed task: {task_id}")
-            return self._taskdb_to_dict(task)
+            return self._task_to_dict(task)
 
     def remove_task(self, task_id: int) -> Dict[str, Any]:
-        from backend.storage.database import get_db as get_backend_db
-        from backend.storage.models import TaskDB
-
-        self._ensure_backend_db()
-        with get_backend_db() as db:
-            task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+        with get_db() as db:
+            task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
             if not task:
                 return {"error": "Task not found"}
             db.delete(task)
@@ -656,7 +624,9 @@ class MaintenanceAgent(BaseAgent):
             "actual_cost": task.actual_cost,
             "contractor_id": task.contractor_id,
             "notes": task.notes,
-            "created_at": task.created_at.isoformat() if task.created_at else None
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "completed_at": task.completed_date.isoformat() if task.completed_date else None,
         }
     
     def _contractor_to_dict(self, contractor: Contractor) -> Dict[str, Any]:

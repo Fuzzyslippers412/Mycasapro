@@ -60,3 +60,9 @@ npm run dev
 ## Notes
 - `install.py` initializes the SQLite database and seeds defaults.
 - For production, use Postgres (set `MYCASA_DATABASE_URL`).
+
+## Acceptance Tests
+With the API running:
+```bash
+API_URL=http://127.0.0.1:6709 bash scripts/acceptance_test.sh
+```

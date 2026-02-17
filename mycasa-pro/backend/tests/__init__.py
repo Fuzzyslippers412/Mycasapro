@@ -1,3 +1,0 @@
-"""
-MyCasa Pro Tests
-"""

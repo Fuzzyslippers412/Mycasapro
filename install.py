@@ -20,8 +20,12 @@ APP_VERSION = "1.0.0"
 MIN_PYTHON = (3, 11)
 
 BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
-DB_PATH = DATA_DIR / "mycasa_pro.db"
+try:
+    from config.settings import DATA_DIR as CONFIG_DATA_DIR
+    DATA_DIR = CONFIG_DATA_DIR
+except Exception:
+    DATA_DIR = BASE_DIR / "data"
+DB_PATH = DATA_DIR / "mycasa.db"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -74,12 +78,23 @@ def check_python_version() -> bool:
     return True
 
 
-def check_dependencies() -> bool:
-    """Check required packages are available"""
+def _run_pip_install(requirements_path: Path) -> bool:
+    try:
+        print_info("Installing Python dependencies (requirements.txt)...")
+        result = os.system(f'"{sys.executable}" -m pip install -r "{requirements_path}"')
+        return result == 0
+    except Exception as e:
+        print_error(f"Dependency install failed: {e}")
+        return False
+
+
+def check_dependencies(auto_install: bool = True) -> bool:
+    """Check required Python packages are available (optionally install)."""
     required = [
         ("sqlalchemy", "SQLAlchemy"),
-        ("streamlit", "Streamlit"),
         ("fastapi", "FastAPI"),
+        ("uvicorn", "Uvicorn"),
+        ("alembic", "Alembic"),
     ]
     
     missing = []
@@ -92,7 +107,14 @@ def check_dependencies() -> bool:
             print_error(f"{display_name} not found")
     
     if missing:
-        print_info(f"Install missing: pip install {' '.join(m.lower() for m in missing)}")
+        requirements_path = BASE_DIR / "requirements.txt"
+        if auto_install and requirements_path.exists():
+            if _run_pip_install(requirements_path):
+                # Re-check after install
+                return check_dependencies(auto_install=False)
+            print_error("Automatic dependency install failed.")
+        print_info("Install missing dependencies with:")
+        print_info("  pip install -r requirements.txt")
         return False
     
     return True
@@ -139,13 +161,15 @@ def create_data_directory() -> bool:
 
 
 def initialize_database() -> bool:
-    """Initialize SQLite database with schema"""
+    """Initialize database with schema"""
     try:
         # Add parent to path for imports
         sys.path.insert(0, str(BASE_DIR))
         
-        from database import init_db
+        from database import init_db, ensure_schema, seed_user_management
         init_db()
+        ensure_schema()
+        seed_user_management()
         
         print_success(f"Database initialized: {DB_PATH}")
         return True
@@ -186,6 +210,22 @@ def seed_defaults() -> bool:
     except Exception as e:
         print_error(f"Failed to seed defaults: {e}")
         return False
+
+
+def ensure_env_file() -> bool:
+    """Ensure .env exists (copy from .env.example if missing)."""
+    try:
+        env_path = BASE_DIR / ".env"
+        example_path = BASE_DIR / ".env.example"
+        if env_path.exists():
+            return True
+        if example_path.exists():
+            shutil.copy2(example_path, env_path)
+            print_success("Created .env from .env.example")
+        return True
+    except Exception as e:
+        print_warning(f"Could not create .env: {e}")
+        return True
 
 
 def register_with_clawdbot() -> bool:
@@ -231,11 +271,11 @@ def write_install_marker() -> bool:
 # Main
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def install() -> bool:
+def install(auto_install_deps: bool = True) -> bool:
     """Run full installation"""
     print_banner()
     
-    total_steps = 7
+    total_steps = 8
     
     # Step 1: Validate Python
     print_step(1, total_steps, "Checking Python version...")
@@ -244,31 +284,35 @@ def install() -> bool:
     
     # Step 2: Check dependencies
     print_step(2, total_steps, "Checking dependencies...")
-    if not check_dependencies():
+    if not check_dependencies(auto_install=auto_install_deps):
         print_info("Run: pip install -r requirements.txt")
         return False
     
-    # Step 3: Check disk space
-    print_step(3, total_steps, "Checking disk space...")
+    # Step 3: Ensure .env
+    print_step(3, total_steps, "Ensuring .env...")
+    ensure_env_file()
+
+    # Step 4: Check disk space
+    print_step(4, total_steps, "Checking disk space...")
     check_disk_space()  # Non-fatal
     
-    # Step 4: Create data directory
-    print_step(4, total_steps, "Creating data directory...")
+    # Step 5: Create data directory
+    print_step(5, total_steps, "Creating data directory...")
     if not create_data_directory():
         return False
     
-    # Step 5: Initialize database
-    print_step(5, total_steps, "Initializing database...")
+    # Step 6: Initialize database
+    print_step(6, total_steps, "Initializing database...")
     if not initialize_database():
         return False
     
-    # Step 6: Seed defaults
-    print_step(6, total_steps, "Seeding default configuration...")
+    # Step 7: Seed defaults
+    print_step(7, total_steps, "Seeding default configuration...")
     if not seed_defaults():
         return False
     
-    # Step 7: Register with Clawdbot
-    print_step(7, total_steps, "Registering with Clawdbot...")
+    # Step 8: Register with Clawdbot
+    print_step(8, total_steps, "Registering with Clawdbot...")
     register_with_clawdbot()
     
     # Write marker
@@ -320,11 +364,12 @@ def main():
     parser = argparse.ArgumentParser(description="MyCasa Pro Installer")
     parser.add_argument("command", nargs="?", default="install", 
                        choices=["install", "uninstall", "check"])
+    parser.add_argument("--no-deps", action="store_true", help="Skip automatic dependency install")
     
     args = parser.parse_args()
     
     if args.command == "install":
-        success = install()
+        success = install(auto_install_deps=not args.no_deps)
         sys.exit(0 if success else 1)
     
     elif args.command == "uninstall":
