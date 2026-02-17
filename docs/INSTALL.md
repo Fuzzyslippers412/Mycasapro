@@ -96,6 +96,10 @@ Authenticate Qwen from the terminal (device flow):
 ```bash
 ./mycasa llm qwen-login
 ```
+Default uses the direct device flow (no MyCasa login required). If you want to route through the API (requires MyCasa login), use:
+```bash
+./mycasa llm qwen-login --api
+```
 Environment options:
 ```bash
 MYCASA_API_BASE_URL=http://127.0.0.1:6709 MYCASA_USERNAME=youruser MYCASA_PASSWORD=yourpass ./mycasa llm qwen-login

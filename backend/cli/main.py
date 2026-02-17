@@ -219,6 +219,60 @@ def _qwen_login_flow(api_base: str, username: str | None, password: str | None, 
         click.echo(f"\n✗ OAuth failed: {result.get('message')}")
         return False
 
+def _qwen_login_direct(no_browser: bool) -> bool:
+    from core.qwen_oauth import (
+        request_device_authorization_sync,
+        poll_device_token_sync,
+        build_oauth_settings,
+    )
+    from core.settings_typed import get_settings_store
+    from core.llm_client import reset_llm_client
+
+    payload = request_device_authorization_sync()
+    verification_url = payload.get("verification_uri_complete") or payload.get("verification_uri")
+    user_code = payload.get("user_code")
+    interval = int(payload.get("interval") or 5)
+    expires_in = int(payload.get("expires_in") or 600)
+    deadline = time.time() + expires_in
+
+    click.echo("\nQwen OAuth device flow")
+    click.echo(f"  Verification URL: {verification_url}")
+    click.echo(f"  User code: {user_code}")
+    click.echo(f"  Expires in: {expires_in}s")
+
+    if verification_url and not no_browser:
+        try:
+            webbrowser.open(verification_url, new=2)
+        except Exception:
+            pass
+
+    click.echo("\nWaiting for authorization... (press Ctrl+C to cancel)")
+    while time.time() < deadline:
+        result = poll_device_token_sync(payload["device_code"], payload["code_verifier"])
+        status = result.get("status")
+        if status == "pending":
+            time.sleep(interval)
+            continue
+        if status == "success":
+            token_data = result.get("token") or {}
+            oauth_settings = build_oauth_settings(token_data)
+            store = get_settings_store()
+            settings = store.get()
+            settings.system.llm_auth_type = "qwen-oauth"
+            settings.system.llm_provider = "openai-compatible"
+            settings.system.llm_base_url = oauth_settings.get("resource_url")
+            settings.system.llm_oauth = oauth_settings
+            store.save(settings)
+            reset_llm_client()
+            click.echo("\n✓ Qwen OAuth connected.")
+            return True
+        if status == "error":
+            click.echo(f"\n✗ OAuth failed: {result.get('error_description') or result.get('error')}")
+            return False
+        time.sleep(interval)
+
+    click.echo("\n✗ Device code expired. Run again.")
+    return False
 @click.group()
 def cli():
     """MyCasa Pro - Home Operating System CLI"""
@@ -372,9 +426,13 @@ def llm():
 @click.option("--password", envvar="MYCASA_PASSWORD", help="MyCasa password", hide_input=True)
 @click.option("--token", envvar="MYCASA_TOKEN", help="Existing auth token")
 @click.option("--no-browser", is_flag=True, help="Do not open the verification URL in a browser")
-def qwen_login(api_base: str, username: str | None, password: str | None, token: str | None, no_browser: bool):
+@click.option("--api/--direct", "use_api", default=False, help="Use backend API (requires MyCasa login) instead of direct device flow")
+def qwen_login(api_base: str, username: str | None, password: str | None, token: str | None, no_browser: bool, use_api: bool):
     """Authenticate Qwen via device OAuth and store tokens."""
-    _qwen_login_flow(api_base, username, password, token, no_browser)
+    if use_api:
+        _qwen_login_flow(api_base, username, password, token, no_browser)
+    else:
+        _qwen_login_direct(no_browser)
 
 
 # ============ SETUP WIZARD ============
@@ -485,7 +543,7 @@ def setup(api_port: int, start_frontend: bool, start_backend: bool):
     # 6) Qwen OAuth
     _step("Qwen OAuth")
     if click.confirm("Connect Qwen OAuth now?", default=True):
-        _qwen_login_flow(api_base, None, None, None, False)
+        _qwen_login_direct(False)
 
     click.echo("\nSetup complete.")
 
