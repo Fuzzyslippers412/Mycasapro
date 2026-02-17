@@ -19,8 +19,9 @@ cd frontend && echo "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" > .env.local && 
 
 **macOS / Linux (single command)**
 ```bash
-./start_all.sh
+MYCASA_API_PORT=6709 ./start_all.sh
 ```
+_Default port is 6709; setting `MYCASA_API_PORT` is optional._
 
 **Windows PowerShell**
 ```powershell
