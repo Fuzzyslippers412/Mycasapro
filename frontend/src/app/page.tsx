@@ -704,7 +704,7 @@ export default function HomePage() {
               <Group justify="space-between" align="center" wrap="wrap">
                 <Text size="sm">
                   {statusOffline
-                    ? `Unable to reach backend at ${apiBase}. Start the API and try again.`
+                    ? (statusError as any)?.message || `Unable to reach backend at ${apiBase}. Start the API and try again.`
                     : typeof statusErrorStatus === "number"
                     ? `Backend error (${statusErrorStatus}). ${statusErrorDetail || "Please retry."}`
                     : `Unable to reach backend at ${apiBase}. Check the server and try again.`}
@@ -717,6 +717,20 @@ export default function HomePage() {
                   onClick={refetch}
                 >
                   Retry
+                </Button>
+                <Button
+                  size="xs"
+                  variant="default"
+                  onClick={() => {
+                    try {
+                      window.localStorage.removeItem("mycasa_api_base_override");
+                      window.location.reload();
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                >
+                  Reset API connection
                 </Button>
               </Group>
             </Alert>

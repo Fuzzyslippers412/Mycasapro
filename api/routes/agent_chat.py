@@ -65,6 +65,8 @@ class AgentResponse(BaseModel):
     conversation_id: Optional[str] = None
     error: Optional[str] = None
     task_created: Optional[Dict[str, Any]] = None
+    routed_to: Optional[str] = None
+    delegation_note: Optional[str] = None
 
 
 class AgentLogRequest(BaseModel):
@@ -244,6 +246,7 @@ async def get_agent_response(agent_id: str, message: str, context: Optional[str]
                 "response": f"Deleted task #{delete_id}.",
                 "timestamp": datetime.now().isoformat(),
                 "grounded_in": 0,
+                "routed_to": "maintenance" if canonical_id == "manager" else canonical_id,
             }
         if hasattr(agent, "create_task_from_message"):
             task_result = agent.create_task_from_message(message)
@@ -269,6 +272,8 @@ async def get_agent_response(agent_id: str, message: str, context: Optional[str]
                     "timestamp": datetime.now().isoformat(),
                     "grounded_in": 0,
                     "task_created": task_result,
+                    "routed_to": canonical_id,
+                    "delegation_note": f"{agent.name} queued the task. You can track it in the Maintenance list.",
                 }
         # If talking to the manager, also try routing task intents through maintenance.
         if canonical_id == "manager":
@@ -297,6 +302,8 @@ async def get_agent_response(agent_id: str, message: str, context: Optional[str]
                         "timestamp": datetime.now().isoformat(),
                         "grounded_in": 0,
                         "task_created": task_result,
+                        "routed_to": "maintenance",
+                        "delegation_note": f"{maintenance_agent.name} queued the task in Maintenance. You can track it in the Maintenance list.",
                     }
     except Exception as exc:
         return {
@@ -443,6 +450,7 @@ async def chat_with_agent(
                         thinking=None,
                         conversation_id=conversation.id,
                         error=None,
+                        routed_to="maintenance" if canonical_id == "manager" else canonical_id,
                     )
                 except Exception as exc:
                     response_text = f"Sorry — I couldn’t delete that task. {str(exc)}"
@@ -454,7 +462,60 @@ async def chat_with_agent(
                         thinking=None,
                         conversation_id=conversation.id,
                         error=str(exc),
+                        routed_to="maintenance" if canonical_id == "manager" else canonical_id,
                     )
+
+            # Manager fast-path: route task creation to maintenance and return structured payload.
+            if canonical_id == "manager":
+                maintenance_agent = _get_cached_agent("maintenance")
+                if maintenance_agent and hasattr(maintenance_agent, "create_task_from_message"):
+                    try:
+                        task_result = maintenance_agent.create_task_from_message(req.message)
+                        if task_result:
+                            if not task_result.get("success", True):
+                                response_text = f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')}"
+                                assistant_msg = add_message(db, conversation, "assistant", response_text)
+                                return AgentResponse(
+                                    agent_id=agent_id,
+                                    response=response_text,
+                                    timestamp=assistant_msg.created_at.isoformat(),
+                                    thinking=None,
+                                    conversation_id=conversation.id,
+                                    error=task_result.get("error"),
+                                    task_created=task_result,
+                                    routed_to="maintenance",
+                                )
+                            due = task_result.get("due_date")
+                            response_text = (
+                                f"Got it. I added the task \"{task_result.get('title', 'Task')}\" due {due}."
+                                if due
+                                else f"Got it. I added the task \"{task_result.get('title', 'Task')}\"."
+                            )
+                            assistant_msg = add_message(db, conversation, "assistant", response_text)
+                            return AgentResponse(
+                                agent_id=agent_id,
+                                response=response_text,
+                                timestamp=assistant_msg.created_at.isoformat(),
+                                thinking=None,
+                                conversation_id=conversation.id,
+                                error=None,
+                                task_created=task_result,
+                                routed_to="maintenance",
+                                delegation_note=f"{maintenance_agent.name} queued the task in Maintenance. You can track it in the Maintenance list.",
+                            )
+                    except Exception as exc:
+                        response_text = f"Sorry — I couldn’t create that task. {str(exc)}"
+                        assistant_msg = add_message(db, conversation, "assistant", response_text)
+                        return AgentResponse(
+                            agent_id=agent_id,
+                            response=response_text,
+                            timestamp=assistant_msg.created_at.isoformat(),
+                            thinking=None,
+                            conversation_id=conversation.id,
+                            error=str(exc),
+                            routed_to="maintenance",
+                            delegation_note=None,
+                        )
 
             # Fast-path task creation for maintenance-style intents
             if hasattr(agent, "create_task_from_message"):
@@ -472,6 +533,7 @@ async def chat_with_agent(
                                 conversation_id=conversation.id,
                                 error=task_result.get("error"),
                                 task_created=task_result,
+                                routed_to=canonical_id,
                             )
                         due = task_result.get("due_date")
                         response_text = (
@@ -488,6 +550,8 @@ async def chat_with_agent(
                             conversation_id=conversation.id,
                             error=None,
                             task_created=task_result,
+                            routed_to=canonical_id,
+                            delegation_note=f"{agent.name} queued the task. You can track it in the Maintenance list.",
                         )
                 except Exception as exc:
                     response_text = f"Sorry — I couldn’t create that task. {str(exc)}"
@@ -500,6 +564,7 @@ async def chat_with_agent(
                         conversation_id=conversation.id,
                         error=str(exc),
                         task_created=None,
+                        routed_to=canonical_id,
                     )
             request_id = getattr(http_request.state, "request_id", None)
             response_text = await agent.chat(

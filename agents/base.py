@@ -711,25 +711,20 @@ class BaseAgent(ABC):
     # ============ LOGGING & NOTIFICATIONS ============
     
     def log_action(self, action: str, details: str = None, status: str = "success", db: Optional[Session] = None):
-        """Log an agent action to the database (best-effort)."""
+        """Log an agent action to the database (best-effort).
+
+        Always uses a separate session to avoid poisoning caller transactions
+        when SQLite is locked under concurrent writes.
+        """
         try:
-            if db is not None:
+            with get_db() as session:
                 log = AgentLog(
                     agent=self.name,
                     action=action,
                     details=details,
                     status=status,
                 )
-                db.add(log)
-            else:
-                with get_db() as session:
-                    log = AgentLog(
-                        agent=self.name,
-                        action=action,
-                        details=details,
-                        status=status,
-                    )
-                    session.add(log)
+                session.add(log)
         except OperationalError as exc:
             # SQLite can be locked briefly under concurrent writes; skip logging to avoid breaking workflows.
             if "database is locked" in str(exc).lower():

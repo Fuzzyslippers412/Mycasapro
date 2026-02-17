@@ -229,7 +229,7 @@ class LLMClient:
         return (
             os.getenv("QWEN_MODEL")
             or os.getenv("OLLAMA_MODEL")
-            or "qwen2.5:7b"
+            or "qwen3-coder-next"
         )
 
     def _normalize_base_url(self, raw_url: str) -> str:
@@ -875,8 +875,8 @@ def _resolve_settings_llm_config() -> dict:
                     config["base_url"] = oauth.get("resource_url")
             if oauth.get("access_token"):
                 config["api_key"] = oauth.get("access_token")
-            if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b"}:
-                settings.system.llm_model = "qwen-plus"
+            if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus"}:
+                settings.system.llm_model = "qwen3-coder-next"
                 try:
                     get_settings_store().save(settings)
                 except Exception:
@@ -935,8 +935,8 @@ def get_llm_client() -> LLMClient:
             base_url = settings_config.get("base_url")
             model = settings_config.get("model")
             api_key = settings_config.get("api_key")
-            if model in {None, "", "qwen2.5-72b-instruct", "qwen2.5-72b"}:
-                model = "qwen-plus"
+            if model in {None, "", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus"}:
+                model = "qwen3-coder-next"
         else:
             provider = os.getenv("LLM_PROVIDER") or settings_config.get("provider")
             base_url = os.getenv("LLM_BASE_URL") or settings_config.get("base_url")

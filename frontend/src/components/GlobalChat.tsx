@@ -41,6 +41,7 @@ import {
   IconRefresh,
   IconRocket,
   IconTrash,
+  IconArrowRight,
 } from "@tabler/icons-react";
 import { tokens } from "@/theme/tokens";
 import { sendAgentChat, sendManagerChat, getAgentChatHistory, getApiBaseUrl, isNetworkError, apiFetch } from "@/lib/api";
@@ -51,6 +52,8 @@ interface Message {
   content: string;
   timestamp: string;
   agent?: string;
+  routedTo?: string;
+  delegationNote?: string;
 }
 
 interface AgentStatus {
@@ -108,6 +111,48 @@ const normalizeAgentToken = (value: string) =>
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+
+const isTaskIntent = (text: string) => {
+  const msg = text.toLowerCase();
+  const intentKeywords = [
+    "remind",
+    "reminder",
+    "add a task",
+    "add task",
+    "schedule",
+    "task",
+    "need to",
+    "have to",
+    "clean",
+    "fix",
+    "repair",
+    "replace",
+    "inspect",
+  ];
+  const dateHints = [
+    "today",
+    "tomorrow",
+    "this ",
+    "next ",
+    "by ",
+    "on ",
+    "friday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "saturday",
+    "sunday",
+  ];
+  const hasIntent = intentKeywords.some((k) => msg.includes(k));
+  const hasDate = dateHints.some((k) => msg.includes(k));
+  return hasIntent && (msg.includes("task") || msg.includes("remind") || hasDate);
+};
+
+const routeHintForMessage = (message: string, agentId: string) => {
+  if (agentId === "manager" && isTaskIntent(message)) return "maintenance";
+  return null;
+};
 
 function resolveAgentId(token: string): string | null {
   const normalized = normalizeAgentToken(token);
@@ -238,6 +283,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     error: null,
   });
   const [selectedAgent, setSelectedAgent] = useState("manager");
+  const [pendingRoute, setPendingRoute] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
@@ -697,11 +743,23 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         content: data.response || "I received your message.",
         timestamp: new Date().toISOString(),
         agent: data.agent_name || agent?.name || AGENT_NAMES[agentId] || agentId,
+        routedTo: data.routed_to || undefined,
+        delegationNote: data.delegation_note || undefined,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      setPendingRoute(null);
       if (data?.task_created && typeof window !== "undefined") {
+        const routed = data?.routed_to || "maintenance";
+        setSelectedAgent(routed);
         window.dispatchEvent(new CustomEvent("mycasa-system-sync"));
+        try {
+          if (routed === "maintenance") {
+            router.push("/maintenance");
+          }
+        } catch {
+          // ignore navigation errors
+        }
       }
     }
   };
@@ -718,6 +776,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         agent: "System",
       };
       setMessages((prev) => [...prev, localMessage]);
+      setPendingRoute(null);
       return;
     }
 
@@ -731,6 +790,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setIsLoading(true);
+    setPendingRoute(routeHintForMessage(userMessage.content, selectedAgent));
 
     const addLocalResponse = (content: string, agent?: string) => {
       const localMessage: Message = {
@@ -741,6 +801,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         agent: agent || "System",
       };
       setMessages((prev) => [...prev, localMessage]);
+      setPendingRoute(null);
     };
 
     const runJanitorPreflight = async (optionsText: string) => {
@@ -1267,6 +1328,26 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                       </Text>
                     )}
                     <Text size="sm">{message.content}</Text>
+                    {message.role === "assistant" && message.routedTo && (
+                      <Group gap={6} mt={6}>
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          color="blue"
+                          leftSection={<IconArrowRight size={12} />}
+                        >
+                          Delegated
+                        </Badge>
+                        <Text size="xs" c="dimmed">
+                          {AGENT_NAMES[message.routedTo] || message.routedTo}
+                        </Text>
+                      </Group>
+                    )}
+                    {message.role === "assistant" && message.delegationNote && (
+                      <Text size="xs" c="dimmed" mt={4}>
+                        {message.delegationNote}
+                      </Text>
+                    )}
                     {mounted && message.timestamp && (
                       <Text
                         size="xs"
@@ -1288,49 +1369,76 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                 </Group>
               ))}
               {isLoading && (
-                <Group justify="flex-start" align="flex-end">
-                  <Avatar size="sm" color="primary" radius="xl">
-                    <IconRobot size={14} />
-                  </Avatar>
-                  <Paper
-                    px="sm"
-                    py="xs"
-                    radius="lg"
-                    style={{ backgroundColor: "var(--chat-message-bg)" }}
-                  >
-                    <Group gap={4}>
-                      <Box
-                        className="animate-pulse"
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          backgroundColor: tokens.colors.primary[500],
-                        }}
-                      />
-                      <Box
-                        className="animate-pulse"
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          backgroundColor: tokens.colors.primary[500],
-                          animationDelay: "0.2s",
-                        }}
-                      />
-                      <Box
-                        className="animate-pulse"
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          backgroundColor: tokens.colors.primary[500],
-                          animationDelay: "0.4s",
-                        }}
-                      />
-                    </Group>
-                  </Paper>
-                </Group>
+                pendingRoute ? (
+                  <Group justify="flex-start" align="flex-end">
+                    <Avatar size="sm" color="primary" radius="xl">
+                      <IconRobot size={14} />
+                    </Avatar>
+                    <Paper
+                      px="sm"
+                      py="xs"
+                      radius="lg"
+                      style={{ backgroundColor: "var(--chat-message-bg)" }}
+                    >
+                      <Group gap="xs">
+                        <Badge size="xs" variant="light" color="blue">
+                          Routing
+                        </Badge>
+                        <Text size="sm" fw={600}>
+                          {AGENT_NAMES[pendingRoute] || pendingRoute}
+                        </Text>
+                        <Loader size="xs" />
+                      </Group>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        Galidima is handing this off for execution.
+                      </Text>
+                    </Paper>
+                  </Group>
+                ) : (
+                  <Group justify="flex-start" align="flex-end">
+                    <Avatar size="sm" color="primary" radius="xl">
+                      <IconRobot size={14} />
+                    </Avatar>
+                    <Paper
+                      px="sm"
+                      py="xs"
+                      radius="lg"
+                      style={{ backgroundColor: "var(--chat-message-bg)" }}
+                    >
+                      <Group gap={4}>
+                        <Box
+                          className="animate-pulse"
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            backgroundColor: tokens.colors.primary[500],
+                          }}
+                        />
+                        <Box
+                          className="animate-pulse"
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            backgroundColor: tokens.colors.primary[500],
+                            animationDelay: "0.2s",
+                          }}
+                        />
+                        <Box
+                          className="animate-pulse"
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            backgroundColor: tokens.colors.primary[500],
+                            animationDelay: "0.4s",
+                          }}
+                        />
+                      </Group>
+                    </Paper>
+                  </Group>
+                )
               )}
               <div ref={messagesEndRef} />
             </Stack>

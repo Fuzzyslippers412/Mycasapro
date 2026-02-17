@@ -197,6 +197,7 @@ export interface ChatResponse {
   exit_code?: number;
   routed_to?: string;
   agent_emoji?: string;
+  delegation_note?: string;
   task_created?: {
     task_id?: number | string;
     title?: string;

@@ -57,6 +57,7 @@ interface Message {
   agentName?: string;
   agentEmoji?: string;
   routedTo?: string;
+  delegationNote?: string;
 }
 
 interface AgentCommand {
@@ -385,12 +386,20 @@ export function ManagerChat() {
             agentName: data.agent_name,
             agentEmoji: data.agent_emoji,
             routedTo: data.routed_to,
+            delegationNote: data.delegation_note,
           };
         }
         return updated;
       });
       if (data?.task_created) {
         window.dispatchEvent(new CustomEvent("mycasa-system-sync"));
+        if (data?.routed_to === "maintenance") {
+          try {
+            router.push("/maintenance");
+          } catch {
+            // ignore navigation errors
+          }
+        }
       }
     } catch (e: any) {
       let message = e?.detail || e?.message || "Connection error";
@@ -788,6 +797,11 @@ export function ManagerChat() {
                                 {msg.text}
                               </ReactMarkdown>
                             </Box>
+                            {msg.delegationNote && (
+                              <Text size="xs" c="dimmed" mt={6}>
+                                {msg.delegationNote}
+                              </Text>
+                            )}
                           </TypographyStylesProvider>
                         )}
                       </Paper>

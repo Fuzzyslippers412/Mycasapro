@@ -388,7 +388,7 @@ export default function SettingsPage() {
   const defaultLlmState = {
     provider: "openai-compatible",
     baseUrl: "https://api.venice.ai/api/v1",
-    model: "qwen2.5-72b-instruct",
+    model: "qwen3-coder-next",
     apiKey: "",
     apiKeySet: false,
     authType: "api_key",
@@ -421,7 +421,16 @@ export default function SettingsPage() {
     if (provider === "anthropic") {
       return { baseUrl: "", model: "claude-3-5-sonnet" };
     }
-    return { baseUrl: "https://api.venice.ai/api/v1", model: "qwen2.5-72b-instruct" };
+    return { baseUrl: "https://api.venice.ai/api/v1", model: "qwen3-coder-next" };
+  };
+  const qwenDefaults = () => {
+    const currentModel = llmConfig.model || "";
+    const model = currentModel.toLowerCase().startsWith("qwen") ? currentModel : "qwen3-coder-next";
+    return {
+      baseUrl: llmConfig.oauthResourceUrl || llmActive.oauthResourceUrl || "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      model,
+      provider: "openai-compatible",
+    };
   };
   const [identity, setIdentity] = useState({
     soul: "",
@@ -451,6 +460,7 @@ export default function SettingsPage() {
     error: null as string | null,
   });
   const qwenPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const QWEN_OAUTH_STORAGE_KEY = "mycasa_qwen_oauth_pending_v1";
   const llmDirty = useMemo(() => {
     const configChanged =
       llmConfig.provider !== llmActive.provider ||
@@ -691,8 +701,38 @@ export default function SettingsPage() {
     if (llmConfig.authType !== "qwen-oauth") {
       stopQwenPolling();
       setQwenOauth((prev) => ({ ...prev, status: "idle", error: null }));
+      clearQwenPending();
     }
   }, [llmConfig.authType]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(QWEN_OAUTH_STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw);
+      const expiresAt = Date.parse(data.expires_at || "");
+      if (Number.isFinite(expiresAt) && Date.now() > expiresAt) {
+        clearQwenPending();
+        return;
+      }
+      if (data.session_id && data.user_code && data.verification_uri) {
+        setQwenOauth({
+          status: "pending",
+          sessionId: data.session_id,
+          userCode: data.user_code,
+          verificationUri: data.verification_uri,
+          verificationUriComplete: data.verification_uri_complete || "",
+          intervalSeconds: data.interval_seconds || 5,
+          expiresAt: data.expires_at || "",
+          error: null,
+        });
+        scheduleQwenPoll(data.session_id, data.interval_seconds || 5);
+      }
+    } catch {
+      clearQwenPending();
+    }
+  }, []);
   
   // Fetch database stats
   useEffect(() => {
@@ -879,6 +919,13 @@ export default function SettingsPage() {
         llm_model: llmConfig.model,
         llm_auth_type: llmConfig.authType,
       };
+      if (llmConfig.authType === "qwen-oauth") {
+        const qwen = qwenDefaults();
+        payload.llm_provider = qwen.provider;
+        payload.llm_base_url = qwen.baseUrl;
+        payload.llm_model = qwen.model;
+        payload.llm_auth_type = "qwen-oauth";
+      }
       if (llmConfig.apiKey.trim()) {
         payload.llm_api_key = llmConfig.apiKey.trim();
       }
@@ -1120,6 +1167,24 @@ export default function SettingsPage() {
     }
   };
 
+  const clearQwenPending = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(QWEN_OAUTH_STORAGE_KEY);
+    }
+  };
+
+  const persistQwenPending = (payload: {
+    session_id: string;
+    user_code: string;
+    verification_uri: string;
+    verification_uri_complete?: string;
+    interval_seconds: number;
+    expires_at: string;
+  }) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(QWEN_OAUTH_STORAGE_KEY, JSON.stringify(payload));
+  };
+
   const scheduleQwenPoll = (sessionId: string, intervalSeconds: number) => {
     stopQwenPolling();
     qwenPollRef.current = setTimeout(async () => {
@@ -1132,6 +1197,7 @@ export default function SettingsPage() {
           return;
         }
         if (res.status === "success") {
+          clearQwenPending();
           setQwenOauth((prev) => ({ ...prev, status: "success", error: null }));
           setLlmConfig((prev) => ({
             ...prev,
@@ -1141,6 +1207,7 @@ export default function SettingsPage() {
             oauthResourceUrl: res.resource_url ?? prev.oauthResourceUrl,
             provider: "openai-compatible",
             baseUrl: res.resource_url ?? prev.baseUrl,
+            model: prev.model?.toLowerCase().startsWith("qwen") ? prev.model : "qwen3-coder-next",
           }));
           setLlmActive((prev) => ({
             ...prev,
@@ -1150,6 +1217,7 @@ export default function SettingsPage() {
             oauthResourceUrl: res.resource_url ?? prev.oauthResourceUrl,
             provider: "openai-compatible",
             baseUrl: res.resource_url ?? prev.baseUrl,
+            model: prev.model?.toLowerCase().startsWith("qwen") ? prev.model : "qwen3-coder-next",
           }));
           try {
             const latest = await apiFetch<any>("/api/settings/system");
@@ -1172,11 +1240,14 @@ export default function SettingsPage() {
           return;
         }
         if (res.status === "expired") {
+          clearQwenPending();
           setQwenOauth((prev) => ({ ...prev, status: "error", error: "Device code expired. Please start again." }));
           return;
         }
+        clearQwenPending();
         setQwenOauth((prev) => ({ ...prev, status: "error", error: res.message || "OAuth failed." }));
       } catch (e: any) {
+        clearQwenPending();
         setQwenOauth((prev) => ({ ...prev, status: "error", error: e?.detail || e?.message || "OAuth failed." }));
       }
     }, Math.max(2, intervalSeconds) * 1000);
@@ -1206,6 +1277,7 @@ export default function SettingsPage() {
         expiresAt: res.expires_at,
         error: null,
       });
+      persistQwenPending(res);
       setLlmConfig((prev) => ({ ...prev, authType: "qwen-oauth" }));
       const targetUrl = res.verification_uri_complete || res.verification_uri;
       if (!targetUrl) {
@@ -1215,10 +1287,9 @@ export default function SettingsPage() {
       if (!opened) {
         notifications.show({
           title: "Popup blocked",
-          message: "Opening in this tab. You can return here after signing in.",
+          message: "Use the “Open sign‑in page” button below to continue.",
           color: "yellow",
         });
-        window.location.assign(targetUrl);
       }
       scheduleQwenPoll(res.session_id, res.interval_seconds);
     } catch (e: any) {
@@ -1250,6 +1321,7 @@ export default function SettingsPage() {
 
   const handleDisconnectQwenOAuth = async () => {
     stopQwenPolling();
+    clearQwenPending();
     try {
       await api.disconnectQwenOAuth();
       setQwenOauth((prev) => ({ ...prev, status: "idle", sessionId: null, userCode: "", error: null }));
@@ -1858,10 +1930,13 @@ export default function SettingsPage() {
                       setLlmConfig((s) => {
                         const nextAuth = value as "api_key" | "qwen-oauth";
                         if (nextAuth === "qwen-oauth") {
+                          const qwen = qwenDefaults();
                           return {
                             ...s,
                             authType: nextAuth,
-                            provider: "openai-compatible",
+                            provider: qwen.provider,
+                            baseUrl: qwen.baseUrl,
+                            model: qwen.model,
                           };
                         }
                         const defaults = providerDefaults(s.provider || "openai");
@@ -1913,7 +1988,7 @@ export default function SettingsPage() {
                   />
                   <TextInput
                     label="Model"
-                    placeholder="qwen2.5-72b-instruct"
+                    placeholder="qwen3-coder-next"
                     value={llmConfig.model}
                     onChange={(e) => setLlmConfig((s) => ({ ...s, model: readInputValue(e) }))}
                   />

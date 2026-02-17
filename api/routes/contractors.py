@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from auth.dependencies import require_auth
-from database import get_db
+from database.connection import get_db
 from database.models import Contractor, ContractorJob
 
 router = APIRouter(prefix="/contractors", tags=["Contractors"])
