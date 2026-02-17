@@ -22,6 +22,16 @@ cd frontend && echo "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" > .env.local && 
 MYCASA_API_PORT=6709 ./start_all.sh
 ```
 _Default port is 6709; setting `MYCASA_API_PORT` is optional._
+If you want to access from another device on the same network:
+```bash
+MYCASA_PUBLIC_HOST=<your-lan-ip> MYCASA_BIND_HOST=0.0.0.0 ./start_all.sh
+```
+
+**Terminal Setup Wizard (recommended)**
+```bash
+./mycasa setup
+```
+The wizard checks dependencies, configures ports/env, initializes DB, starts services, and guides Qwen OAuth.
 
 **Windows PowerShell**
 ```powershell
@@ -95,6 +105,16 @@ npm run dev
 Open:
 - UI: http://127.0.0.1:3000
 - API: http://127.0.0.1:6709
+
+## Qwen OAuth (Terminal)
+Authenticate Qwen from the terminal (device flow):
+```bash
+./mycasa llm qwen-login
+```
+Environment options:
+```bash
+MYCASA_API_BASE_URL=http://127.0.0.1:6709 MYCASA_USERNAME=youruser MYCASA_PASSWORD=yourpass ./mycasa llm qwen-login
+```
 
 ## Vercel (frontend) + hosted backend
 MyCasa Pro requires a long-running FastAPI backend for agents, scheduling, and webhooks. Vercel is used for the frontend only.

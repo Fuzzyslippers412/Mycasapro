@@ -10,10 +10,17 @@ import subprocess
 import sys
 import os
 import time
+import webbrowser
+import shutil
+import socket
 from pathlib import Path
 from datetime import date
 
-API_BASE = os.environ.get("MYCASA_API_URL", "http://localhost:8000")
+API_BASE = (
+    os.environ.get("MYCASA_API_URL")
+    or os.environ.get("MYCASA_API_BASE_URL")
+    or "http://127.0.0.1:6709"
+)
 
 
 def api_call(method: str, endpoint: str, data: dict = None) -> dict:
@@ -42,6 +49,175 @@ def print_json(data: dict):
     """Pretty print JSON"""
     click.echo(json.dumps(data, indent=2, default=str))
 
+def _step(title: str) -> None:
+    click.echo(f"\n==> {title}")
+
+def _ok(message: str) -> None:
+    click.echo(f"✓ {message}")
+
+def _warn(message: str) -> None:
+    click.echo(f"! {message}")
+
+def _err(message: str) -> None:
+    click.echo(f"✗ {message}")
+
+def _run_cmd(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+    try:
+        out = subprocess.check_output(cmd, cwd=str(cwd) if cwd else None, stderr=subprocess.STDOUT)
+        return 0, out.decode().strip()
+    except subprocess.CalledProcessError as e:
+        return e.returncode, e.output.decode().strip()
+
+def _port_available(port: int, host: str = "127.0.0.1") -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex((host, port)) != 0
+
+def _detect_lan_ip() -> str | None:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return None
+
+def _choose_port(default_port: int) -> int:
+    port = default_port
+    if _port_available(port):
+        return port
+    _warn(f"Port {port} is in use.")
+    port = click.prompt("Choose a different port", default=default_port + 1, type=int)
+    return port
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+def _ensure_env_file(repo_dir: Path) -> None:
+    env_path = repo_dir / ".env"
+    example_path = repo_dir / ".env.example"
+    if env_path.exists():
+        return
+    if example_path.exists():
+        shutil.copy2(example_path, env_path)
+        click.echo("✓ Created .env from .env.example")
+
+def _set_env_var(env_path: Path, key: str, value: str) -> None:
+    if not env_path.exists():
+        env_path.write_text("")
+    lines = env_path.read_text().splitlines()
+    found = False
+    new_lines = []
+    for line in lines:
+        if line.strip().startswith(f"{key}="):
+            new_lines.append(f"{key}={value}")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        new_lines.append(f"{key}={value}")
+    env_path.write_text("\n".join(new_lines) + "\n")
+
+def _write_frontend_env(repo_dir: Path, api_base: str) -> None:
+    frontend_env = repo_dir / "frontend" / ".env.local"
+    frontend_env.write_text(f"NEXT_PUBLIC_API_URL={api_base}\n")
+    click.echo(f"✓ Wrote {frontend_env}")
+
+def _wait_for_health(api_base: str, timeout_seconds: int = 10) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            resp = requests.get(f"{api_base}/health", timeout=2)
+            if resp.ok:
+                return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return False
+
+def _qwen_login_flow(api_base: str, username: str | None, password: str | None, token: str | None, no_browser: bool):
+    auth_token = token
+    if not auth_token:
+        if not username:
+            username = click.prompt("Username")
+        if not password:
+            password = click.prompt("Password", hide_input=True)
+        try:
+            resp = requests.post(f"{api_base}/api/auth/login", json={
+                "username": username,
+                "password": password,
+            })
+            if resp.status_code >= 400:
+                click.echo(f"✗ Login failed: {resp.text}")
+                return False
+            data = resp.json()
+            auth_token = data.get("token")
+            if not auth_token:
+                click.echo("✗ Login failed: token not returned")
+                return False
+        except requests.exceptions.ConnectionError:
+            click.echo(f"✗ Backend not running at {api_base}. Start with: ./start_all.sh")
+            return False
+
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    try:
+        start = requests.post(f"{api_base}/api/llm/qwen/oauth/start", headers=headers)
+        if start.status_code >= 400:
+            click.echo(f"✗ OAuth start failed: {start.text}")
+            return False
+        payload = start.json()
+    except requests.exceptions.ConnectionError:
+        click.echo(f"✗ Backend not running at {api_base}. Start with: ./start_all.sh")
+        return False
+
+    verification_url = payload.get("verification_uri_complete") or payload.get("verification_uri")
+    user_code = payload.get("user_code")
+    session_id = payload.get("session_id")
+    interval = int(payload.get("interval_seconds") or 5)
+    expires_at = payload.get("expires_at")
+
+    click.echo("\nQwen OAuth device flow")
+    click.echo(f"  Verification URL: {verification_url}")
+    click.echo(f"  User code: {user_code}")
+    if expires_at:
+        click.echo(f"  Expires at: {expires_at}")
+
+    if verification_url and not no_browser:
+        try:
+            webbrowser.open(verification_url, new=2)
+        except Exception:
+            pass
+
+    click.echo("\nWaiting for authorization... (press Ctrl+C to cancel)")
+    while True:
+        try:
+            poll = requests.post(
+                f"{api_base}/api/llm/qwen/oauth/poll",
+                headers=headers,
+                json={"session_id": session_id},
+            )
+        except requests.exceptions.ConnectionError:
+            click.echo(f"\n✗ Backend not reachable at {api_base}")
+            return False
+        if poll.status_code >= 400:
+            click.echo(f"\n✗ Poll failed: {poll.text}")
+            return False
+        result = poll.json()
+        status = result.get("status")
+        if status == "pending":
+            time.sleep(interval)
+            continue
+        if status == "success":
+            click.echo("\n✓ Qwen OAuth connected.")
+            if result.get("resource_url"):
+                click.echo(f"  Resource URL: {result.get('resource_url')}")
+            if result.get("expires_at"):
+                click.echo(f"  Expires at: {result.get('expires_at')}")
+            return True
+        if status == "expired":
+            click.echo("\n✗ Device code expired. Run again.")
+            return False
+        click.echo(f"\n✗ OAuth failed: {result.get('message')}")
+        return False
 
 @click.group()
 def cli():
@@ -56,7 +232,7 @@ def backend():
 
 
 @backend.command("start")
-@click.option("--port", default=8000, help="API port")
+@click.option("--port", default=6709, help="API port")
 def backend_start(port: int):
     """Start the backend API server"""
     click.echo(f"Starting MyCasa Pro backend on port {port}...")
@@ -181,6 +357,137 @@ def run_intake(income_name, income_type, institution, monthly_limit, daily_limit
                 click.echo(f"  - {step}")
     else:
         click.echo(f"✗ Intake failed: {result}")
+
+
+# ============ LLM / QWEN OAUTH ============
+
+@cli.group()
+def llm():
+    """LLM authentication and setup"""
+
+
+@llm.command("qwen-login")
+@click.option("--api-base", default=API_BASE, help="API base URL")
+@click.option("--username", envvar="MYCASA_USERNAME", help="MyCasa username")
+@click.option("--password", envvar="MYCASA_PASSWORD", help="MyCasa password", hide_input=True)
+@click.option("--token", envvar="MYCASA_TOKEN", help="Existing auth token")
+@click.option("--no-browser", is_flag=True, help="Do not open the verification URL in a browser")
+def qwen_login(api_base: str, username: str | None, password: str | None, token: str | None, no_browser: bool):
+    """Authenticate Qwen via device OAuth and store tokens."""
+    _qwen_login_flow(api_base, username, password, token, no_browser)
+
+
+# ============ SETUP WIZARD ============
+
+@cli.command("setup")
+@click.option("--api-port", default=6709, help="API port to use")
+@click.option("--start-frontend/--no-start-frontend", default=True, help="Start frontend after setup")
+@click.option("--start-backend/--no-start-backend", default=True, help="Start backend after setup")
+def setup(api_port: int, start_frontend: bool, start_backend: bool):
+    """Interactive setup wizard (env, deps, backend, frontend, Qwen OAuth)."""
+    repo_dir = _repo_root()
+    click.echo("MyCasa Pro setup wizard (step-by-step)\n")
+
+    # 0) System checks
+    _step("System checks")
+    py_ok = sys.version_info >= (3, 11)
+    if py_ok:
+        _ok(f"Python {sys.version_info.major}.{sys.version_info.minor}")
+    else:
+        _err("Python 3.11+ required")
+        return
+    node_code, node_ver = _run_cmd(["node", "-v"])
+    npm_code, npm_ver = _run_cmd(["npm", "-v"])
+    if node_code == 0:
+        _ok(f"Node {node_ver}")
+    else:
+        _warn("Node not found (required for frontend)")
+    if npm_code == 0:
+        _ok(f"npm {npm_ver}")
+    else:
+        _warn("npm not found (required for frontend)")
+
+    # 1) Ports
+    _step("Ports")
+    api_port = _choose_port(api_port)
+    ui_port = 3000 if _port_available(3000) else _choose_port(3000)
+    expose_lan = click.confirm("Expose the UI/API to other devices on your LAN?", default=False)
+    bind_host = "0.0.0.0" if expose_lan else "127.0.0.1"
+    public_host = "127.0.0.1"
+    if expose_lan:
+        public_host = _detect_lan_ip() or click.prompt("Enter your LAN IP", default="127.0.0.1")
+    api_base = f"http://{public_host}:{api_port}"
+    _ok(f"API port {api_port}")
+    _ok(f"UI port {ui_port}")
+    _ok(f"Bind host {bind_host}")
+    _ok(f"Public host {public_host}")
+    os.environ["MYCASA_API_URL"] = api_base
+    os.environ["MYCASA_API_BASE_URL"] = api_base
+
+    # 2) Environment
+    _step("Environment")
+    _ensure_env_file(repo_dir)
+    env_path = repo_dir / ".env"
+    _set_env_var(env_path, "MYCASA_API_BASE_URL", api_base)
+    _set_env_var(env_path, "MYCASA_BACKEND_PORT", str(api_port))
+    _set_env_var(env_path, "MYCASA_BIND_HOST", bind_host)
+    _set_env_var(env_path, "MYCASA_PUBLIC_HOST", public_host)
+    _set_env_var(env_path, "MYCASA_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    _ok(f"Configured {env_path}")
+
+    # 3) Python deps + DB
+    _step("Python dependencies")
+    if click.confirm("Install Python dependencies (requirements.txt)?", default=True):
+        subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], cwd=str(repo_dir))
+    _step("Database")
+    if click.confirm("Initialize database and defaults?", default=True):
+        subprocess.run([sys.executable, "install.py", "install"], cwd=str(repo_dir))
+        _ok("Database initialized")
+
+    # 4) Backend
+    _step("Backend")
+    if start_backend:
+        click.echo("Starting backend...")
+        log_file = Path("/tmp/mycasa-api.log")
+        subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "api.main:app", "--host", bind_host, "--port", str(api_port)],
+            cwd=str(repo_dir),
+            stdout=open(log_file, "a"),
+            stderr=open(log_file, "a"),
+        )
+        if _wait_for_health(api_base, timeout_seconds=12):
+            _ok(f"Backend running at {api_base}")
+        else:
+            _warn("Backend did not respond yet. Check /tmp/mycasa-api.log")
+            try:
+                tail = log_file.read_text().splitlines()[-20:]
+                if tail:
+                    click.echo("\nLast 20 lines of /tmp/mycasa-api.log:")
+                    click.echo("\n".join(tail))
+            except Exception:
+                pass
+
+    # 5) Frontend
+    _step("Frontend")
+    _write_frontend_env(repo_dir, api_base)
+    if click.confirm("Install frontend dependencies?", default=True):
+        subprocess.run(["npm", "install"], cwd=str(repo_dir / "frontend"))
+    if start_frontend:
+        click.echo("Starting frontend...")
+        subprocess.Popen(
+            ["npm", "run", "dev", "--", "--hostname", bind_host, "--port", str(ui_port)],
+            cwd=str(repo_dir / "frontend"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _ok(f"Frontend starting at http://{public_host}:{ui_port}")
+
+    # 6) Qwen OAuth
+    _step("Qwen OAuth")
+    if click.confirm("Connect Qwen OAuth now?", default=True):
+        _qwen_login_flow(api_base, None, None, None, False)
+
+    click.echo("\nSetup complete.")
 
 
 # ============ TASKS ============

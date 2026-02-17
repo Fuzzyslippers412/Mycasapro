@@ -36,6 +36,24 @@ MYCASA_API_PORT=6709 ./start_all.sh
 ```
 _Default port is 6709; setting `MYCASA_API_PORT` is optional._
 
+For access from another device on the same network:
+```bash
+MYCASA_PUBLIC_HOST=<your-lan-ip> MYCASA_BIND_HOST=0.0.0.0 ./start_all.sh
+```
+
+Or use the interactive wizard (recommended):
+```bash
+./mycasa setup
+```
+The wizard:
+- Checks Python/Node/npm
+- Picks safe ports
+- Writes `.env` and `frontend/.env.local`
+- Installs backend + frontend deps
+- Initializes database
+- Starts backend + frontend
+- Offers Qwen OAuth device login
+
 ## Windows PowerShell
 ```powershell
 cd C:\path\to\mycasa-pro
@@ -71,4 +89,14 @@ npm run dev
 With the API running:
 ```bash
 API_URL=http://127.0.0.1:6709 bash scripts/acceptance_test.sh
+```
+
+## Qwen OAuth (Terminal)
+Authenticate Qwen from the terminal (device flow):
+```bash
+./mycasa llm qwen-login
+```
+Environment options:
+```bash
+MYCASA_API_BASE_URL=http://127.0.0.1:6709 MYCASA_USERNAME=youruser MYCASA_PASSWORD=yourpass ./mycasa llm qwen-login
 ```

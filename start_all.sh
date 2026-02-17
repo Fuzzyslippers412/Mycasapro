@@ -6,6 +6,13 @@ cd "$(dirname "$0")"
 
 echo "🏠 Starting MyCasa Pro..."
 
+# Load .env if present (for MYCASA_* settings)
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+
 # Resolve Python binary
 PYTHON_BIN="python3"
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
@@ -28,8 +35,13 @@ API_PORT="${MYCASA_API_PORT:-6709}"
 UI_PORT="${MYCASA_UI_PORT:-3000}"
 PUBLIC_HOST="${MYCASA_PUBLIC_HOST:-}"
 if [ -z "$PUBLIC_HOST" ]; then
-    # Try to detect a LAN IP for cross-device Safari
-    PUBLIC_HOST="$(ipconfig getifaddr en0 2>/dev/null || true)"
+    # Try to detect a LAN IP for cross-device access
+    if command -v python3 >/dev/null 2>&1; then
+        PUBLIC_HOST="$(python3 - <<'PY'\nimport socket\ntry:\n    s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)\n    s.connect(('8.8.8.8',80))\n    print(s.getsockname()[0])\nexcept Exception:\n    print('')\nfinally:\n    try: s.close()\n    except Exception: pass\nPY\n)"
+    fi
+    if [ -z "$PUBLIC_HOST" ]; then
+        PUBLIC_HOST="$(ipconfig getifaddr en0 2>/dev/null || true)"
+    fi
     if [ -z "$PUBLIC_HOST" ]; then
         PUBLIC_HOST="$(ipconfig getifaddr en1 2>/dev/null || true)"
     fi

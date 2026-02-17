@@ -19,6 +19,13 @@ echo -e "${PURPLE}║${NC}                                                      
 echo -e "${PURPLE}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
+# Load .env if present
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+
 # Activate venv
 if [ -d ".venv" ]; then
     source .venv/bin/activate
@@ -33,7 +40,12 @@ API_PORT="${MYCASA_API_PORT:-6709}"
 UI_PORT="${MYCASA_UI_PORT:-3000}"
 PUBLIC_HOST="${MYCASA_PUBLIC_HOST:-}"
 if [ -z "$PUBLIC_HOST" ]; then
-    PUBLIC_HOST="$(ipconfig getifaddr en0 2>/dev/null || true)"
+    if command -v python3 >/dev/null 2>&1; then
+        PUBLIC_HOST="$(python3 - <<'PY'\nimport socket\ntry:\n    s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)\n    s.connect(('8.8.8.8',80))\n    print(s.getsockname()[0])\nexcept Exception:\n    print('')\nfinally:\n    try: s.close()\n    except Exception: pass\nPY\n)"
+    fi
+    if [ -z "$PUBLIC_HOST" ]; then
+        PUBLIC_HOST="$(ipconfig getifaddr en0 2>/dev/null || true)"
+    fi
     if [ -z "$PUBLIC_HOST" ]; then
         PUBLIC_HOST="$(ipconfig getifaddr en1 2>/dev/null || true)"
     fi
