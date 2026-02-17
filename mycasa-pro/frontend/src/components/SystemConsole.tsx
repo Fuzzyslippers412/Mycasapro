@@ -50,7 +50,7 @@ interface Message {
   timestamp: string;
   isCommand?: boolean;
   isLoading?: boolean;
-  exitCode?: number;
+  exitCode?: number | null;
   isError?: boolean;
   agentName?: string;
   agentEmoji?: string;
@@ -889,7 +889,7 @@ export function SystemConsole() {
                             </ReactMarkdown>
                           </Box>
                         )}
-                        {msg.exitCode !== undefined && (
+                        {msg.exitCode !== undefined && msg.exitCode !== null && (
                           <Badge size="xs" color={msg.exitCode === 0 ? "green" : "red"} mt={4}>
                             exit {msg.exitCode}
                           </Badge>
