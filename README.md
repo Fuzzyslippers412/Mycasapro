@@ -1,98 +1,34 @@
 # MyCasa Pro
 
-Local-first home operating system for homeowners and renters. Next.js UI + FastAPI backend.
+Local-first home operations app. Next.js UI + FastAPI backend.
 
-## Quick Install (no scripts)
+## Requirements
+- Python 3.11+
+- Node.js 18+
+- Git
+
+## Install (recommended)
+Run the terminal wizard. It installs deps, writes config, initializes the database, starts backend + frontend, and guides Qwen OAuth.
 
 **macOS / Linux**
 ```bash
 cd /path/to/mycasa-pro
 cp .env.example .env
-python3 -m venv .venv && source .venv/bin/activate
-python install.py install
-## install.py will install missing Python deps automatically (use --no-deps to skip)
-export MYCASA_API_BASE_URL=http://127.0.0.1:6709 MYCASA_BACKEND_PORT=6709 MYCASA_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-python -m uvicorn api.main:app --host 127.0.0.1 --port 6709
-# new terminal
-cd frontend && echo "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" > .env.local && npm install && npm run dev
-```
-
-**macOS / Linux (single command)**
-```bash
-MYCASA_API_PORT=6709 ./start_all.sh
-```
-_Default port is 6709; setting `MYCASA_API_PORT` is optional._
-Default is localhost-only. If you want to access from another device on the same network:
-```bash
-MYCASA_PUBLIC_HOST=<your-lan-ip> MYCASA_BIND_HOST=0.0.0.0 ./start_all.sh
-```
-If you previously enabled LAN and want to go back to localhost only:
-```bash
-MYCASA_PUBLIC_HOST=127.0.0.1 MYCASA_BIND_HOST=127.0.0.1 ./start_all.sh
-```
-
-**Terminal Setup Wizard (recommended)**
-```bash
 ./mycasa setup
-# or
-./casa setup
-```
-The wizard checks dependencies, configures ports/env, initializes DB, starts services, and guides Qwen OAuth.
-It will also prompt you to connect **your own** Gmail (gog) and WhatsApp (wacli) accounts.
-
-Manual connector setup (if you skip the wizard):
-```bash
-# Gmail via gog
-brew install doitintl/tap/gog
-gog auth login
-
-# WhatsApp via wacli
-npm install -g @nicholasoxford/wacli
-wacli auth
 ```
 
 **Windows PowerShell**
 ```powershell
 cd C:\path\to\mycasa-pro
 copy .env.example .env
-py -3.11 -m venv .venv; .\.venv\Scripts\Activate.ps1
-python install.py install
-$env:MYCASA_API_BASE_URL="http://127.0.0.1:6709"; $env:MYCASA_BACKEND_PORT="6709"; $env:MYCASA_CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
-python -m uvicorn api.main:app --host 127.0.0.1 --port 6709
-# new terminal
-cd frontend; "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" | Out-File -Encoding utf8 .env.local; npm install; npm run dev
+python .\mycasa setup
 ```
 
-## Requirements
-- Python 3.11+ (required; 3.9/3.10 will fail)
-- Node.js 18+ (npm)
-- Git
-
-If setup says Python 3.11+ required:
-```bash
-# macOS
-brew install python@3.11
-
-# Ubuntu
-sudo apt-get install python3.11 python3.11-venv
-
-# Windows (PowerShell)
-winget install Python.Python.3.11
-```
-
-## Repo cleanup (recommended before publishing)
-Remove tracked dev artifacts and duplicate folders:
-```bash
-bash scripts/cleanup_repo.sh
-# review output, then apply:
-bash scripts/cleanup_repo.sh --apply
-```
-
-## Quickstart (macOS / Linux)
+## Install (manual)
+**macOS / Linux**
 ```bash
 cd /path/to/mycasa-pro
 cp .env.example .env
-
 python3 -m venv .venv
 source .venv/bin/activate
 python install.py install
@@ -110,11 +46,10 @@ npm install
 npm run dev
 ```
 
-## Quickstart (Windows PowerShell)
+**Windows PowerShell**
 ```powershell
 cd C:\path\to\mycasa-pro
 copy .env.example .env
-
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python install.py install
@@ -132,55 +67,70 @@ npm install
 npm run dev
 ```
 
-Open:
+## Start/Stop (single command)
+```bash
+MYCASA_API_PORT=6709 ./start_all.sh
+```
+Default is localhost-only. For LAN access:
+```bash
+MYCASA_PUBLIC_HOST=<your-lan-ip> MYCASA_BIND_HOST=0.0.0.0 ./start_all.sh
+```
+
+Stop:
+```bash
+pkill -f 'uvicorn|next dev|wacli sync'
+```
+
+## URLs
 - UI: http://127.0.0.1:3000
 - API: http://127.0.0.1:6709
+- API Docs: http://127.0.0.1:6709/docs
 
-## Quick CLI Commands
-```bash
-# Open the UI in your browser
-./mycasa open
-./casa open
-
-# Start/stop the system runtime (agents + lifecycle)
-./mycasa system start
-./mycasa system stop
-./casa system start
-./casa system stop
-```
-
-## Factory Reset (start over clean)
-```bash
-./mycasa reset
-```
-This stops services, wipes local data/config, and clears caches. After reset:
-```bash
-./mycasa setup
-./start_all.sh
-```
-If the UI still points to a wrong port, clear the browser override:
-```js
-// in browser console
-localStorage.removeItem("mycasa_api_base_override")
-```
-
-## Qwen OAuth (Terminal)
-Authenticate Qwen from the terminal (device flow):
+## LLM setup
+### Qwen OAuth (default)
 ```bash
 ./mycasa llm qwen-login
 ```
-Default uses the direct device flow (no MyCasa login required). If you want to route through the API (requires MyCasa login), use:
+Default model: `qwen3-coder-next`.
+
+### OpenAI / Anthropic
+Use Settings → LLM Provider in the UI to enter your API key and model.
+
+## Connectors (user-owned credentials)
+### Gmail (gog)
 ```bash
-./mycasa llm qwen-login --api
-```
-Environment options:
-```bash
-MYCASA_API_BASE_URL=http://127.0.0.1:6709 MYCASA_USERNAME=youruser MYCASA_PASSWORD=yourpass ./mycasa llm qwen-login
+brew install doitintl/tap/gog
+gog auth login
 ```
 
-## Vercel (frontend) + hosted backend
-MyCasa Pro requires a long-running FastAPI backend for agents, scheduling, and webhooks. Vercel is used for the frontend only.
+### WhatsApp (wacli)
+```bash
+npm install -g @nicholasoxford/wacli
+wacli auth
+```
 
-See docs:
-- `docs/DEPLOY_VERCEL.md`
+## Troubleshooting
+### Backend not reachable
+1) Check the backend log:
+```bash
+tail -f /tmp/mycasa-api.log
+```
+2) Restart:
+```bash
+MYCASA_API_PORT=6709 ./start_all.sh
+```
+3) Reset stale API host in the browser console:
+```js
+localStorage.removeItem("mycasa_api_base_override")
+```
+
+### Fresh reset
+This wipes local data and restarts setup:
+```bash
+./mycasa reset
+./mycasa setup
+```
+
+## Docs
 - `docs/INSTALL.md`
+- `docs/DEPLOY_VERCEL.md`
