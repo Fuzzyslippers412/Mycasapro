@@ -16,6 +16,7 @@ import socket
 import getpass
 from pathlib import Path
 from datetime import date
+from typing import Optional, Tuple, List
 
 API_BASE = (
     os.environ.get("MYCASA_API_URL")
@@ -23,7 +24,7 @@ API_BASE = (
     or "http://127.0.0.1:6709"
 )
 
-def _read_env_value(repo_dir: Path, key: str) -> str | None:
+def _read_env_value(repo_dir: Path, key: str) -> Optional[str]:
     env_path = repo_dir / ".env"
     if not env_path.exists():
         return None
@@ -83,7 +84,7 @@ def _warn(message: str) -> None:
 def _err(message: str) -> None:
     click.echo(f"✗ {message}")
 
-def _run_cmd(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+def _run_cmd(cmd: List[str], cwd: Optional[Path] = None) -> Tuple[int, str]:
     try:
         out = subprocess.check_output(cmd, cwd=str(cwd) if cwd else None, stderr=subprocess.STDOUT)
         return 0, out.decode().strip()
@@ -95,7 +96,7 @@ def _port_available(port: int, host: str = "127.0.0.1") -> bool:
         s.settimeout(0.5)
         return s.connect_ex((host, port)) != 0
 
-def _detect_lan_ip() -> str | None:
+def _detect_lan_ip() -> Optional[str]:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))
@@ -201,7 +202,7 @@ def _resolve_data_dir(repo_dir: Path) -> Path:
         return Path(os.path.expanduser(env_data_dir)).resolve()
     return (repo_dir / "data").resolve()
 
-def _resolve_db_path(repo_dir: Path) -> Path | None:
+def _resolve_db_path(repo_dir: Path) -> Optional[Path]:
     db_url = os.environ.get("MYCASA_DATABASE_URL") or _read_env_value(repo_dir, "MYCASA_DATABASE_URL")
     if not db_url:
         return _resolve_data_dir(repo_dir) / "mycasa.db"
@@ -211,7 +212,7 @@ def _resolve_db_path(repo_dir: Path) -> Path | None:
         return Path(db_url.replace("sqlite:////", "/")).resolve()
     return None
 
-def _qwen_login_flow(api_base: str, username: str | None, password: str | None, token: str | None, no_browser: bool):
+def _qwen_login_flow(api_base: str, username: Optional[str], password: Optional[str], token: Optional[str], no_browser: bool):
     auth_token = token
     if not auth_token:
         if not username:
@@ -547,7 +548,7 @@ def llm():
 @click.option("--token", envvar="MYCASA_TOKEN", help="Existing auth token")
 @click.option("--no-browser", is_flag=True, help="Do not open the verification URL in a browser")
 @click.option("--api/--direct", "use_api", default=False, help="Use backend API (requires MyCasa login) instead of direct device flow")
-def qwen_login(api_base: str, username: str | None, password: str | None, token: str | None, no_browser: bool, use_api: bool):
+def qwen_login(api_base: str, username: Optional[str], password: Optional[str], token: Optional[str], no_browser: bool, use_api: bool):
     """Authenticate Qwen via device OAuth and store tokens."""
     if use_api:
         _qwen_login_flow(api_base, username, password, token, no_browser)

@@ -37,7 +37,13 @@ PUBLIC_HOST="${MYCASA_PUBLIC_HOST:-}"
 if [ -z "$PUBLIC_HOST" ]; then
     # Try to detect a LAN IP for cross-device access
     if command -v python3 >/dev/null 2>&1; then
-        PUBLIC_HOST="$(python3 - <<'PY'\nimport socket\ntry:\n    s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)\n    s.connect(('8.8.8.8',80))\n    print(s.getsockname()[0])\nexcept Exception:\n    print('')\nfinally:\n    try: s.close()\n    except Exception: pass\nPY\n)"
+        PUBLIC_HOST="$(python3 -c "import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); 
+try:
+    s.connect(('8.8.8.8',80)); print(s.getsockname()[0])
+except Exception:
+    print('')
+finally:
+    s.close()" 2>/dev/null)"
     fi
     if [ -z "$PUBLIC_HOST" ]; then
         PUBLIC_HOST="$(ipconfig getifaddr en0 2>/dev/null || true)"
