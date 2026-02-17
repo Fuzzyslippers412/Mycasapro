@@ -203,12 +203,19 @@ export interface AgentContextSummary {
   last_run?: any;
 }
 
+export interface AgentContextDetail extends AgentContextSummary {
+  runs?: any[];
+  headroom?: number;
+  breakdown?: Record<string, number>;
+  [key: string]: unknown;
+}
+
 export async function getAgentsContext() {
   return apiFetch<{ agents: AgentContextSummary[] }>("/api/agents");
 }
 
 export async function getAgentContext(agentIdentifier: string) {
-  return apiFetch(`/api/agents/${agentIdentifier}/context`);
+  return apiFetch<AgentContextDetail>(`/api/agents/${agentIdentifier}/context`);
 }
 
 export async function updateAgentContext(agentIdentifier: string, payload: any) {
