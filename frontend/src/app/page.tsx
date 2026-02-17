@@ -39,7 +39,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { apiFetch, getApiBaseUrl } from "@/lib/api";
+import { apiFetch, getApiBaseUrl, isNetworkError } from "@/lib/api";
 import { useDashboardData, useJanitorWizardHistory, useSystemStatus } from "@/lib/hooks";
 import { tokens } from "@/theme/tokens";
 
@@ -535,6 +535,7 @@ export default function HomePage() {
   const isOnline = !statusError;
   const statusErrorStatus = (statusError as any)?.status;
   const statusErrorDetail = (statusError as any)?.detail;
+  const statusOffline = isNetworkError(statusError) || statusErrorStatus === 0;
 
   useEffect(() => {
     let active = true;
@@ -650,7 +651,9 @@ export default function HomePage() {
             <Alert icon={<IconAlertCircle size={16} />} title="Connection Error" color="red" radius="md">
               <Group justify="space-between" align="center" wrap="wrap">
                 <Text size="sm">
-                  {typeof statusErrorStatus === "number"
+                  {statusOffline
+                    ? `Unable to reach backend at ${apiBase}. Start the API and try again.`
+                    : typeof statusErrorStatus === "number"
                     ? `Backend error (${statusErrorStatus}). ${statusErrorDetail || "Please retry."}`
                     : `Unable to reach backend at ${apiBase}. Check the server and try again.`}
                 </Text>

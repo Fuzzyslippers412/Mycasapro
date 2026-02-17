@@ -1478,7 +1478,7 @@ export default function SettingsPage() {
                 We can’t reach the API at <Code>{apiBase}</Code>. Start the backend and retry.
               </Text>
               <Group gap="xs" wrap="wrap">
-                <Code>cd ~/clawd/apps/mycasa-pro && MYCASA_API_PORT=6709 ./start_all.sh</Code>
+                <Code>MYCASA_API_PORT=6709 ./start_all.sh</Code>
                 <Button
                   size="xs"
                   variant="light"

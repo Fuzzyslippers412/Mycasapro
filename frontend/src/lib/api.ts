@@ -53,6 +53,8 @@ export function isNetworkError(err: unknown): boolean {
     name === "ApiNetworkError" ||
     name === "AbortError" ||
     message.includes("Failed to fetch") ||
+    message.includes("Load failed") ||
+    message.includes("Network request failed") ||
     message.includes("NetworkError")
   );
 }
