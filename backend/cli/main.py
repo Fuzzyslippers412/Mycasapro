@@ -254,9 +254,6 @@ def _qwen_login_flow(api_base: str, username: Optional[str], password: Optional[
         return False
 
     payload = start.json()
-    except requests.exceptions.ConnectionError:
-        click.echo(f"✗ Backend not running at {api_base}. Start with: ./start_all.sh")
-        return False
 
     verification_url = payload.get("verification_uri_complete") or payload.get("verification_uri")
     user_code = payload.get("user_code")
