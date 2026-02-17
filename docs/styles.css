@@ -34,6 +34,10 @@ h2 {
   letter-spacing: -0.02em;
 }
 
+p {
+  max-width: 72ch;
+}
+
 img {
   max-width: 100%;
   display: block;
@@ -139,15 +143,15 @@ a:focus-visible {
 
 .hero {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 32px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
   align-items: center;
-  padding: 48px 0 32px;
+  padding: 52px 0 36px;
   border-bottom: 1px solid var(--border);
 }
 
 .hero-copy {
-  max-width: 560px;
+  max-width: 680px;
 }
 
 .eyebrow {
@@ -208,7 +212,7 @@ a:focus-visible {
 }
 
 .section {
-  padding: 32px 0;
+  padding: 36px 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -239,14 +243,15 @@ a:focus-visible {
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 18px;
+  gap: 20px;
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 18px;
+  padding: 20px;
+  min-height: 140px;
 }
 
 .card h3 {
@@ -261,7 +266,7 @@ a:focus-visible {
 .steps {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .step {
@@ -397,11 +402,24 @@ code {
     padding-top: 32px;
   }
 
-  .btn {
+  .hero-actions {
     width: 100%;
   }
 
-  .hero-actions {
+  .hero-actions .btn {
     width: 100%;
+  }
+
+  .nav-inner {
+    align-items: flex-start;
+  }
+
+  .nav-links {
+    width: 100%;
+    gap: 12px;
+  }
+
+  .proof-row {
+    text-align: left;
   }
 }
