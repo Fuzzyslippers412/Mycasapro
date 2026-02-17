@@ -37,7 +37,7 @@ import {
 } from "@tabler/icons-react";
 import { tokens } from "@/theme/tokens";
 
-interface Holding {
+interface Holding extends Record<string, unknown> {
   ticker: string;
   shares: number;
   asset_type?: string;
