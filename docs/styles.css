@@ -56,6 +56,12 @@ a {
   text-decoration: none;
 }
 
+a:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
 .page {
   max-width: var(--max-width);
   margin: 0 auto;
@@ -95,6 +101,42 @@ a {
   justify-content: space-between;
   gap: 20px;
   padding: 18px 0 42px;
+}
+
+.book {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 86vw);
+  gap: 28px;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  padding: 8px 4px 28px;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 20px;
+  scrollbar-gutter: stable both-edges;
+}
+
+.book::-webkit-scrollbar {
+  height: 10px;
+}
+
+.book::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.book::-webkit-scrollbar-thumb {
+  background: rgba(30, 136, 229, 0.3);
+  border-radius: var(--radius-pill);
+}
+
+.page-sheet {
+  scroll-snap-align: start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  padding: clamp(22px, 3vw, 40px);
+  box-shadow: var(--shadow);
+  min-height: 70vh;
 }
 
 .logo {
@@ -177,7 +219,7 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 40px;
   align-items: center;
-  padding: 48px 0 64px;
+  padding: 0;
 }
 
 .hero-copy {
@@ -308,7 +350,7 @@ a {
 .how,
 .installation,
 .who {
-  padding: 48px 0;
+  padding: 0;
 }
 
 .grid {
@@ -384,6 +426,13 @@ code {
 .link {
   color: var(--primary);
   font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.link:hover {
+  color: var(--primary-dark);
 }
 
 .mono {
@@ -584,5 +633,11 @@ code {
 
   pre {
     font-size: 0.84rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .book {
+    grid-auto-columns: minmax(420px, 48vw);
   }
 }

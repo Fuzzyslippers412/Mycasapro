@@ -36,8 +36,8 @@
         <a class="btn ghost" href="#repo">View repo</a>
       </header>
 
-      <main>
-        <section class="hero">
+      <main class="book">
+        <section class="hero page-sheet">
           <div class="hero-copy">
             <p class="eyebrow">Home operations</p>
             <h1>
@@ -79,7 +79,7 @@
           </div>
         </section>
 
-        <section class="feature-grid" id="features">
+        <section class="feature-grid page-sheet" id="features">
           <div class="section-header">
             <h2>What it handles</h2>
             <p>
@@ -132,7 +132,7 @@
           </div>
         </section>
 
-        <section class="callout">
+        <section class="callout page-sheet">
           <div>
             <h2>One system. No confusion.</h2>
             <p>
@@ -149,7 +149,7 @@
           </ul>
         </section>
 
-        <section class="how" id="how">
+        <section class="how page-sheet" id="how">
           <div class="section-header">
             <h2>How it works</h2>
             <p>
@@ -188,7 +188,7 @@
           </div>
         </section>
 
-        <section class="integrations">
+        <section class="integrations page-sheet">
           <div class="section-header">
             <h2>Fits into your existing tools</h2>
             <p>
@@ -205,7 +205,7 @@
           </div>
         </section>
 
-        <section class="installation" id="install">
+        <section class="installation page-sheet" id="install">
           <div class="section-header">
             <h2>Install locally in minutes</h2>
             <p>
@@ -242,23 +242,37 @@ cd Mycasapro</code></pre>
               <p>The app will be available at:</p>
               <p class="mono">http://localhost:3000</p>
             </article>
+            <article class="card">
+              <h3>Step 5 — Open it on other devices</h3>
+              <p>
+                Once it is running on your computer, you can open it on iPads,
+                phones, or other devices on the same Wi-Fi network.
+              </p>
+              <p class="muted">
+                If it does not load from another device, start the dev server
+                with a network hostname:
+              </p>
+              <pre><code>npm run dev -- --hostname 0.0.0.0</code></pre>
+              <p class="muted">Then visit:</p>
+              <p class="mono">http://YOUR_COMPUTER_IP:3000</p>
+            </article>
           </div>
         </section>
 
-        <section class="who">
+        <section class="who page-sheet">
           <div class="section-header">
             <h2>Who this is built for</h2>
-            <p>MyCasaPro is built for people who want fewer loose ends at home.</p>
+            <p>MyCasaPro is for everyone who wants fewer loose ends at home.</p>
           </div>
           <ul class="simple-list">
-            <li>Developers who want a real system, not a demo</li>
-            <li>Households comfortable running software locally</li>
-            <li>People tired of re-explaining the same things</li>
-            <li>Anyone who wants their data to stay on their machine</li>
+            <li>One place for decisions, bills, and maintenance</li>
+            <li>Runs locally, so your data stays with you</li>
+            <li>Clear next steps so nothing slips</li>
+            <li>Simple to use on any device in your home</li>
           </ul>
         </section>
 
-        <section class="security" id="security">
+        <section class="security page-sheet" id="security">
           <div class="section-header">
             <h2>Nothing happens without you.</h2>
             <p class="subhead">Control is the default. Automation is earned.</p>
@@ -294,7 +308,7 @@ cd Mycasapro</code></pre>
           </div>
         </section>
 
-        <section class="repo" id="repo">
+        <section class="repo page-sheet" id="repo">
           <div class="section-header">
             <h2>Open source, by default</h2>
             <p>
