@@ -985,7 +985,7 @@ export function AgentManager() {
             model: fleet?.default_model || agent.model,
             thinking: fleet?.max_tier ? (TIER_TO_THINKING[fleet.max_tier] || agent.thinking) : agent.thinking,
             pendingTasks: backendData?.pending_tasks ?? fleet?.current_requests ?? 0,
-            errorCount: backendData?.error_count ?? (fleet?.last_error ? 1 : 0) ?? 0,
+            errorCount: backendData?.error_count ?? (fleet?.last_error ? 1 : 0),
           };
         })
       );
