@@ -1104,3 +1104,8 @@ html, body {
     border: 1px solid #ddd !important;
   }
 }
+
+/* Hide Next.js dev indicator ("N") */
+nextjs-portal {
+  display: none !important;
+}

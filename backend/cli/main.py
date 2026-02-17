@@ -213,8 +213,19 @@ def _resolve_db_path(repo_dir: Path) -> Optional[Path]:
     return None
 
 def _qwen_login_flow(api_base: str, username: Optional[str], password: Optional[str], token: Optional[str], no_browser: bool):
-    auth_token = token
-    if not auth_token:
+    headers: Dict[str, str] = {}
+    if token:
+        headers = {"Authorization": f"Bearer {token}"}
+
+    # Try to start OAuth without auth (works in Personal Mode)
+    try:
+        start = requests.post(f"{api_base}/api/llm/qwen/oauth/start", headers=headers)
+    except requests.exceptions.ConnectionError:
+        click.echo(f"✗ Backend not running at {api_base}. Start with: ./start_all.sh")
+        return False
+
+    if start.status_code == 401 and not token:
+        # Need login (non-personal mode)
         if not username:
             username = click.prompt("Username")
         if not password:
@@ -232,17 +243,17 @@ def _qwen_login_flow(api_base: str, username: Optional[str], password: Optional[
             if not auth_token:
                 click.echo("✗ Login failed: token not returned")
                 return False
+            headers = {"Authorization": f"Bearer {auth_token}"}
+            start = requests.post(f"{api_base}/api/llm/qwen/oauth/start", headers=headers)
         except requests.exceptions.ConnectionError:
             click.echo(f"✗ Backend not running at {api_base}. Start with: ./start_all.sh")
             return False
 
-    headers = {"Authorization": f"Bearer {auth_token}"}
-    try:
-        start = requests.post(f"{api_base}/api/llm/qwen/oauth/start", headers=headers)
-        if start.status_code >= 400:
-            click.echo(f"✗ OAuth start failed: {start.text}")
-            return False
-        payload = start.json()
+    if start.status_code >= 400:
+        click.echo(f"✗ OAuth start failed: {start.text}")
+        return False
+
+    payload = start.json()
     except requests.exceptions.ConnectionError:
         click.echo(f"✗ Backend not running at {api_base}. Start with: ./start_all.sh")
         return False
@@ -552,7 +563,10 @@ def qwen_login(api_base: str, username: Optional[str], password: Optional[str], 
     """Authenticate Qwen via device OAuth and store tokens."""
     if use_api:
         _qwen_login_flow(api_base, username, password, token, no_browser)
-    else:
+        return
+    # Auto: prefer API flow when backend is reachable (keeps UI in sync), fallback to direct.
+    ok = _qwen_login_flow(api_base, username, password, token, no_browser)
+    if not ok:
         _qwen_login_direct(no_browser)
 
 
@@ -667,9 +681,20 @@ def setup(api_port: int, start_frontend: bool, start_backend: bool):
     # 6) Qwen OAuth
     _step("Qwen OAuth")
     if click.confirm("Connect Qwen OAuth now?", default=True):
-        _qwen_login_direct(False)
+        ok = _qwen_login_flow(api_base, None, None, None, False)
+        if not ok:
+            _warn("API OAuth failed. Trying direct device flow...")
+            _qwen_login_direct(False)
 
     click.echo("\nSetup complete.")
+    ui_url = f"http://{public_host}:{ui_port}"
+    click.echo(f"Open UI: {ui_url}")
+    if click.confirm("Open the UI in your browser now?", default=True):
+        try:
+            webbrowser.open(ui_url, new=2)
+            _ok("Opened browser")
+        except Exception as exc:
+            _warn(f"Could not open browser: {exc}")
 
 
 @cli.command("reset")

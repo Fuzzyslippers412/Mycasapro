@@ -329,6 +329,7 @@ class SettingsStore:
     def __init__(self, state_file: str):
         self.state_file = state_file
         self._settings: Optional[MyCasaSettings] = None
+        self._mtime: Optional[float] = None
     
     def load(self) -> MyCasaSettings:
         """Load settings from disk, return defaults if not found"""
@@ -339,6 +340,10 @@ class SettingsStore:
         path = Path(self.state_file)
         if path.exists():
             try:
+                try:
+                    self._mtime = path.stat().st_mtime
+                except Exception:
+                    self._mtime = None
                 with open(path) as f:
                     data = json.load(f)
                 raw_data = data
@@ -354,6 +359,7 @@ class SettingsStore:
                 self._settings = MyCasaSettings()
         else:
             self._settings = MyCasaSettings()
+            self._mtime = None
 
         self._apply_migrations(raw_data)
         return self._settings
@@ -415,6 +421,10 @@ class SettingsStore:
             
             with open(path, 'w') as f:
                 json.dump(settings.model_dump(mode='json'), f, indent=2, default=str)
+            try:
+                self._mtime = path.stat().st_mtime
+            except Exception:
+                self._mtime = None
             
             self._settings = settings
             return True
@@ -424,8 +434,23 @@ class SettingsStore:
     
     def get(self) -> MyCasaSettings:
         """Get current settings (loads if not cached)"""
+        from pathlib import Path
         if self._settings is None:
             return self.load()
+        try:
+            path = Path(self.state_file)
+            if path.exists():
+                mtime = path.stat().st_mtime
+                if self._mtime is None or (mtime and mtime > self._mtime):
+                    settings = self.load()
+                    try:
+                        from core.llm_client import reset_llm_client
+                        reset_llm_client()
+                    except Exception:
+                        pass
+                    return settings
+        except Exception:
+            pass
         return self._settings
     
     def update_system(self, **kwargs) -> MyCasaSettings:

@@ -158,14 +158,14 @@ function NotificationBell() {
 
   const newestTimestamp = events[0]?.created_at || null;
   const unseenCount = useMemo(() => {
-    if (!events.length) return 0;
+    if (error || !events.length) return 0;
     if (!lastSeen) return events.length;
     const last = new Date(lastSeen).getTime();
     return events.filter((e) => {
       const ts = e.created_at ? new Date(e.created_at).getTime() : 0;
       return ts > last;
     }).length;
-  }, [events, lastSeen]);
+  }, [events, lastSeen, error]);
 
   const markSeen = () => {
     if (!newestTimestamp || typeof window === 'undefined') return;
