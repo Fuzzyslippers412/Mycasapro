@@ -130,7 +130,7 @@ export interface ChatResponse {
   agent_name?: string;
   timestamp?: string;
   error?: string;
-  exit_code?: number | null;
+  exit_code?: number;
   routed_to?: string;
   agent_emoji?: string;
   task_created?: {
@@ -553,6 +553,11 @@ export interface Vulnerability {
 }
 
 export interface SystemStatus {
+  running?: boolean;
+  last_shutdown?: string | null;
+  last_startup?: string | null;
+  last_backup?: string | null;
+  agents_enabled?: Record<string, boolean>;
   cpu_usage: number;
   memory_usage: number;
   disk_usage: number;

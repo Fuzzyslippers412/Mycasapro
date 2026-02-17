@@ -553,6 +553,11 @@ export interface Vulnerability {
 }
 
 export interface SystemStatus {
+  running?: boolean;
+  last_shutdown?: string | null;
+  last_startup?: string | null;
+  last_backup?: string | null;
+  agents_enabled?: Record<string, boolean>;
   cpu_usage: number;
   memory_usage: number;
   disk_usage: number;
