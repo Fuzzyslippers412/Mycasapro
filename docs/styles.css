@@ -321,6 +321,15 @@ a:focus-visible {
   counter-reset: step;
 }
 
+.install-notes {
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.install-notes strong {
+  color: var(--text);
+}
+
 .install-list li {
   background: var(--surface);
   border: 1px solid var(--border);
