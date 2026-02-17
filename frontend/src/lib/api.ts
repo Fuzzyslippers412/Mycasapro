@@ -130,6 +130,9 @@ export interface ChatResponse {
   agent_name?: string;
   timestamp?: string;
   error?: string;
+  exit_code?: number | null;
+  routed_to?: string;
+  agent_emoji?: string;
   task_created?: {
     task_id?: number | string;
     title?: string;
