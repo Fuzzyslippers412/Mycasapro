@@ -40,6 +40,7 @@ import {
   IconPower,
   IconRefresh,
   IconRocket,
+  IconTrash,
 } from "@tabler/icons-react";
 import { tokens } from "@/theme/tokens";
 import { sendAgentChat, sendManagerChat, getAgentChatHistory, getApiBaseUrl, isNetworkError, apiFetch } from "@/lib/api";
@@ -487,11 +488,17 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     };
   }, [chatAllowed, personalMode, isAuthenticated]);
 
+  const prevMessageCount = useRef(0);
   useEffect(() => {
-    if (expanded) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!expanded && !isEmbedded) return;
+    const currentCount = messages.length;
+    if (currentCount <= prevMessageCount.current) {
+      prevMessageCount.current = currentCount;
+      return;
     }
-  }, [messages, expanded]);
+    prevMessageCount.current = currentCount;
+    messagesEndRef.current?.scrollIntoView({ behavior: isEmbedded ? "auto" : "smooth" });
+  }, [messages.length, expanded, isEmbedded]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -918,36 +925,53 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
 
   const showPanel = isEmbedded || expanded;
 
-  return (
+  const handleClearChat = async () => {
+    const confirmClear = confirm("Clear chat history for this agent? This won't erase long-term memory.");
+    if (!confirmClear) return;
+    const convKey = conversationKey(selectedAgent, user?.id);
+    const conversationId = typeof window !== "undefined" ? localStorage.getItem(convKey) || undefined : undefined;
+    try {
+      await apiFetch(`/api/agents/${selectedAgent}/history${conversationId ? `?conversation_id=${conversationId}` : ""}`, {
+        method: "DELETE",
+      });
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(convKey);
+        localStorage.removeItem(historyKey(selectedAgent, user?.id ?? null));
+      }
+      setMessages([]);
+      setHistoryStatus("idle");
+      setHistoryError(null);
+    } catch (e) {
+      setHistoryStatus("error");
+      setHistoryError(
+        isNetworkError(e)
+          ? `Unable to reach backend at ${API_URL}.`
+          : (e as any)?.detail || (e as Error)?.message || "Failed to clear chat history."
+      );
+    }
+  };
+
+  const panelStyle = isEmbedded
+    ? {
+        marginBottom: -1,
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        minHeight: 560,
+        maxHeight: "calc(100vh - 140px)",
+      }
+    : {
+        marginBottom: -1,
+        display: "flex",
+        flexDirection: "column",
+        height: "min(520px, calc(100vh - 160px))",
+      };
+
+  const panel = (
     <Box
-      className={`global-chat${isEmbedded ? " global-chat--embedded" : ""}`}
-      ref={rootRef}
-      style={{
-        position: isEmbedded ? "sticky" : "fixed",
-        top: isEmbedded ? 88 : undefined,
-        bottom: isEmbedded ? "auto" : 16,
-        left: isEmbedded ? "auto" : "50%",
-        right: "auto",
-        transform: isEmbedded ? "none" : "translateX(-50%)",
-        zIndex: 200,
-        width: isEmbedded ? "100%" : "min(560px, calc(100vw - 32px))",
-        minWidth: isEmbedded ? "100%" : undefined,
-        maxWidth: isEmbedded ? "100%" : undefined,
-        alignSelf: isEmbedded ? "stretch" : undefined,
-      }}
+      className="global-chat-panel"
+      style={panelStyle}
     >
-      {/* Chat panel */}
-      <Collapse in={showPanel}>
-        <Box
-          className="global-chat-panel"
-          style={{
-            marginBottom: -1,
-            display: "flex",
-            flexDirection: "column",
-            height: isEmbedded ? "min(840px, calc(100vh - 140px))" : "min(520px, calc(100vh - 160px))",
-            minHeight: isEmbedded ? 520 : undefined,
-          }}
-        >
           {/* Header with Agent Controls Toggle */}
           <Group
             justify="space-between"
@@ -984,6 +1008,16 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                 <Badge size="sm" variant="light" color={llmBadgeColor}>
                   {llmBadgeLabel}
                 </Badge>
+              </Tooltip>
+              <Tooltip label="Clear chat history">
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  onClick={handleClearChat}
+                  size="sm"
+                >
+                  <IconTrash size={14} />
+                </ActionIcon>
               </Tooltip>
               <Tooltip label="Launch agents">
                 <ActionIcon
@@ -1345,8 +1379,29 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
               </Group>
             </form>
           </Box>
-        </Box>
-      </Collapse>
+    </Box>
+  );
+
+  return (
+    <Box
+      className={`global-chat${isEmbedded ? " global-chat--embedded" : ""}`}
+      ref={rootRef}
+      style={{
+        position: isEmbedded ? "sticky" : "fixed",
+        top: isEmbedded ? 88 : undefined,
+        bottom: isEmbedded ? "auto" : 16,
+        left: isEmbedded ? "auto" : "50%",
+        right: "auto",
+        transform: isEmbedded ? "none" : "translateX(-50%)",
+        zIndex: 200,
+        width: isEmbedded ? "100%" : "min(560px, calc(100vw - 32px))",
+        minWidth: isEmbedded ? "100%" : undefined,
+        maxWidth: isEmbedded ? "100%" : undefined,
+        alignSelf: isEmbedded ? "stretch" : undefined,
+      }}
+    >
+      {/* Chat panel */}
+      {isEmbedded ? panel : <Collapse in={showPanel}>{panel}</Collapse>}
 
       {!isEmbedded && (
         <Box onClick={toggle} className="global-chat-lip" data-expanded={expanded}>

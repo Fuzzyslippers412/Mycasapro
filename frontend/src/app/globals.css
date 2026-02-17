@@ -859,6 +859,16 @@ html, body {
   min-width: 100%;
 }
 
+.dashboard-chat-slot .global-chat {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.dashboard-chat-slot .global-chat-panel {
+  flex: 1;
+}
+
 .global-chat--embedded .global-chat-panel {
   border-bottom: 1px solid var(--mantine-color-default-border);
   border-radius: 16px;
@@ -1081,11 +1091,16 @@ html, body {
 .dashboard-chat-slot {
   width: 100%;
   min-width: 100%;
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 .dashboard-page {
   flex: 0 0 min(1240px, 100%);
   scroll-snap-align: start;
+  min-height: calc(100vh - 160px);
+  align-items: stretch;
 }
 
 @media (max-width: 900px) {
