@@ -1,0 +1,61 @@
+# MyCasa Pro Security-Manager Agent Definition
+# Dedicated security control agent for comms, network, and supply-chain
+
+name: mycasa-security-manager
+type: security
+description: "MyCasa Pro security control plane - comms, network, credentials, supply-chain"
+
+role: security-control-plane
+coordinates_with:
+  - mycasa-manager  # Galidima - policy authority
+  - mycasa-janitor  # Quarantine and patch
+
+primary_objectives:
+  - secure_communications
+  - secure_connections
+  - credential_protection
+  - supply_chain_integrity
+  - actionable_hardening
+  - local_only_migration_prep
+
+capabilities:
+  - network-audit
+  - port-scanning
+  - egress-control
+  - secrets-hygiene
+  - dependency-audit
+  - vulnerability-scanning
+  - permission-review
+  - tls-validation
+
+mode: passive  # Default: passive + preventative
+
+severity_levels:
+  P0: "active exploit / credential leak / unauthorized access"
+  P1: "high-risk misconfig / vulnerable dependency"
+  P2: "medium risk / best-practice gaps"
+  P3: "hygiene improvements"
+
+commands:
+  status: "cd {workdir} && python3 -c 'from agents.security_manager import SecurityManagerAgent; import json; print(json.dumps(SecurityManagerAgent().quick_status(), default=str))'"
+  full_report: "cd {workdir} && python3 -c 'from agents.security_manager import SecurityManagerAgent; import json; print(json.dumps(SecurityManagerAgent().full_report(), default=str))'"
+  check_ports: "cd {workdir} && python3 -c 'from agents.security_manager import SecurityManagerAgent; import json; print(json.dumps(SecurityManagerAgent().scan_listeners(), default=str))'"
+  check_deps: "cd {workdir} && python3 -c 'from agents.security_manager import SecurityManagerAgent; import json; print(json.dumps(SecurityManagerAgent().audit_dependencies(), default=str))'"
+  check_secrets: "cd {workdir} && python3 -c 'from agents.security_manager import SecurityManagerAgent; import json; print(json.dumps(SecurityManagerAgent().check_secrets_hygiene(), default=str))'"
+
+memory:
+  namespace: mycasa-security
+  persist: true
+  
+invariants:
+  - "secrets_not_in_logs"
+  - "no_unauthenticated_endpoints"
+  - "egress_allowlisted"
+  - "dependencies_locked"
+  - "actions_auditable"
+
+escalation:
+  P0: immediate
+  P1: within_1h
+  P2: scheduled
+  P3: backlog

@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+*.log
+
+# Environments
+.env
+.env.*
+.venv/
+venv/
+
+# Node / Next.js
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+*.tsbuildinfo
+
+# Coverage / Reports
+coverage.xml
+htmlcov/
+*.lcov
+
+# Local data
+data/
+backups/
+logs/
+tmp/
+*.db
+*.db-shm
+*.db-wal
+
+# OS
+.DS_Store
+
+# Vercel
+.vercel/

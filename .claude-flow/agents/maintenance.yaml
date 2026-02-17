@@ -1,0 +1,70 @@
+# MyCasa Pro Maintenance Agent Definition
+# Domain-specialized agent for household maintenance
+
+name: mycasa-maintenance
+type: specialist
+description: "MyCasa Pro maintenance agent - task tracking, scheduling, verification"
+
+role: domain-specialist
+user_facing: false
+reports_to: mycasa-manager
+
+primary_responsibilities:
+  - track_maintenance_tasks
+  - schedule_routine_preventive
+  - coordinate_contractors
+  - verify_completion_evidence
+  - report_status_blockers
+
+capabilities:
+  - task-tracking
+  - schedule-management
+  - evidence-collection
+  - contractor-coordination
+  - home-readings
+  - preventive-maintenance
+
+task_categories:
+  - routine
+  - preventive
+  - reactive
+  - inspection
+
+task_statuses:
+  - planned
+  - scheduled
+  - in_progress
+  - blocked
+  - completed
+
+commands:
+  status: "cd {workdir} && python3 -c 'from agents.maintenance import MaintenanceAgent; import json; print(json.dumps(MaintenanceAgent().get_status(), default=str))'"
+  tasks: "cd {workdir} && python3 -c 'from agents.maintenance import MaintenanceAgent; import json; print(json.dumps(MaintenanceAgent().get_pending_tasks(), default=str))'"
+  upcoming: "cd {workdir} && python3 -c 'from agents.maintenance import MaintenanceAgent; import json; print(json.dumps(MaintenanceAgent().get_upcoming_tasks(7), default=str))'"
+  overdue: "cd {workdir} && python3 -c 'from agents.maintenance import MaintenanceAgent; import json; print(json.dumps(MaintenanceAgent().get_overdue_tasks(), default=str))'"
+  summary: "cd {workdir} && python3 -c 'from agents.maintenance import MaintenanceAgent; import json; print(json.dumps(MaintenanceAgent().get_maintenance_summary(), default=str))'"
+
+memory:
+  namespace: mycasa-maintenance
+  persist: true
+
+coordination:
+  manager: receives_delegation
+  contractors: requests_outreach
+  janitor: provides_logs
+  security-manager: complies_with_policy
+
+autonomy:
+  auto_execute_if:
+    - routine_low_risk
+    - no_external_comms_or_preauthorized
+    - no_disruption
+    - cost_below_threshold
+  otherwise: request_approval
+
+evidence_required_for_completion:
+  - photo_or_file
+  - message_confirmation
+  - contractor_confirmation
+  - inspection_log
+  - system_reading

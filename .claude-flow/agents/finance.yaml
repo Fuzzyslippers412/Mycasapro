@@ -1,0 +1,24 @@
+# MyCasa Pro Finance Agent Definition
+# Handles bills, portfolio, transactions, and budgets
+
+name: mycasa-finance
+type: specialist
+description: "MyCasa Pro finance agent - bills, portfolio, transactions, budgets"
+
+capabilities:
+  - bill-tracking
+  - portfolio-management
+  - transaction-logging
+  - budget-analysis
+  - payment-scheduling
+
+commands:
+  status: "cd {workdir} && python3 -c 'from agents.finance import FinanceAgent; import json; print(json.dumps(FinanceAgent().get_status(), default=str))'"
+  bills: "cd {workdir} && python3 -c 'from agents.finance import FinanceAgent; import json; print(json.dumps(FinanceAgent().get_bills(), default=str))'"
+  upcoming_bills: "cd {workdir} && python3 -c 'from agents.finance import FinanceAgent; import json; print(json.dumps(FinanceAgent().get_upcoming_bills(30), default=str))'"
+  portfolio: "cd {workdir} && python3 -c 'from agents.finance import FinanceAgent; import json; print(json.dumps(FinanceAgent().get_portfolio_summary(), default=str))'"
+  tasks: "cd {workdir} && python3 -c 'from agents.finance import FinanceAgent; import json; print(json.dumps(FinanceAgent().get_pending_tasks(), default=str))'"
+
+memory:
+  namespace: mycasa-finance
+  persist: true

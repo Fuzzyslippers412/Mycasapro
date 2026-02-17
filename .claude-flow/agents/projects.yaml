@@ -1,0 +1,22 @@
+# MyCasa Pro Projects Agent Definition
+# Manages renovation and improvement projects
+
+name: mycasa-projects
+type: specialist
+description: "MyCasa Pro projects agent - renovation and improvement tracking"
+
+capabilities:
+  - project-tracking
+  - milestone-management
+  - budget-tracking
+  - timeline-management
+
+commands:
+  status: "cd {workdir} && python3 -c 'from agents.projects import ProjectsAgent; import json; print(json.dumps(ProjectsAgent().get_status(), default=str))'"
+  list: "cd {workdir} && python3 -c 'from agents.projects import ProjectsAgent; import json; print(json.dumps(ProjectsAgent().get_projects(), default=str))'"
+  active: "cd {workdir} && python3 -c 'from agents.projects import ProjectsAgent; import json; print(json.dumps(ProjectsAgent().get_active_projects(), default=str))'"
+  tasks: "cd {workdir} && python3 -c 'from agents.projects import ProjectsAgent; import json; print(json.dumps(ProjectsAgent().get_pending_tasks(), default=str))'"
+
+memory:
+  namespace: mycasa-projects
+  persist: true

@@ -1,0 +1,21 @@
+# MyCasa Pro Contractors Agent Definition
+# Manages service provider directory and recommendations
+
+name: mycasa-contractors
+type: specialist
+description: "MyCasa Pro contractors agent - service provider directory"
+
+capabilities:
+  - contractor-directory
+  - service-matching
+  - rating-tracking
+  - history-management
+
+commands:
+  status: "cd {workdir} && python3 -c 'from agents.contractors import ContractorsAgent; import json; print(json.dumps(ContractorsAgent().get_status(), default=str))'"
+  list: "cd {workdir} && python3 -c 'from agents.contractors import ContractorsAgent; import json; print(json.dumps(ContractorsAgent().get_contractors(), default=str))'"
+  tasks: "cd {workdir} && python3 -c 'from agents.contractors import ContractorsAgent; import json; print(json.dumps(ContractorsAgent().get_pending_tasks(), default=str))'"
+
+memory:
+  namespace: mycasa-contractors
+  persist: true

@@ -1,0 +1,16 @@
+{
+  "messages": [
+    {
+      "timestamp": "2026-01-29T11:15:30.047738",
+      "from": "security-manager",
+      "type": "security_incident",
+      "payload": {
+        "incident_id": "SEC-20260129111530",
+        "severity": "P1",
+        "summary": "Blocked message: Trusted contact cannot authorize workspace changes",
+        "requires_immediate_action": false
+      },
+      "processed": false
+    }
+  ]
+}

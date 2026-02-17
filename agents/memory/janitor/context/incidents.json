@@ -1,0 +1,95 @@
+{
+  "active": [],
+  "resolved": [
+    {
+      "id": "INC-20260128114335-0",
+      "summary": "Potential secret pattern 'password' found in memory",
+      "severity": "P0",
+      "finding": {
+        "type": "potential_secret_in_memory",
+        "severity": "P0",
+        "agent": "janitor",
+        "file": "/Users/chefmbororo/clawd/apps/mycasa-pro/agents/memory/janitor/MEMORY.md",
+        "pattern": "password",
+        "detail": "Potential secret pattern 'password' found in memory"
+      },
+      "created_at": "2026-01-28T11:43:35.216106",
+      "status": "resolved",
+      "remediation": "False positive - pattern found in detection documentation, not actual secrets",
+      "verification": "Manual review confirmed documentation context",
+      "resolved_at": "2026-01-28T12:20:00"
+    },
+    {
+      "id": "INC-20260128114335-1",
+      "summary": "Potential secret pattern 'api_key' found in memory",
+      "severity": "P0",
+      "finding": {
+        "type": "potential_secret_in_memory",
+        "severity": "P0",
+        "agent": "janitor",
+        "file": "/Users/chefmbororo/clawd/apps/mycasa-pro/agents/memory/janitor/MEMORY.md",
+        "pattern": "api_key",
+        "detail": "Potential secret pattern 'api_key' found in memory"
+      },
+      "created_at": "2026-01-28T11:43:35.217646",
+      "status": "resolved",
+      "remediation": "False positive - pattern found in detection documentation, not actual secrets",
+      "verification": "Manual review confirmed documentation context",
+      "resolved_at": "2026-01-28T12:20:00"
+    },
+    {
+      "id": "INC-20260128114335-2",
+      "summary": "Potential secret pattern 'secret' found in memory",
+      "severity": "P0",
+      "finding": {
+        "type": "potential_secret_in_memory",
+        "severity": "P0",
+        "agent": "janitor",
+        "file": "/Users/chefmbororo/clawd/apps/mycasa-pro/agents/memory/janitor/MEMORY.md",
+        "pattern": "secret",
+        "detail": "Potential secret pattern 'secret' found in memory"
+      },
+      "created_at": "2026-01-28T11:43:35.218752",
+      "status": "resolved",
+      "remediation": "False positive - pattern found in detection documentation, not actual secrets",
+      "verification": "Manual review confirmed documentation context",
+      "resolved_at": "2026-01-28T12:20:00"
+    },
+    {
+      "id": "INC-20260128114335-3",
+      "summary": "Potential secret pattern 'token' found in memory",
+      "severity": "P0",
+      "finding": {
+        "type": "potential_secret_in_memory",
+        "severity": "P0",
+        "agent": "janitor",
+        "file": "/Users/chefmbororo/clawd/apps/mycasa-pro/agents/memory/janitor/MEMORY.md",
+        "pattern": "token",
+        "detail": "Potential secret pattern 'token' found in memory"
+      },
+      "created_at": "2026-01-28T11:43:35.219841",
+      "status": "resolved",
+      "remediation": "False positive - pattern found in detection documentation, not actual secrets",
+      "verification": "Manual review confirmed documentation context",
+      "resolved_at": "2026-01-28T12:20:00"
+    },
+    {
+      "id": "INC-20260128114335-4",
+      "summary": "Potential secret pattern 'credential' found in memory",
+      "severity": "P0",
+      "finding": {
+        "type": "potential_secret_in_memory",
+        "severity": "P0",
+        "agent": "janitor",
+        "file": "/Users/chefmbororo/clawd/apps/mycasa-pro/agents/memory/janitor/MEMORY.md",
+        "pattern": "credential",
+        "detail": "Potential secret pattern 'credential' found in memory"
+      },
+      "created_at": "2026-01-28T11:43:35.220939",
+      "status": "resolved",
+      "remediation": "False positive - pattern found in detection documentation, not actual secrets",
+      "verification": "Manual review confirmed documentation context",
+      "resolved_at": "2026-01-28T12:20:00"
+    }
+  ]
+}

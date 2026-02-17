@@ -1,0 +1,14 @@
+{
+  "traces": {
+    "trace_20260128113500_9246": {
+      "insight": "Test insight",
+      "action": "Test action",
+      "source_agents": [
+        "maintenance"
+      ],
+      "started_at": "2026-01-28T11:35:00.520098",
+      "outcome": null,
+      "completed_at": null
+    }
+  }
+}

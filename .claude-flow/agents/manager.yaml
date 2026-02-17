@@ -1,0 +1,36 @@
+# MyCasa Pro Manager Agent Definition
+# The supervisory control agent that orchestrates all sub-agents
+
+name: mycasa-manager
+type: coordinator
+description: "MyCasa Pro orchestrator - coordinates all home management agents"
+
+capabilities:
+  - orchestration
+  - decision-support
+  - cross-domain-insights
+  - notification-batching
+  - learning-loop
+
+tools:
+  - name: mycasa-cli
+    command: "python3 -c 'from agents.manager import ManagerAgent; import json; m=ManagerAgent(); print(json.dumps({\"method\"}))'"
+  
+commands:
+  status: "cd {workdir} && python3 -c 'from agents.manager import ManagerAgent; import json; print(json.dumps(ManagerAgent().get_status(), default=str))'"
+  dashboard: "cd {workdir} && python3 -c 'from agents.manager import ManagerAgent; import json; print(json.dumps(ManagerAgent().get_dashboard_summary(), default=str))'"
+  tasks: "cd {workdir} && python3 -c 'from agents.manager import ManagerAgent; import json; print(json.dumps(ManagerAgent().get_pending_tasks(), default=str))'"
+  alerts: "cd {workdir} && python3 -c 'from agents.manager import ManagerAgent; import json; print(json.dumps(ManagerAgent().get_all_alerts(), default=str))'"
+  daily_check: "cd {workdir} && python3 -c 'from agents.manager import ManagerAgent; import json; print(json.dumps(ManagerAgent().run_daily_check(), default=str))'"
+
+memory:
+  namespace: mycasa-manager
+  persist: true
+  
+constraints:
+  auto_approve_cost: 100
+  require_confirmation:
+    - irreversible_action
+    - cost_above_threshold
+    - new_vendor
+    - long_term_commitment
