@@ -34,6 +34,9 @@ from config.settings import DEFAULT_TENANT_ID
 import nest_asyncio
 nest_asyncio.apply()
 
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from database import get_db
 from database.models import AgentLog, Notification
@@ -78,6 +81,8 @@ class BaseAgent(ABC):
         self.logger = logging.getLogger(f"mycasa.{name}")
         self.memory_dir = AGENTS_MEMORY_DIR / name
         self._secondbrain = None  # Lazy-loaded
+        self._identity = {}
+        self._identity_loaded = False
         self._ensure_memory_structure()
         
         # Initialize activity tracking
@@ -85,6 +90,34 @@ class BaseAgent(ABC):
         
         # Register cleanup function
         atexit.register(self._cleanup_activity_session)
+
+    async def prepare_for_session(self) -> Dict[str, Any]:
+        """
+        Load tenant identity package before any user-facing action.
+        This is the Galidima-style "wake up" ritual.
+        """
+        if self._identity_loaded:
+            return self._identity
+        try:
+            from core.tenant_identity import TenantIdentityManager, IdentityError
+            manager = TenantIdentityManager(self.tenant_id)
+            try:
+                self._identity = manager.load_identity_package()
+            except IdentityError as exc:
+                self.logger.warning(f"[{self.name}] Identity package missing: {exc}")
+                self._identity = {}
+        except Exception as exc:
+            self.logger.warning(f"[{self.name}] Failed to load identity package: {exc}")
+            self._identity = {}
+        self._identity_loaded = True
+        return self._identity
+
+    @staticmethod
+    def _truncate_identity(text: str, limit: int = 2000) -> str:
+        if not text:
+            return ""
+        text = text.strip()
+        return text if len(text) <= limit else text[:limit].rstrip() + "\n…"
     
     # ============ SECONDBRAIN INTEGRATION ============
     # Per SECONDBRAIN_INTEGRATION.md - all agent memory operations MUST go through SecondBrain
@@ -420,6 +453,7 @@ class BaseAgent(ABC):
             # Load agent identity (fast - file reads)
             soul = self.get_soul()
             memory = self.get_memory()
+            identity = await self.prepare_for_session()
 
             # Get agent system prompt
             from core.agent_prompts import get_agent_prompt, IDENTITY_GUARD
@@ -427,6 +461,26 @@ class BaseAgent(ABC):
             system_prompt = agent_prompt
             if soul:
                 system_prompt = f"{agent_prompt}\n\n## Identity\n{soul}"
+            # Inject tenant identity package
+            identity_blocks = []
+            if identity.get("soul"):
+                identity_blocks.append(f"## Tenant Soul\n{self._truncate_identity(identity['soul'])}")
+            if identity.get("user"):
+                identity_blocks.append(f"## User\n{self._truncate_identity(identity['user'])}")
+            if identity.get("security"):
+                identity_blocks.append(f"## Security Rules\n{self._truncate_identity(identity['security'])}")
+            if identity.get("tools"):
+                identity_blocks.append(f"## Tools & House Context\n{self._truncate_identity(identity['tools'])}")
+            if identity.get("memory"):
+                identity_blocks.append(f"## Long-Term Memory\n{self._truncate_identity(identity['memory'])}")
+            daily_notes = identity.get("daily_notes") or {}
+            if daily_notes:
+                preview = []
+                for day, content in sorted(daily_notes.items(), reverse=True):
+                    preview.append(f"### {day}\n{self._truncate_identity(content, 800)}")
+                identity_blocks.append("## Recent Daily Notes\n" + "\n".join(preview))
+            if identity_blocks:
+                system_prompt = f"{system_prompt}\n\n" + "\n\n".join(identity_blocks)
             developer_prompt = IDENTITY_GUARD.strip()
 
             # Recall relevant context from SecondBrain - with timeout
@@ -548,6 +602,8 @@ class BaseAgent(ABC):
                 from core.llm import AGENT_PERSONAS, _sanitize_identity_leak
                 persona = AGENT_PERSONAS.get(self.name, {"name": self.name, "role": "agent"})
                 response = _sanitize_identity_leak(response, persona)
+                from core.identity_security import redact_identity_snippets
+                response = redact_identity_snippets(response, identity)
             except Exception:
                 pass
 
@@ -654,16 +710,35 @@ class BaseAgent(ABC):
     
     # ============ LOGGING & NOTIFICATIONS ============
     
-    def log_action(self, action: str, details: str = None, status: str = "success"):
-        """Log an agent action to the database"""
-        with get_db() as db:
-            log = AgentLog(
-                agent=self.name,
-                action=action,
-                details=details,
-                status=status
-            )
-            db.add(log)
+    def log_action(self, action: str, details: str = None, status: str = "success", db: Optional[Session] = None):
+        """Log an agent action to the database (best-effort)."""
+        try:
+            if db is not None:
+                log = AgentLog(
+                    agent=self.name,
+                    action=action,
+                    details=details,
+                    status=status,
+                )
+                db.add(log)
+            else:
+                with get_db() as session:
+                    log = AgentLog(
+                        agent=self.name,
+                        action=action,
+                        details=details,
+                        status=status,
+                    )
+                    session.add(log)
+        except OperationalError as exc:
+            # SQLite can be locked briefly under concurrent writes; skip logging to avoid breaking workflows.
+            if "database is locked" in str(exc).lower():
+                self.logger.warning(f"[{self.name}] log_action skipped (db locked)")
+                return
+            raise
+        except Exception as exc:
+            self.logger.warning(f"[{self.name}] log_action failed: {exc}")
+            return
         self.logger.info(f"[{self.name}] {action}: {status}")
     
     def create_notification(
@@ -675,17 +750,26 @@ class BaseAgent(ABC):
         action_url: str = None,
         action_label: str = None
     ):
-        """Create a system notification"""
-        with get_db() as db:
-            notification = Notification(
-                title=title,
-                message=message,
-                category=category or self.name,
-                priority=priority,
-                action_url=action_url,
-                action_label=action_label
-            )
-            db.add(notification)
+        """Create a system notification (best-effort)."""
+        try:
+            with get_db() as db:
+                notification = Notification(
+                    title=title,
+                    message=message,
+                    category=category or self.name,
+                    priority=priority,
+                    action_url=action_url,
+                    action_label=action_label,
+                )
+                db.add(notification)
+        except OperationalError as exc:
+            if "database is locked" in str(exc).lower():
+                self.logger.warning(f"[{self.name}] notification skipped (db locked)")
+                return
+            raise
+        except Exception as exc:
+            self.logger.warning(f"[{self.name}] notification failed: {exc}")
+            return
         self.logger.info(f"[{self.name}] Notification: {title}")
     
     def get_recent_logs(self, limit: int = 10) -> List[Dict[str, Any]]:

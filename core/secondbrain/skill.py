@@ -26,6 +26,9 @@ from .exceptions import (
 from .embeddings import get_index
 
 
+from config.settings import get_vault_path, VAULT_BASE as DEFAULT_VAULT_BASE
+
+
 class SecondBrain:
     """
     SecondBrain Skill for MyCasa Pro agents.
@@ -34,7 +37,7 @@ class SecondBrain:
     Integrates with ENSUE API for indexing and retrieval.
     """
     
-    VAULT_BASE = Path.home() / "moltbot" / "vaults"
+    VAULT_BASE = DEFAULT_VAULT_BASE
     ENSUE_SCRIPT = Path.home() / "clawd" / "skills" / "second-brain" / "scripts" / "ensue-api.sh"
     
     def __init__(
@@ -52,11 +55,7 @@ class SecondBrain:
                 agent = None  # Invalid agent name, use default
         self.default_agent = agent
         self.correlation_id = correlation_id or self._generate_correlation_id()
-        self.vault_path = self.VAULT_BASE / tenant_id / "secondbrain"
-        
-        # Ensure vault exists
-        if not self.vault_path.exists():
-            raise SecondBrainError(f"Vault not found: {self.vault_path}")
+        self.vault_path = get_vault_path(tenant_id)
         
         # Daily sequence counter (in-memory, reset on new day)
         self._sequence_date = date.today()

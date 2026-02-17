@@ -13,15 +13,22 @@ if [ -f ".env" ]; then
     set +a
 fi
 
-# Resolve Python binary
-PYTHON_BIN="python3.11"
-if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+# Resolve Python binary (prefer venv, then 3.11+)
+PYTHON_BIN=""
+if [ -x ".venv/bin/python" ]; then
+    PYTHON_BIN=".venv/bin/python"
+elif [ -x "venv/bin/python" ]; then
+    PYTHON_BIN="venv/bin/python"
+elif command -v python3.11 >/dev/null 2>&1; then
+    PYTHON_BIN="python3.11"
+elif command -v python3.12 >/dev/null 2>&1; then
+    PYTHON_BIN="python3.12"
+elif command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN="python3"
-fi
-if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+elif command -v python >/dev/null 2>&1; then
     PYTHON_BIN="python"
 fi
-if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+if [ -z "$PYTHON_BIN" ]; then
     echo "❌ Python not found. Install Python 3.11+ and try again."
     exit 1
 fi
@@ -51,6 +58,7 @@ BIND_HOST="${MYCASA_BIND_HOST:-127.0.0.1}"
 API_PORT="${MYCASA_API_PORT:-6709}"
 UI_PORT="${MYCASA_UI_PORT:-3000}"
 PUBLIC_HOST="${MYCASA_PUBLIC_HOST:-127.0.0.1}"
+MYCASA_PERSONAL_MODE="${MYCASA_PERSONAL_MODE:-1}"
 
 # Guardrail: if binding to localhost, force PUBLIC_HOST to localhost
 if [ "$BIND_HOST" != "0.0.0.0" ] && [ "$PUBLIC_HOST" != "127.0.0.1" ] && [ "$PUBLIC_HOST" != "localhost" ]; then
@@ -96,22 +104,20 @@ if [ -z "$MYCASA_DATA_DIR" ]; then
     fi
 fi
 
-# Activate venv if present (preferred)
-if [ -d ".venv" ]; then
-    source .venv/bin/activate
-elif [ -d "venv" ]; then
-    source venv/bin/activate
-fi
-
 # Install backend deps if needed
 if ! "$PYTHON_BIN" -c "import fastapi" 2>/dev/null; then
     echo -e "${BLUE}Installing backend dependencies...${NC}"
-    "$PYTHON_BIN" -m pip install -r requirements.txt -q
+    "$PYTHON_BIN" -m pip install -r requirements.txt
+fi
+if ! "$PYTHON_BIN" -c "import fastapi, uvicorn" 2>/dev/null; then
+    echo "❌ Backend dependencies failed to install. Fix Python/pip and retry."
+    exit 1
 fi
 
 # Start Backend API (new unified backend)
 echo -e "${BLUE}Starting Backend API (port ${API_PORT})...${NC}"
 export MYCASA_DATA_DIR="${DATA_DIR}"
+export MYCASA_PERSONAL_MODE="${MYCASA_PERSONAL_MODE}"
 export MYCASA_DATABASE_URL="${MYCASA_DATABASE_URL:-sqlite:///$DATA_DIR/mycasa.db}"
 export MYCASA_LOG_FILE="${MYCASA_LOG_FILE:-$DATA_DIR/logs/mycasa.log}"
 export DATABASE_URL="${DATABASE_URL:-$MYCASA_DATABASE_URL}"
@@ -127,7 +133,8 @@ sleep 3
 if curl -s "http://${PUBLIC_HOST}:${API_PORT}/health" > /dev/null 2>&1; then
     echo -e "${GREEN}✓ API is running${NC}"
 else
-    echo -e "${YELLOW}⚠ API may still be starting...${NC}"
+    echo -e "${YELLOW}⚠ API did not respond on /health${NC}"
+    echo -e "${YELLOW}Check: tail -f /tmp/mycasa-api.log${NC}"
 fi
 
 # Start Frontend UI

@@ -6,7 +6,7 @@ import { Providers } from "./providers";
 
 export const metadata = {
   title: "MyCasa Pro",
-  description: "AI-Driven Home Operating System",
+  description: "Home Operating System",
 };
 
 export default function RootLayout({

@@ -24,6 +24,7 @@ import json
 import sys
 from dotenv import load_dotenv
 import os
+import httpx
 
 # Load environment variables from .env file for API key
 load_dotenv()
@@ -38,6 +39,8 @@ from agents.manager import ManagerAgent
 from agents.janitor import JanitorAgent
 from agents.security_manager import SecurityManagerAgent
 from agents.mail_skill import MailSkillAgent
+from agents.scheduler import get_scheduler, ScheduleFrequency
+from agents.heartbeat_checker import HouseholdHeartbeatChecker
 from core.system_state import get_state_manager
 from api.routes.secondbrain import router as secondbrain_router
 from api.routes.settings import router as settings_router
@@ -221,6 +224,48 @@ def get_mail_skill() -> MailSkillAgent:
     return _mail_skill
 
 
+def _ensure_scheduler_job(scheduler, name: str, **kwargs):
+    if any(job.name == name for job in scheduler.jobs.values()):
+        return
+    scheduler.create_job(name=name, **kwargs)
+
+
+async def _run_scheduled_agent(agent: str, task: str, config: Optional[Dict[str, Any]] = None):
+    config = config or {}
+    manager = get_manager()
+
+    if config.get("endpoint"):
+        base_url = get_config().API_BASE_URL.rstrip("/")
+        url = f"{base_url}{config['endpoint']}"
+        async with httpx.AsyncClient(timeout=15) as client:
+            res = await client.post(url)
+            res.raise_for_status()
+            return res.json()
+
+    action = config.get("action") or agent
+    if action in {"heartbeat", "household_heartbeat"}:
+        checker = HouseholdHeartbeatChecker(manager.tenant_id)
+        result = await checker.run_heartbeat()
+        return result.to_dict()
+    if action == "memory_consolidation":
+        checker = HouseholdHeartbeatChecker(manager.tenant_id)
+        return await checker.run_memory_consolidation()
+
+    alias_map = {
+        "security": "security_manager",
+        "backup": "backup_recovery",
+        "mail": "mail_skill",
+    }
+    attr = alias_map.get(agent, agent)
+    agent_obj = manager if agent == "manager" else getattr(manager, attr, None)
+    if agent_obj and hasattr(agent_obj, "chat"):
+        return await agent_obj.chat(task, context={"source": "scheduler"})
+    if agent_obj and hasattr(agent_obj, "get_status"):
+        return agent_obj.get_status()
+
+    return await manager.chat(task, context={"source": "scheduler"})
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
@@ -240,6 +285,34 @@ async def lifespan(app: FastAPI):
         state_mgr.startup()
     except Exception:
         pass
+
+    # Start scheduler with real agent runner + default heartbeat jobs
+    try:
+        scheduler = get_scheduler()
+        scheduler.agent_runner = _run_scheduled_agent
+        _ensure_scheduler_job(
+            scheduler,
+            name="Household Heartbeat",
+            agent="heartbeat",
+            task="Run household heartbeat checks and record findings.",
+            frequency=ScheduleFrequency.HOURLY,
+            description="Proactive checks for inbox, calendar, bills, maintenance, security.",
+            minute=5,
+        )
+        _ensure_scheduler_job(
+            scheduler,
+            name="Memory Consolidation",
+            agent="heartbeat",
+            task="Consolidate recent daily notes into MEMORY.md.",
+            frequency=ScheduleFrequency.DAILY,
+            description="Append recent daily notes into long-term memory.",
+            hour=2,
+            minute=15,
+            config={"action": "memory_consolidation"},
+        )
+        scheduler.start()
+    except Exception as exc:
+        print(f"[API] Scheduler init failed: {exc}")
     
     await event_broker.emit("system", {"status": "api_started"})
     
@@ -367,12 +440,14 @@ from api.routes.agent_chat import router as agent_chat_router
 from api.routes.para import router as para_router
 from api.routes.daily_notes import router as daily_notes_router
 from api.routes.heartbeat import router as heartbeat_router
+from api.routes.identity import router as identity_router
 app.include_router(reminders_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
 app.include_router(agent_chat_router, prefix="/api")
 app.include_router(para_router, prefix="/api")
 app.include_router(daily_notes_router, prefix="/api")
 app.include_router(heartbeat_router, prefix="/api")
+app.include_router(identity_router, prefix="/api")
 app.include_router(agent_context_router, prefix="/api")
 
 # Edge Lab routes (financial prediction system)
@@ -701,6 +776,30 @@ async def complete_task(task_id: int, evidence: Optional[str] = None, background
         background_tasks.add_task(
             event_broker.emit,
             "task_completed",
+            {"task_id": task_id}
+        )
+    
+    return result
+
+
+@app.delete("/tasks/{task_id}", tags=["Tasks"])
+async def delete_task(task_id: int, background_tasks: BackgroundTasks = None):
+    """Delete a maintenance task"""
+    manager = get_manager()
+    maintenance = manager.maintenance
+    
+    if not maintenance:
+        raise HTTPException(status_code=503, detail="Maintenance agent not available")
+    
+    result = maintenance.remove_task(task_id)
+    
+    if not result or result.get("error"):
+        raise HTTPException(status_code=404, detail=result.get("error", "Task not found"))
+    
+    if background_tasks:
+        background_tasks.add_task(
+            event_broker.emit,
+            "task_deleted",
             {"task_id": task_id}
         )
     

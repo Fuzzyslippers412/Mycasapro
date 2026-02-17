@@ -14,7 +14,8 @@ class GmailConnector:
     """Gmail connector using gog CLI"""
     
     def __init__(self):
-        self.account = "tfamsec@gmail.com"
+        import os
+        self.account = os.getenv("MYCASA_GMAIL_ACCOUNT", "")
         self._status = ConnectorStatus.STUB
         self._check_availability()
     

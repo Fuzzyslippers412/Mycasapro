@@ -81,7 +81,7 @@ const theme = createTheme({
 
 ### Message Sources
 - **WhatsApp**: Via wacli sync (manual trigger)
-- **Gmail**: Via gog CLI (tfamsec@gmail.com)
+- **Gmail**: Via gog CLI (your@gmail.com)
 
 ### Message Status Styling (Fixed 2026-01-28)
 

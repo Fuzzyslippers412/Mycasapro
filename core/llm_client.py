@@ -860,10 +860,27 @@ def _resolve_settings_llm_config() -> dict:
             oauth = getattr(system, "llm_oauth", None) or {}
             config["auth_type"] = "qwen-oauth"
             config["provider"] = "openai-compatible"
+            current_model = getattr(system, "llm_model", None) or ""
             if oauth.get("resource_url"):
-                config["base_url"] = oauth.get("resource_url")
+                try:
+                    from core.qwen_oauth import _normalize_resource_url, DEFAULT_QWEN_RESOURCE_URL
+                    normalized = _normalize_resource_url(oauth.get("resource_url") or DEFAULT_QWEN_RESOURCE_URL)
+                    if normalized != oauth.get("resource_url"):
+                        oauth["resource_url"] = normalized
+                        settings.system.llm_oauth = oauth
+                        settings.system.llm_base_url = normalized
+                        get_settings_store().save(settings)
+                    config["base_url"] = normalized
+                except Exception:
+                    config["base_url"] = oauth.get("resource_url")
             if oauth.get("access_token"):
                 config["api_key"] = oauth.get("access_token")
+            if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b"}:
+                settings.system.llm_model = "qwen-plus"
+                try:
+                    get_settings_store().save(settings)
+                except Exception:
+                    pass
         if auth_type != "qwen-oauth":
             if getattr(system, "llm_provider", None):
                 config["provider"] = system.llm_provider
@@ -884,6 +901,12 @@ def _resolve_settings_llm_config() -> dict:
 def get_llm_client() -> LLMClient:
     """Get or create global LLM client instance."""
     global _llm_client
+    try:
+        # Ensure settings reloads if changed and resets the client if needed
+        from core.settings_typed import get_settings_store
+        get_settings_store().get()
+    except Exception:
+        pass
     if _llm_client is None:
         settings_config = _resolve_settings_llm_config()
         auth_type = settings_config.get("auth_type")
@@ -912,6 +935,8 @@ def get_llm_client() -> LLMClient:
             base_url = settings_config.get("base_url")
             model = settings_config.get("model")
             api_key = settings_config.get("api_key")
+            if model in {None, "", "qwen2.5-72b-instruct", "qwen2.5-72b"}:
+                model = "qwen-plus"
         else:
             provider = os.getenv("LLM_PROVIDER") or settings_config.get("provider")
             base_url = os.getenv("LLM_BASE_URL") or settings_config.get("base_url")

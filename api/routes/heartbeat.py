@@ -8,16 +8,18 @@ Endpoints for managing memory heartbeat and decay.
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from pathlib import Path
 
 from core.secondbrain import MemoryHeartbeat
+from config.settings import get_vault_path, DEFAULT_TENANT_ID
+from core.tenant_identity import TenantIdentityManager
+from agents.heartbeat_checker import HouseholdHeartbeatChecker
 
 router = APIRouter(prefix="/heartbeat", tags=["heartbeat"])
 
 
 def get_memory_base() -> Path:
     """Get memory base path"""
-    return Path.home() / "clawd" / "apps" / "mycasa-pro" / "memory"
+    return get_vault_path(DEFAULT_TENANT_ID)
 
 
 @router.post("/run")
@@ -93,6 +95,42 @@ async def get_heartbeat_status():
         return {
             "last_run": log.get("last_run"),
             "run_history": log.get("runs", [])[-10:],  # Last 10 runs
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/household/run")
+async def run_household_heartbeat():
+    """Run household heartbeat checks (inbox, calendar, bills, maintenance, security)."""
+    try:
+        checker = HouseholdHeartbeatChecker(DEFAULT_TENANT_ID)
+        result = await checker.run_heartbeat()
+        return result.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/household/consolidate")
+async def run_household_consolidation():
+    """Run memory consolidation for household identity files."""
+    try:
+        checker = HouseholdHeartbeatChecker(DEFAULT_TENANT_ID)
+        return await checker.run_memory_consolidation()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/household/status")
+async def get_household_heartbeat_status():
+    """Get household heartbeat state and last consolidation timestamp."""
+    try:
+        manager = TenantIdentityManager(DEFAULT_TENANT_ID)
+        identity = manager.load_identity_package()
+        return {
+            "tenant_id": DEFAULT_TENANT_ID,
+            "heartbeat_state": identity.get("heartbeat_state"),
+            "last_consolidation": identity.get("heartbeat_state", {}).get("lastConsolidation"),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

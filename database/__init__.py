@@ -15,7 +15,11 @@ from database.models import Base
 DATA_DIR.mkdir(exist_ok=True)
 
 # Create engine
-engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    connect_args={"check_same_thread": False, "timeout": 30},
+)
 
 # Create session factory
 

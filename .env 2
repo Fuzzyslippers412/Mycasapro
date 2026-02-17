@@ -1,0 +1,166 @@
+# MyCasa Pro Environment Variables
+# Copy this file to .env and fill in your values
+
+# ============ TENANT CONFIGURATION ============
+# Unique identifier for this household/tenant (for multi-tenant deployments)
+MYCASA_TENANT_ID=default-tenant
+
+# ============ DEPLOYMENT ============
+# Environment: development, staging, production
+MYCASA_ENVIRONMENT=development
+
+# URLs
+MYCASA_API_BASE_URL=http://127.0.0.1:6710
+MYCASA_FRONTEND_URL=http://localhost:3000
+
+# Ports
+MYCASA_BACKEND_PORT=6710
+MYCASA_FRONTEND_PORT=3000
+
+# ============ DATABASE ============
+# SQLite (default - no config needed for development)
+MYCASA_DATABASE_URL=sqlite:///data/mycasa.db
+
+# PostgreSQL (recommended for production)
+# MYCASA_DATABASE_URL=postgresql://user:password@localhost:5432/mycasa
+
+# ============ SECURITY ============
+# Secret key for JWT tokens and encryption (CHANGE IN PRODUCTION!)
+MYCASA_SECRET_KEY=change-me-in-production-use-strong-random-key
+
+# JWT token expiration (in minutes)
+MYCASA_JWT_EXPIRATION=60
+
+# JWT refresh token expiration (in days)
+MYCASA_JWT_REFRESH_EXPIRATION=30
+
+# CORS origins (comma-separated)
+MYCASA_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+# ============ API KEYS ============
+# Required for AI features
+ANTHROPIC_API_KEY=your-anthropic-key-here
+
+# Optional: OpenAI (for alternative LLM)
+# OPENAI_API_KEY=your-openai-key-here
+
+# Optional: ElevenLabs for TTS
+# ELEVENLABS_API_KEY=your-elevenlabs-key-here
+
+# ============ GMAIL CONNECTOR ============
+# OAuth credentials (from Google Cloud Console)
+# GMAIL_CLIENT_ID=your-client-id.apps.googleusercontent.com
+# GMAIL_CLIENT_SECRET=your-client-secret
+# GMAIL_REDIRECT_URI=http://localhost:8000/oauth/gmail/callback
+
+# Gmail API scopes (default: readonly)
+# GMAIL_SCOPES=https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send
+
+# ============ CALENDAR CONNECTOR ============
+# Uses same Google OAuth credentials as Gmail
+# CALENDAR_CLIENT_ID=your-client-id.apps.googleusercontent.com
+# CALENDAR_CLIENT_SECRET=your-client-secret
+# CALENDAR_REDIRECT_URI=http://localhost:8000/oauth/calendar/callback
+
+# ============ WHATSAPP CONNECTOR ============
+# Uses wacli for WhatsApp integration
+# WACLI_DATA_DIR=~/.wacli
+
+# ============ BANK CONNECTOR ============
+# Supported import formats: CSV, OFX, QFX
+MYCASA_BANK_IMPORT_MAX_SIZE_MB=10
+
+# Auto-categorization with AI
+MYCASA_BANK_AUTO_CATEGORIZE=true
+
+# ============ FEATURES ============
+# Enable/disable optional features
+
+# WebSocket real-time updates
+MYCASA_ENABLE_WEBSOCKET=true
+
+# Semantic search with embeddings
+MYCASA_ENABLE_SEMANTIC_SEARCH=true
+
+# Embedding model (sentence-transformers)
+MYCASA_EMBEDDING_MODEL=all-MiniLM-L6-v2
+
+# Agent coordination and scheduling
+MYCASA_ENABLE_AGENTS=true
+
+# SecondBrain knowledge management
+MYCASA_ENABLE_SECONDBRAIN=true
+
+# ============ SYSTEM SETTINGS ============
+# Monthly cost cap for AI API calls (default: $1000)
+MYCASA_MONTHLY_COST_CAP=1000
+
+# Log level: DEBUG, INFO, WARNING, ERROR
+MYCASA_LOG_LEVEL=INFO
+
+# Log file path
+MYCASA_LOG_FILE=logs/mycasa.log
+
+# Enable debug mode (shows detailed errors - DO NOT USE IN PRODUCTION)
+MYCASA_DEBUG=false
+
+# ============ PERFORMANCE ============
+# Database connection pool size
+MYCASA_DB_POOL_SIZE=5
+
+# Max overflow connections
+MYCASA_DB_MAX_OVERFLOW=10
+
+# Cache TTL (seconds)
+MYCASA_CACHE_TTL=300
+
+# Enable caching
+MYCASA_ENABLE_CACHE=true
+
+# ============ AGENT CONFIGURATION ============
+# Default LLM model for agents
+MYCASA_DEFAULT_MODEL=claude-opus-4-5
+
+# Agent response timeout (seconds)
+MYCASA_AGENT_TIMEOUT=60
+
+# Max concurrent agent operations
+MYCASA_MAX_CONCURRENT_AGENTS=5
+
+# ============ NOTIFICATIONS ============
+# Email notifications (requires SMTP configuration)
+MYCASA_ENABLE_EMAIL_NOTIFICATIONS=false
+MYCASA_SMTP_HOST=smtp.gmail.com
+MYCASA_SMTP_PORT=587
+MYCASA_SMTP_USERNAME=your-email@gmail.com
+MYCASA_SMTP_PASSWORD=your-app-password
+MYCASA_SMTP_FROM=noreply@mycasa.local
+
+# ============ BACKUP & RECOVERY ============
+# Automatic backup frequency: hourly, daily, weekly
+MYCASA_BACKUP_FREQUENCY=daily
+
+# Backup retention (days)
+MYCASA_BACKUP_RETENTION_DAYS=30
+
+# Backup storage path
+MYCASA_BACKUP_PATH=backups/
+
+# ============ DEVELOPMENT (Only for dev environment) ============
+# Enable debug toolbar
+MYCASA_DEBUG_TOOLBAR=false
+
+# Reload on file changes
+MYCASA_AUTO_RELOAD=true
+
+# Detailed SQL logging
+MYCASA_SQL_ECHO=false
+
+# ============ TESTING (Only for test environment) ============
+# Use in-memory database for tests
+MYCASA_TEST_DATABASE_URL=sqlite:///:memory:
+
+# Disable external API calls in tests
+MYCASA_TEST_MOCK_APIS=true
+MYCASA_BIND_HOST=127.0.0.1
+MYCASA_PUBLIC_HOST=127.0.0.1

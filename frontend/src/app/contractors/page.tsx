@@ -207,8 +207,8 @@ export default function ContractorsPage() {
           </Group>
         }
       >
-      <Stack gap="md">
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+      <Stack gap="md" className="contractors-page">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} className="contractors-stats">
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Contractors</Text>
             <Text size="xl" fw={700} mt={4}>{contractors.length}</Text>
@@ -249,8 +249,8 @@ export default function ContractorsPage() {
             </Box>
           </Card>
         ) : (
-          <Tabs defaultValue="contractors">
-            <Tabs.List mb="md">
+          <Tabs defaultValue="contractors" className="contractors-tabs">
+            <Tabs.List mb="md" className="contractors-tabs-list">
               <Tabs.Tab value="contractors" leftSection={<IconUsers size={16} />}>
                 Contractors ({contractors.length})
               </Tabs.Tab>
@@ -271,7 +271,7 @@ export default function ContractorsPage() {
                   </Box>
                 </Card>
               ) : (
-                <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+                <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} className="contractors-grid">
                   {contractors.map(contractor => (
                     <Card key={contractor.id} withBorder p="lg" radius="md">
                       <Group justify="space-between" mb="sm">
@@ -380,7 +380,7 @@ export default function ContractorsPage() {
                   </Box>
                 </Card>
               ) : (
-                <Stack gap="md">
+                <Stack gap="md" className="contractors-jobs">
                   {/* Active Jobs */}
                   {activeJobs.length > 0 && (
                     <>

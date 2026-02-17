@@ -5,6 +5,7 @@ import type { ElementType } from "react";
 import { useRouter } from "next/navigation";
 import { Shell } from "@/components/layout/Shell";
 import { Page } from "@/components/layout/Page";
+import { GlobalChat } from "@/components/GlobalChat";
 import {
   Alert,
   Avatar,
@@ -13,6 +14,7 @@ import {
   Button,
   Card,
   Center,
+  Divider,
   Group,
   ScrollArea,
   SimpleGrid,
@@ -58,6 +60,8 @@ function StatusHeader({
   pendingTasks,
   unreadMessages,
   portfolioChange,
+  heartbeat,
+  identity,
   loading,
   isOnline,
   janitorRun,
@@ -71,6 +75,8 @@ function StatusHeader({
   pendingTasks: number | null;
   unreadMessages: number | null;
   portfolioChange: number | null;
+  heartbeat: { open_findings?: number; last_run?: string | null; error?: string } | null;
+  identity: { ready?: boolean; missing_required?: string[]; error?: string } | null;
   loading: boolean;
   isOnline: boolean;
   janitorRun: { health_score: number; findings_count: number; status: string; timestamp: string } | null;
@@ -119,13 +125,23 @@ function StatusHeader({
     : janitorError
       ? "Janitor unavailable"
       : janitorRun
-        ? `Janitor ${janitorRun.health_score}% • ${janitorRun.findings_count} findings`
+        ? `Janitor ${janitorRun.health_score}% / ${janitorRun.findings_count} findings`
         : "Janitor not run";
 
   const portfolioLabel =
     portfolioChange === null
       ? "Portfolio change unavailable"
       : `Portfolio ${portfolioChange >= 0 ? "+" : ""}${portfolioChange.toFixed(1)}%`;
+  const heartbeatLabel = heartbeat?.error
+    ? "Heartbeat unavailable"
+    : typeof heartbeat?.open_findings === "number"
+      ? `${heartbeat.open_findings} heartbeat findings`
+      : "Heartbeat not run";
+  const identityLabel = identity?.error
+    ? "Identity unavailable"
+    : identity?.ready
+      ? "Identity ready"
+      : "Identity incomplete";
 
   const MetricItem = ({ icon: Icon, text }: { icon: ElementType; text: string }) => (
     <Group gap={6} wrap="nowrap">
@@ -178,6 +194,8 @@ function StatusHeader({
                 />
                 <MetricItem icon={IconActivity} text={portfolioLabel} />
                 <MetricItem icon={IconSparkles} text={janitorLabel} />
+                <MetricItem icon={IconClock} text={heartbeatLabel} />
+                <MetricItem icon={IconShieldLock} text={identityLabel} />
               </>
             )}
           </Group>
@@ -679,8 +697,8 @@ export default function HomePage() {
 
   return (
     <Shell>
-      <Page title="Dashboard" subtitle="Your AI-powered home operating system">
-        <Stack gap="lg" pb={100}>
+      <Page title="Dashboard" subtitle="Home operations, organized" fullWidth>
+        <Stack gap="lg" pb={100} className="dashboard-stack">
           {error && (
             <Alert icon={<IconAlertCircle size={16} />} title="Connection Error" color="red" radius="md">
               <Group justify="space-between" align="center" wrap="wrap">
@@ -722,139 +740,152 @@ export default function HomePage() {
             </Alert>
           )}
 
-          <StatusHeader
-            userName={user?.display_name || user?.username || "there"}
-            pendingTasks={pendingTaskCount}
-            unreadMessages={unreadMessageCount}
-            portfolioChange={portfolioChange}
-            loading={loading || portfolioLoading}
-            isOnline={isOnline}
-            janitorRun={janitorRun}
-            janitorLoading={janitorLoading}
-            janitorError={janitorError}
-            onAddTask={() => router.push("/maintenance")}
-            onInbox={() => router.push("/inbox")}
-            onJanitor={() => router.push("/janitor")}
-          />
+          <Box className="dashboard-book">
+            <Stack gap="lg" className="dashboard-page">
+              <StatusHeader
+                userName={user?.display_name || user?.username || "there"}
+                pendingTasks={pendingTaskCount}
+                unreadMessages={unreadMessageCount}
+                portfolioChange={portfolioChange}
+                heartbeat={statusData?.facts?.heartbeat || null}
+                identity={statusData?.facts?.identity || null}
+                loading={loading || portfolioLoading}
+                isOnline={isOnline}
+                janitorRun={janitorRun}
+                janitorLoading={janitorLoading}
+                janitorError={janitorError}
+                onAddTask={() => router.push("/maintenance")}
+                onInbox={() => router.push("/inbox")}
+                onJanitor={() => router.push("/janitor")}
+              />
+              <Box className="dashboard-chat-slot">
+                <GlobalChat mode="embedded" />
+              </Box>
+            </Stack>
 
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
-            <KpiCard
-              title="Open Tasks"
-              value={loading ? "..." : pendingTaskCount === null ? "—" : String(pendingTaskCount)}
-              subtitle={
-                tasksError
-                  ? "Unavailable"
-                  : `${tasks?.filter((t: any) => t.priority === "high")?.length || 0} high priority`
-              }
-              icon={IconChecklist}
-              color="primary"
-              loading={loading}
-              onClick={() => router.push("/maintenance")}
-            />
-            <KpiCard
-              title="Upcoming Bills"
-              value={
-                loading
-                  ? "..."
-                  : upcomingBillsTotal === null
-                    ? "—"
-                    : `$${upcomingBillsTotal.toLocaleString()}`
-              }
-              subtitle={billsError ? "Unavailable" : `${bills?.length || 0} bills due`}
-              icon={IconWallet}
-              color="warning"
-              loading={loading}
-              onClick={() => router.push("/finance")}
-            />
-            <KpiCard
-              title="Unread Messages"
-              value={loading ? "..." : unreadMessageCount === null ? "—" : String(unreadMessageCount)}
-              subtitle={
-                unreadError
-                  ? "Unavailable"
-                  : `${unreadCount?.gmail || 0} Gmail, ${unreadCount?.whatsapp || 0} WhatsApp`
-              }
-              icon={IconInbox}
-              color="info"
-              loading={loading}
-              onClick={() => router.push("/inbox")}
-            />
-            <KpiCard
-              title="System Health"
-              value={loading ? "..." : statusError ? "—" : `${onlineAgents}/${agentList.length}`}
-              subtitle={
-                statusError
-                  ? "Offline"
-                  : onlineAgents === agentList.length
-                    ? "All agents ready"
-                    : "Some agents idle"
-              }
-              icon={IconShieldLock}
-              color="success"
-              loading={loading}
-              onClick={() => router.push("/system")}
-            />
-          </SimpleGrid>
+            <Stack gap="lg" className="dashboard-page">
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+                <KpiCard
+                  title="Open Tasks"
+                  value={loading ? "..." : pendingTaskCount === null ? "N/A" : String(pendingTaskCount)}
+                  subtitle={
+                    tasksError
+                      ? "Unavailable"
+                      : `${tasks?.filter((t: any) => t.priority === "high")?.length || 0} high priority`
+                  }
+                  icon={IconChecklist}
+                  color="primary"
+                  loading={loading}
+                  onClick={() => router.push("/maintenance")}
+                />
+                <KpiCard
+                  title="Upcoming Bills"
+                  value={
+                    loading
+                      ? "..."
+                      : upcomingBillsTotal === null
+                        ? "N/A"
+                        : `$${upcomingBillsTotal.toLocaleString()}`
+                  }
+                  subtitle={billsError ? "Unavailable" : `${bills?.length || 0} bills due`}
+                  icon={IconWallet}
+                  color="warning"
+                  loading={loading}
+                  onClick={() => router.push("/finance")}
+                />
+                <KpiCard
+                  title="Unread Messages"
+                  value={loading ? "..." : unreadMessageCount === null ? "N/A" : String(unreadMessageCount)}
+                  subtitle={
+                    unreadError
+                      ? "Unavailable"
+                      : `${unreadCount?.gmail || 0} Gmail, ${unreadCount?.whatsapp || 0} WhatsApp`
+                  }
+                  icon={IconInbox}
+                  color="info"
+                  loading={loading}
+                  onClick={() => router.push("/inbox")}
+                />
+                <KpiCard
+                  title="System Health"
+                  value={loading ? "..." : statusError ? "N/A" : `${onlineAgents}/${agentList.length}`}
+                  subtitle={
+                    statusError
+                      ? "Offline"
+                      : onlineAgents === agentList.length
+                        ? "All agents ready"
+                        : "Some agents idle"
+                  }
+                  icon={IconShieldLock}
+                  color="success"
+                  loading={loading}
+                  onClick={() => router.push("/system")}
+                />
+              </SimpleGrid>
 
-          <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
-            <Card radius="md" withBorder padding="md">
-              <Group justify="space-between" mb="md">
-                <Group gap="xs">
-                  <ThemeIcon variant="light" color="primary" size="sm" radius="md">
-                    <IconRobot size={14} />
-                  </ThemeIcon>
-                  <Text fw={600} size="sm">
-                    AI Agents
-                  </Text>
-                </Group>
-                <Group gap="xs">
-                  <Badge
-                    variant="light"
-                    color={onlineAgents === agentList.length ? "success" : "warning"}
-                  >
-                    {onlineAgents}/{agentList.length} active
-                  </Badge>
-                  <Button
-                    variant="subtle"
-                    size="xs"
-                    leftSection={<IconSettings size={14} />}
-                    onClick={() => router.push("/settings")}
-                  >
-                    Manage
-                  </Button>
-                </Group>
-              </Group>
+              <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
+                <Card radius="md" withBorder padding="md">
+                  <Group justify="space-between" mb="md">
+                    <Group gap="xs">
+                      <ThemeIcon variant="light" color="primary" size="sm" radius="md">
+                        <IconRobot size={14} />
+                      </ThemeIcon>
+                      <Text fw={600} size="sm">
+                        Agents
+                      </Text>
+                    </Group>
+                    <Group gap="xs">
+                      <Badge
+                        variant="light"
+                        color={onlineAgents === agentList.length ? "success" : "warning"}
+                      >
+                        {onlineAgents}/{agentList.length} active
+                      </Badge>
+                      <Button
+                        variant="subtle"
+                        size="xs"
+                        leftSection={<IconSettings size={14} />}
+                        onClick={() => router.push("/settings")}
+                      >
+                        Manage
+                      </Button>
+                    </Group>
+                  </Group>
 
-              {loading ? (
-                <Stack gap="sm">
-                  {[1, 2, 3, 4].map((i) => (
-                    <Skeleton key={i} height={64} radius="md" />
-                  ))}
-                </Stack>
-              ) : agentList.length === 0 ? (
-                <Box py="xl" style={{ textAlign: "center" }}>
-                  <IconRobot size={40} stroke={1.5} style={{ color: "var(--mantine-color-dimmed)" }} />
-                  <Text c="dimmed" mt="sm" size="sm">
-                    No agents configured
-                  </Text>
-                </Box>
-              ) : (
-                <Stack gap="sm">
-                  {agentList.map((agent) => (
-                    <AgentCard key={agent.id} agent={agent} onClick={() => router.push("/settings")} />
-                  ))}
-                </Stack>
-              )}
-            </Card>
+                  {loading ? (
+                    <Stack gap="sm">
+                      {[1, 2, 3, 4].map((i) => (
+                        <Skeleton key={i} height={64} radius="md" />
+                      ))}
+                    </Stack>
+                  ) : agentList.length === 0 ? (
+                    <Box py="xl" style={{ textAlign: "center" }}>
+                      <IconRobot size={40} stroke={1.5} style={{ color: "var(--mantine-color-dimmed)" }} />
+                      <Text c="dimmed" mt="sm" size="sm">
+                        No agents configured
+                      </Text>
+                    </Box>
+                  ) : (
+                    <Stack gap="sm">
+                      {agentList.map((agent) => (
+                        <AgentCard key={agent.id} agent={agent} onClick={() => router.push("/settings")} />
+                      ))}
+                    </Stack>
+                  )}
+                </Card>
 
-            <SystemHealthCard
-              status={systemStatus.data}
-              loading={systemStatus.loading}
-              error={systemStatus.error}
-            />
-          </SimpleGrid>
+                <SystemHealthCard
+                  status={systemStatus.data}
+                  loading={systemStatus.loading}
+                  error={systemStatus.error}
+                />
+              </SimpleGrid>
 
-          <ActivityFeed activities={activities} loading={loading} onRefresh={refetch} />
+              <ActivityFeed activities={activities} loading={loading} onRefresh={refetch} />
+            </Stack>
+
+            {/* removed marketing sections per product UI */}
+          </Box>
         </Stack>
       </Page>
     </Shell>
@@ -921,12 +952,12 @@ function getAgentDescription(id: string): string {
 }
 
 function formatPercent(value?: number | null): string {
-  if (typeof value !== "number" || Number.isNaN(value)) return "—";
+  if (typeof value !== "number" || Number.isNaN(value)) return "N/A";
   return `${Math.round(value)}%`;
 }
 
 function formatUptime(value?: number | null): string {
-  if (typeof value !== "number" || Number.isNaN(value)) return "—";
+  if (typeof value !== "number" || Number.isNaN(value)) return "N/A";
   const hours = Math.floor(value / 3600);
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);

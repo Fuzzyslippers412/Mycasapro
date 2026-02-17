@@ -293,12 +293,15 @@ def _sanitize_identity_leak(text: str, persona: Dict[str, Any]) -> str:
         r"\b(i am|i'm|im|as an?)\b.*\b(model|llm|ai|assistant)\b",
         r"\b(qwen|venice|openai|anthropic|claude|gpt)\b",
         r"\b(running on|powered by|based on)\b",
+        r"\b(SOUL\.md|USER\.md|SECURITY\.md|TOOLS\.md|HEARTBEAT\.md|MEMORY\.md)\b",
+        r"\b(Tenant Soul|Security Rules|Tools & House Context|Long-Term Memory|Recent Daily Notes)\b",
     ]
 
     if any(re.search(pattern, text, re.IGNORECASE) for pattern in leak_patterns):
-        name = persona.get("name", "MyCasa Pro agent")
-        role = persona.get("role", "assistant")
-        return f"Hey! I'm {name}, your {role.lower()}. How can I help?"
+        # Remove any lines/sentences containing sensitive disclosures.
+        lines = [line for line in text.splitlines() if not any(re.search(p, line, re.IGNORECASE) for p in leak_patterns)]
+        cleaned = " ".join([l.strip() for l in lines if l.strip()]).strip()
+        return cleaned if cleaned else "Okay."
 
     return text
 

@@ -3,12 +3,13 @@ MyCasa Pro API - Janitor Routes
 System health, audits, cost tracking, and incident management.
 """
 import asyncio
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
-from datetime import datetime
+from typing import Optional, Dict, Any, List
+from datetime import datetime, timedelta
 import sys
 from pathlib import Path
+import shutil
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from agents.janitor import JanitorAgent
@@ -33,6 +34,43 @@ class PreflightRequest(BaseModel):
     isolated: bool = True
 
 
+class AuditResult(BaseModel):
+    timestamp: str
+    status: str
+    health_score: int
+    checks_passed: int
+    checks_total: int
+    findings: List[Dict[str, Any]]
+
+
+class CodeReviewRequest(BaseModel):
+    file_path: str
+    new_content: str
+
+
+class CodeReviewResult(BaseModel):
+    approved: bool
+    concerns: List[Dict[str, Any]]
+    blocker_count: int
+    warning_count: int
+    reviewed_at: str
+    reviewed_by: str
+
+
+class CleanupResult(BaseModel):
+    deleted: int
+    kept: int
+    errors: List[str]
+
+
+class EditHistoryItem(BaseModel):
+    timestamp: str
+    file: str
+    agent: str
+    success: bool
+    reason: Optional[str] = None
+
+
 class WizardFixRequest(BaseModel):
     action: str
     params: Optional[Dict[str, Any]] = None
@@ -42,7 +80,31 @@ class WizardFixRequest(BaseModel):
 async def get_janitor_status():
     """Get current janitor status and health overview"""
     janitor = get_janitor()
-    return janitor.get_status()
+    status = janitor.get_status()
+    metrics = status.get("metrics", {}) if isinstance(status, dict) else {}
+    last_audit = getattr(janitor, "_last_audit_result", None) or {}
+    findings_count = len(last_audit.get("findings", []) or [])
+    health = status.get("health") if isinstance(status, dict) else None
+    system_health = "healthy" if health == "healthy" else "needs_attention" if health in {"warning", "degraded", "critical"} else "unknown"
+
+    return {
+        "agent": {
+            "id": "janitor",
+            "name": "Salimata",
+            "emoji": "✨",
+            "status": status.get("status", "active") if isinstance(status, dict) else "active",
+            "description": "System health, audits, and safe edits",
+        },
+        "metrics": {
+            "last_audit": metrics.get("last_audit"),
+            "findings_count": findings_count,
+            "recent_edits": len(janitor.get_edit_history(50)),
+            "system_health": system_health,
+            "last_preflight": metrics.get("last_preflight"),
+            "last_preflight_status": metrics.get("last_preflight_status"),
+        },
+        "uptime_seconds": status.get("uptime_seconds", 0) if isinstance(status, dict) else 0,
+    }
 
 
 @router.get("/health")
@@ -138,6 +200,157 @@ async def run_audit():
         "health_text": health_text,
         "alerts": alerts,
         "costs": costs,
+    }
+
+
+@router.get("/audit", response_model=AuditResult)
+async def run_audit_summary():
+    """Run a full system audit and return summary used by UI."""
+    janitor = get_janitor()
+    result = janitor.run_audit()
+    return AuditResult(
+        timestamp=result.get("timestamp") or result.get("audit_time") or datetime.now().isoformat(),
+        status=result.get("status", "ok"),
+        health_score=result.get("health_score", 100),
+        checks_passed=result.get("checks_passed", 0),
+        checks_total=result.get("checks_total", 0),
+        findings=result.get("findings", []),
+    )
+
+
+@router.post("/cleanup", response_model=CleanupResult)
+async def cleanup_backups(days_to_keep: int = Query(default=7, ge=1, le=90)):
+    """Delete backups older than the specified number of days."""
+    from core.lifecycle import get_lifecycle_manager
+
+    lifecycle = get_lifecycle_manager()
+    cutoff = datetime.now() - timedelta(days=days_to_keep)
+    deleted = 0
+    kept = 0
+    errors: List[str] = []
+
+    for backup_dir in lifecycle.backup_dir.iterdir():
+        if not (backup_dir.is_dir() and backup_dir.name.startswith("backup_")):
+            continue
+        timestamp = backup_dir.name.replace("backup_", "")
+        try:
+            backup_time = datetime.strptime(timestamp, "%Y%m%d_%H%M%S")
+        except Exception:
+            kept += 1
+            continue
+        if backup_time < cutoff:
+            try:
+                shutil.rmtree(backup_dir)
+                deleted += 1
+            except Exception as e:
+                errors.append(f"{backup_dir.name}: {e}")
+        else:
+            kept += 1
+
+    return CleanupResult(deleted=deleted, kept=kept, errors=errors)
+
+
+@router.get("/history")
+async def get_edit_history(limit: int = Query(default=20, ge=1, le=100)):
+    """Return recent Janitor edit history."""
+    janitor = get_janitor()
+    history = janitor.get_edit_history(limit)
+    return {
+        "edits": [
+            EditHistoryItem(
+                timestamp=edit.get("timestamp", ""),
+                file=edit.get("file", "unknown"),
+                agent=edit.get("agent", "unknown"),
+                success=bool(edit.get("success", False)),
+                reason=edit.get("reason"),
+            ).model_dump()
+            for edit in history
+        ],
+        "total": len(history),
+    }
+
+
+@router.get("/logs")
+async def get_janitor_logs(limit: int = Query(default=50, ge=1, le=200)):
+    janitor = get_janitor()
+    logs = janitor.get_recent_logs(limit)
+    return {
+        "logs": [
+            {
+                "timestamp": log.get("created_at"),
+                "action": log.get("action"),
+                "details": log.get("details"),
+                "status": log.get("status"),
+                "agent_id": janitor.name,
+            }
+            for log in logs
+        ],
+        "count": len(logs),
+    }
+
+
+@router.get("/backups")
+async def list_backups(limit: int = Query(default=50, ge=1, le=200)):
+    """List current backups from lifecycle manager."""
+    from core.lifecycle import get_lifecycle_manager
+
+    lifecycle = get_lifecycle_manager()
+    backups = lifecycle.list_backups()[:limit]
+    return {
+        "backups": [
+            {
+                "filename": backup.get("name"),
+                "size_bytes": backup.get("size_bytes", 0),
+                "modified": backup.get("timestamp"),
+                "path": backup.get("path"),
+            }
+            for backup in backups
+        ],
+        "count": len(backups),
+    }
+
+
+@router.delete("/backups/{filename}")
+async def delete_backup(filename: str):
+    """Delete a specific backup directory."""
+    from core.lifecycle import get_lifecycle_manager
+
+    lifecycle = get_lifecycle_manager()
+    backup_dir = lifecycle.backup_dir / filename
+    if not (backup_dir.exists() and backup_dir.is_dir() and backup_dir.name.startswith("backup_")):
+        raise HTTPException(status_code=404, detail="Backup not found")
+    try:
+        shutil.rmtree(backup_dir)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"deleted": True, "filename": filename}
+
+
+@router.post("/review", response_model=CodeReviewResult)
+async def review_code_change(request: CodeReviewRequest):
+    janitor = get_janitor()
+    result = janitor.review_code_change(request.file_path, request.new_content)
+    return CodeReviewResult(
+        approved=result["approved"],
+        concerns=result.get("concerns", []),
+        blocker_count=result.get("blocker_count", 0),
+        warning_count=result.get("warning_count", 0),
+        reviewed_at=result.get("reviewed_at", datetime.now().isoformat()),
+        reviewed_by=result.get("reviewed_by", "janitor"),
+    )
+
+
+@router.post("/chat")
+async def chat_with_janitor(message: str):
+    janitor = get_janitor()
+    response = await janitor.chat(message)
+    return {
+        "response": response,
+        "agent": {
+            "id": "janitor",
+            "name": "Salimata",
+            "emoji": "✨",
+        },
     }
 
 

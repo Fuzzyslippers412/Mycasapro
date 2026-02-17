@@ -16,6 +16,69 @@ class ClearResult(BaseModel):
     message: str
 
 
+class DataCounts(BaseModel):
+    inbox_messages: int
+    unread_messages: int
+    pending_tasks: int
+    completed_tasks: int
+    unpaid_bills: int
+    paid_bills: int
+    activity_events: int
+    portfolio_holdings: int
+    projects: int
+    contractors: int
+
+
+@router.get("/counts", response_model=DataCounts)
+async def get_data_counts():
+    """Return counts for clean slate controls."""
+    from database import get_db
+    from database.models import (
+        InboxMessage,
+        MaintenanceTask,
+        Bill,
+        PortfolioHolding,
+        Project,
+        Contractor,
+    )
+    from sqlalchemy import text
+
+    with get_db() as db:
+        inbox_messages = db.query(InboxMessage).count()
+        unread_messages = db.query(InboxMessage).filter(InboxMessage.is_read.is_(False)).count()
+        pending_tasks = db.query(MaintenanceTask).filter(
+            MaintenanceTask.status.in_(["pending", "in_progress"])
+        ).count()
+        completed_tasks = db.query(MaintenanceTask).filter(
+            MaintenanceTask.status == "completed"
+        ).count()
+        unpaid_bills = db.query(Bill).filter(Bill.is_paid.is_(False)).count()
+        paid_bills = db.query(Bill).filter(Bill.is_paid.is_(True)).count()
+        portfolio_holdings = db.query(PortfolioHolding).count()
+        projects = db.query(Project).count()
+        contractors = db.query(Contractor).count()
+
+        activity_events = 0
+        try:
+            result = db.execute(text("SELECT COUNT(*) FROM event_log"))
+            activity_events = int(result.scalar() or 0)
+        except Exception:
+            activity_events = 0
+
+    return DataCounts(
+        inbox_messages=inbox_messages,
+        unread_messages=unread_messages,
+        pending_tasks=pending_tasks,
+        completed_tasks=completed_tasks,
+        unpaid_bills=unpaid_bills,
+        paid_bills=paid_bills,
+        activity_events=activity_events,
+        portfolio_holdings=portfolio_holdings,
+        projects=projects,
+        contractors=contractors,
+    )
+
+
 # ============ INBOX OPERATIONS ============
 
 @router.post("/inbox/mark-all-read", response_model=ClearResult)

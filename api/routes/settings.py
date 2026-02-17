@@ -52,6 +52,13 @@ class NotificationSettingsUpdate(BaseModel):
     weekly_report: Optional[bool] = None
 
 
+class SecuritySettingsUpdate(BaseModel):
+    """Security agent settings update"""
+    audit_logging: Optional[bool] = None
+    threat_monitoring: Optional[bool] = None
+    credential_rotation_days: Optional[int] = None
+
+
 # ============ ROUTES ============
 
 @router.get("")
@@ -146,6 +153,33 @@ async def update_notification_settings(update: NotificationSettingsUpdate):
 
     store.save(settings)
     return {"success": True, "settings": settings.notifications.model_dump()}
+
+
+@router.get("/agent/security")
+async def get_security_agent_settings():
+    """Get security agent settings"""
+    from core.settings_typed import get_settings_store
+
+    store = get_settings_store()
+    settings = store.get()
+    return settings.agents.security.model_dump()
+
+
+@router.put("/agent/security")
+async def update_security_agent_settings(update: SecuritySettingsUpdate):
+    """Update security agent settings"""
+    from core.settings_typed import get_settings_store
+
+    store = get_settings_store()
+    settings = store.get()
+
+    update_dict = update.model_dump(exclude_none=True)
+    for key, value in update_dict.items():
+        if hasattr(settings.agents.security, key):
+            setattr(settings.agents.security, key, value)
+
+    store.save(settings)
+    return {"success": True, "settings": settings.agents.security.model_dump()}
 
 
 def _mask_system_settings(data: Dict[str, Any]) -> Dict[str, Any]:

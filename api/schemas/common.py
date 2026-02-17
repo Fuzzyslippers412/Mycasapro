@@ -62,6 +62,8 @@ class SystemStatusResponse(BaseModel):
     agents_running_count: int
     personal_mode: Optional[bool] = None
     auth_mode: Optional[str] = None
+    identity: Optional[Dict[str, Any]] = None
+    heartbeat: Optional[Dict[str, Any]] = None
 
 
 class StartupRequest(BaseModel):

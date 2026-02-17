@@ -29,8 +29,12 @@ import sys
 import hashlib
 import subprocess
 import asyncio
+import shutil
 
-from config.settings import VAULT_PATH
+from config.settings import VAULT_PATH, BACKUP_DIR, BASE_DIR
+from core.tenant_identity import TenantIdentityManager
+from agents.heartbeat_checker import HouseholdHeartbeatChecker, CheckType
+from agents.scheduler import get_scheduler
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from agents.base import BaseAgent
@@ -92,10 +96,14 @@ class JanitorAgent(BaseAgent):
         self._cost_buffer: List[Dict] = []
         self._last_audit = None
         self._last_debug_audit = None
+        self._last_audit_result: Dict[str, Any] | None = None
         self._last_preflight: Dict[str, Any] | None = None
         self.last_wizard: Dict[str, Any] | None = None
         self._preflight_script = Path(__file__).parent.parent / "scripts" / "preflight_qwen_oauth.py"
         self._agent_souls: Dict[str, str] = {}
+        self._started_at = datetime.utcnow()
+        self._edit_history_path = BACKUP_DIR / "janitor_edit_history.json"
+        self._edit_history: List[Dict[str, Any]] = []
         
         # Initialize debugger for deep code analysis
         from agents.janitor_debugger import JanitorDebugger
@@ -108,6 +116,7 @@ class JanitorAgent(BaseAgent):
         
         # Load agent souls for contract verification
         self._load_agent_souls()
+        self._load_edit_history()
     
     def _load_agent_souls(self):
         """Load all agent SOUL.md files for contract verification"""
@@ -118,6 +127,19 @@ class JanitorAgent(BaseAgent):
                     soul_file = agent_dir / "SOUL.md"
                     if soul_file.exists():
                         self._agent_souls[agent_dir.name] = soul_file.read_text()
+
+    def _load_edit_history(self) -> None:
+        try:
+            if self._edit_history_path.exists():
+                self._edit_history = json.loads(self._edit_history_path.read_text())
+        except Exception:
+            self._edit_history = []
+
+    def _persist_edit_history(self) -> None:
+        try:
+            self._edit_history_path.write_text(json.dumps(self._edit_history[-200:], indent=2, default=str))
+        except Exception:
+            pass
     
     # ═══════════════════════════════════════════════════════════════════════════
     # STATUS & REPORTING
@@ -156,7 +178,8 @@ class JanitorAgent(BaseAgent):
                 "last_preflight": self._last_preflight.get("timestamp") if self._last_preflight else None,
                 "last_preflight_status": self._last_preflight.get("status") if self._last_preflight else None,
                 "agents_monitored": len(self._agent_souls)
-            }
+            },
+            "uptime_seconds": int((datetime.utcnow() - self._started_at).total_seconds()),
         }
     
     def get_full_report(self) -> Dict[str, Any]:
@@ -680,13 +703,101 @@ class JanitorAgent(BaseAgent):
                         "severity": "P3",
                         "finding": f"Incident {incident['id']} open for >7 days"
                     })
+
+        # 4. Check tenant identity readiness
+        try:
+            identity_manager = TenantIdentityManager(self.tenant_id)
+            identity_manager.ensure_identity_structure()
+            status = identity_manager.get_identity_status()
+            if not status.get("ready"):
+                findings.append({
+                    "domain": "identity",
+                    "severity": "P2",
+                    "finding": f"Identity missing: {status.get('missing_required', [])}",
+                })
+        except Exception as e:
+            findings.append({
+                "domain": "identity",
+                "severity": "P2",
+                "finding": f"Identity check failed: {e}",
+            })
+
+        # 5. Check scheduler + heartbeat jobs
+        try:
+            scheduler = get_scheduler()
+            if not scheduler.get_status().get("running"):
+                findings.append({
+                    "domain": "scheduler",
+                    "severity": "P2",
+                    "finding": "Scheduler not running",
+                })
+            job_names = [job.name for job in scheduler.list_jobs(include_disabled=True)]
+            if "Household Heartbeat" not in job_names:
+                findings.append({
+                    "domain": "scheduler",
+                    "severity": "P2",
+                    "finding": "Missing scheduled job: Household Heartbeat",
+                })
+            if "Memory Consolidation" not in job_names:
+                findings.append({
+                    "domain": "scheduler",
+                    "severity": "P3",
+                    "finding": "Missing scheduled job: Memory Consolidation",
+                })
+        except Exception as e:
+            findings.append({
+                "domain": "scheduler",
+                "severity": "P2",
+                "finding": f"Scheduler check failed: {e}",
+            })
+
+        # 6. Check heartbeat recency
+        try:
+            checker = HouseholdHeartbeatChecker(self.tenant_id)
+            state = checker._load_state()
+            last_checks = state.get("lastChecks", {})
+            if not last_checks:
+                findings.append({
+                    "domain": "heartbeat",
+                    "severity": "P2",
+                    "finding": "Heartbeat has not run yet",
+                })
+            else:
+                last_run = max(last_checks.values())
+                last_run_dt = datetime.fromisoformat(last_run)
+                hours = (datetime.utcnow() - last_run_dt).total_seconds() / 3600
+                if hours > 12:
+                    findings.append({
+                        "domain": "heartbeat",
+                        "severity": "P2",
+                        "finding": f"Heartbeat stale ({int(hours)}h since last run)",
+                    })
+        except Exception as e:
+            findings.append({
+                "domain": "heartbeat",
+                "severity": "P2",
+                "finding": f"Heartbeat check failed: {e}",
+            })
         
+        check_domains = {"correctness", "cost", "reliability", "identity", "scheduler", "heartbeat"}
+        failed_domains = {f.get("domain") for f in findings if f.get("domain") in check_domains}
+        checks_total = len(check_domains)
+        checks_passed = max(0, checks_total - len(failed_domains))
+        health_score = self._compute_health_score(findings)
+        status = "ok" if health_score >= 80 else "warning" if health_score >= 50 else "error"
+
         result = {
             "audit_time": self._last_audit,
+            "timestamp": self._last_audit,
+            "status": status,
+            "health_score": health_score,
+            "checks_passed": checks_passed,
+            "checks_total": checks_total,
             "findings": findings,
             "agents_checked": list(self._agent_souls.keys()),
             "cost_status": month_cost
         }
+        self._last_audit_result = result
         
         # Per SECONDBRAIN_INTEGRATION.md spec: Janitor MUST write audit logs to SecondBrain
         self._record_audit_to_secondbrain(result)
@@ -765,6 +876,153 @@ class JanitorAgent(BaseAgent):
         for finding in findings:
             score -= penalties.get(finding.get("severity"), 0)
         return max(0, min(100, score))
+
+    def review_code_change(self, file_path: str, new_content: str) -> Dict[str, Any]:
+        concerns: List[Dict[str, Any]] = []
+
+        file_ext = Path(file_path).suffix.lower()
+        if file_ext == ".py":
+            try:
+                compile(new_content, file_path, "exec")
+            except SyntaxError as e:
+                concerns.append({
+                    "severity": "blocker",
+                    "issue": f"Python syntax error: {e.msg} at line {e.lineno}",
+                })
+        elif file_ext == ".json":
+            try:
+                json.loads(new_content)
+            except json.JSONDecodeError as e:
+                concerns.append({
+                    "severity": "blocker",
+                    "issue": f"JSON parse error: {e.msg}",
+                })
+
+        dangerous_patterns = [
+            ("os.system(", "Direct system calls - use subprocess instead"),
+            ("eval(", "eval() is dangerous - avoid if possible"),
+            ("exec(", "exec() is dangerous - avoid if possible"),
+            ("rm -rf", "Dangerous delete pattern detected"),
+            ("DROP TABLE", "Database table drop detected"),
+            ("DELETE FROM", "Bulk delete detected - verify intent"),
+        ]
+        for pattern, warning in dangerous_patterns:
+            if pattern in new_content:
+                concerns.append({
+                    "severity": "warning",
+                    "issue": warning,
+                })
+
+        if len(new_content) > 100000:
+            concerns.append({
+                "severity": "warning",
+                "issue": f"Large file ({len(new_content)} bytes) - verify this is intended",
+            })
+
+        blockers = [c for c in concerns if c["severity"] == "blocker"]
+        result = {
+            "approved": len(blockers) == 0,
+            "concerns": concerns,
+            "blocker_count": len(blockers),
+            "warning_count": len([c for c in concerns if c["severity"] == "warning"]),
+            "reviewed_at": datetime.now().isoformat(),
+            "reviewed_by": self.name,
+        }
+
+        self.log_action(
+            "code_review_completed",
+            f"File: {file_path}, Approved: {result['approved']}, Concerns: {len(concerns)}",
+            status="success" if result["approved"] else "warning",
+        )
+
+        return result
+
+    def safe_edit_with_review(
+        self,
+        file_path: str,
+        new_content: str,
+        reason: str,
+        requesting_agent: str = "api",
+    ) -> Dict[str, Any]:
+        review = self.review_code_change(file_path, new_content)
+        if not review["approved"]:
+            return {
+                "success": False,
+                "stage": "review",
+                "review": review,
+                "error": "Code review found blocking issues",
+            }
+
+        target_path = Path(file_path).expanduser().resolve()
+        base_path = BASE_DIR.resolve()
+        if base_path not in target_path.parents and target_path != base_path:
+            return {
+                "success": False,
+                "stage": "validate",
+                "review": review,
+                "error": "File is outside repository boundary",
+            }
+        if not target_path.exists():
+            return {
+                "success": False,
+                "stage": "validate",
+                "review": review,
+                "error": "File not found",
+            }
+
+        backup_dir = BACKUP_DIR / "edits"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        name_hash = hashlib.sha256(str(target_path).encode()).hexdigest()[:8]
+        backup_path = backup_dir / f"{target_path.name}.{name_hash}.{stamp}.bak"
+
+        try:
+            shutil.copy2(target_path, backup_path)
+            tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
+            tmp_path.write_text(new_content, encoding="utf-8")
+            tmp_path.replace(target_path)
+
+            self._edit_history.append({
+                "timestamp": datetime.utcnow().isoformat(),
+                "file": str(target_path),
+                "agent": requesting_agent,
+                "success": True,
+                "reason": reason,
+            })
+            self._persist_edit_history()
+
+            self.log_action("safe_edit_applied", f"{target_path}", status="success")
+            return {
+                "success": True,
+                "stage": "edit",
+                "review": review,
+                "edit": {"backup_path": str(backup_path)},
+            }
+        except Exception as e:
+            try:
+                if backup_path.exists():
+                    shutil.copy2(backup_path, target_path)
+            except Exception:
+                pass
+            self._edit_history.append({
+                "timestamp": datetime.utcnow().isoformat(),
+                "file": str(target_path),
+                "agent": requesting_agent,
+                "success": False,
+                "reason": reason,
+            })
+            self._persist_edit_history()
+            self.log_action("safe_edit_failed", f"{target_path}: {e}", status="failed")
+            return {
+                "success": False,
+                "stage": "edit",
+                "review": review,
+                "error": str(e),
+            }
+
+    def get_edit_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+        history = list(reversed(self._edit_history[-limit:]))
+        return history
 
     def _get_db_snapshot(self) -> Dict[str, Any]:
         try:

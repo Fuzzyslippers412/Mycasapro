@@ -211,7 +211,11 @@ export function ManagerChat() {
         if (data?.messages?.length) {
           const mapped = data.messages.map((msg: any) => ({
             id: msg.id,
-            role: msg.role === "assistant" ? "manager" : "user",
+            role: (msg.role === "assistant"
+              ? "manager"
+              : msg.role === "system"
+                ? "system"
+                : "user") as Message["role"],
             text: msg.content,
             timestamp: msg.timestamp,
           }));
@@ -638,7 +642,7 @@ export function ManagerChat() {
                   ) : (
                     <>
                       <IconRobot size={36} style={{ opacity: 0.2, marginBottom: 8 }} />
-                      <Text c="dimmed" size="sm">Your AI home manager</Text>
+                      <Text c="dimmed" size="sm">Your home manager</Text>
                       <Text c="dimmed" size="xs" mt={4}>Type <Kbd size="xs">/</Kbd> for commands</Text>
                     </>
                   )}
@@ -970,7 +974,7 @@ export function ManagerChat() {
                 ref={inputRef}
                 placeholder={
                   !chatAllowed
-                    ? "Sign in to chat with Galidima"
+                    ? "Sign in to send messages"
                     : isLoading
                       ? "Processing..."
                       : "Ask anything or type /..."

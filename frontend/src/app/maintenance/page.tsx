@@ -594,14 +594,14 @@ export default function MaintenancePage() {
           </Group>
         }
       >
-        <Stack gap="lg">
+        <Stack gap="lg" className="maintenance-page">
           {tasksError && (
             <Alert color="red" title="Tasks unavailable">
               {tasksError}
             </Alert>
           )}
           {/* Stats */}
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md" className="maintenance-stats">
             <StatCard
               title="Pending Tasks"
               value={pendingTasks.length}
@@ -629,7 +629,7 @@ export default function MaintenancePage() {
           </SimpleGrid>
 
           {/* View controls */}
-          <Group justify="space-between">
+          <Group justify="space-between" className="maintenance-controls">
             <SegmentedControl
               value={viewMode}
               onChange={(v) => setViewMode(v as typeof viewMode)}

@@ -400,6 +400,34 @@ function RightRail() {
                   {system.data.running ? "Running" : "Stopped"}
                 </Badge>
               </Group>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">Identity</Text>
+                <Badge
+                  size="xs"
+                  color={system.data.identity?.ready ? "green" : "yellow"}
+                  variant="light"
+                >
+                  {system.data.identity?.ready ? "Ready" : "Needs setup"}
+                </Badge>
+              </Group>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">Heartbeat</Text>
+                <Badge
+                  size="xs"
+                  color={(system.data.heartbeat?.open_findings || 0) > 0 ? "yellow" : "green"}
+                  variant="light"
+                >
+                  {system.data.heartbeat?.open_findings ?? 0} findings
+                </Badge>
+              </Group>
+              {system.data.heartbeat?.last_run && (
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">Last heartbeat</Text>
+                  <Text size="sm" fw={500}>
+                    {new Date(system.data.heartbeat.last_run).toLocaleString()}
+                  </Text>
+                </Group>
+              )}
               {system.data.last_startup && (
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">
@@ -684,6 +712,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [searchOpened, { open: openSearch, close: closeSearch }] = useDisclosure();
   const [favorites, setFavorites] = useState<string[]>(['/finance']);
   const pathname = usePathname();
+  const hideRightRail = pathname === "/";
+  const showFloatingChat = pathname !== "/";
   const router = useRouter();
   const { logout, user, avatarVersion } = useAuth();
   const apiBase = getApiBaseUrl();
@@ -775,7 +805,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         aside={{
           width: 320,
           breakpoint: 'lg',
-          collapsed: { mobile: true, desktop: false },
+          collapsed: { mobile: true, desktop: hideRightRail },
         }}
         padding="md"
         transitionDuration={200}
@@ -1036,8 +1066,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      {/* Global Chat - persistent on all pages */}
-      <GlobalChat />
+      {/* Global Chat - floating on non-dashboard pages */}
+      {showFloatingChat && <GlobalChat />}
     </>
   );
 }

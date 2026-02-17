@@ -1,7 +1,33 @@
+const isLocalhost = (host: string) => host === "localhost" || host === "127.0.0.1";
+const isPrivateIp = (host: string) => {
+  if (host === "localhost" || host === "127.0.0.1") return true;
+  if (host.startsWith("10.")) return true;
+  if (host.startsWith("192.168.")) return true;
+  const match = host.match(/^172\.(\d+)\./);
+  if (match) {
+    const second = Number(match[1]);
+    return second >= 16 && second <= 31;
+  }
+  return false;
+};
+
 export function getApiBaseUrl() {
   if (typeof window !== "undefined") {
     const override = window.localStorage.getItem("mycasa_api_base_override");
-    if (override) return override;
+    if (override) {
+      try {
+        const parsed = new URL(override);
+        const windowHost = window.location.hostname;
+        const windowIsLocal = isLocalhost(windowHost);
+        if (windowIsLocal && !isLocalhost(parsed.hostname)) {
+          // Ignore stale LAN overrides when user is on localhost
+        } else {
+          return override;
+        }
+      } catch {
+        // Ignore malformed override
+      }
+    }
     const envUrl = process.env.NEXT_PUBLIC_API_URL;
     if (envUrl) {
       try {
@@ -9,13 +35,16 @@ export function getApiBaseUrl() {
         const envHost = envParsed.hostname;
         const envPort = envParsed.port || "6709";
         const windowHost = window.location.hostname;
-        const envIsLocal = envHost === "localhost" || envHost === "127.0.0.1";
-        const windowIsLocal = windowHost === "localhost" || windowHost === "127.0.0.1";
+        const envIsLocal = isLocalhost(envHost);
+        const windowIsLocal = isLocalhost(windowHost);
         if (envIsLocal && !windowIsLocal) {
           const safeHost = windowHost.includes(":") && !windowHost.startsWith("[")
             ? `[${windowHost}]`
             : windowHost;
           return `${window.location.protocol}//${safeHost}:${envPort}`;
+        }
+        if (isPrivateIp(envHost) && windowIsLocal) {
+          return `${window.location.protocol}//${windowHost}:${envPort}`;
         }
         return envUrl;
       } catch {
@@ -89,12 +118,20 @@ export async function apiFetch<T>(path: string, opts: RequestInit = {}, timeoutM
   const getFallbackBases = (): string[] => {
     try {
       const parsed = new URL(API_URL);
-      const isLocal = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-      if (!isLocal) return [];
+      const isLocal = isLocalhost(parsed.hostname);
+      const windowHost =
+        typeof window !== "undefined" ? window.location.hostname : "";
+      const windowIsLocal = windowHost && isLocalhost(windowHost);
+      const allowLocalFallback = isLocal || windowIsLocal || isPrivateIp(parsed.hostname);
+      if (!allowLocalFallback) return [];
 
       const hosts = new Set<string>([parsed.hostname]);
       if (parsed.hostname === "localhost") hosts.add("127.0.0.1");
       if (parsed.hostname === "127.0.0.1") hosts.add("localhost");
+      if (windowIsLocal) {
+        hosts.add("127.0.0.1");
+        hosts.add("localhost");
+      }
 
       const ports = new Set<string>();
       if (parsed.port) ports.add(parsed.port);
@@ -114,7 +151,7 @@ export async function apiFetch<T>(path: string, opts: RequestInit = {}, timeoutM
     }
   };
 
-  let res: Response;
+  let res: Response | undefined;
   try {
     res = await attemptRequest(API_URL);
   } catch (err: any) {
@@ -585,6 +622,14 @@ export interface SystemStatus {
   last_startup?: string | null;
   last_backup?: string | null;
   agents_enabled?: Record<string, boolean>;
+  identity?: { ready?: boolean; missing_required?: string[]; error?: string };
+  heartbeat?: {
+    last_run?: string | null;
+    next_due?: string | null;
+    open_findings?: number;
+    last_consolidation?: string | null;
+    error?: string;
+  };
   cpu_usage?: number;
   memory_usage?: number;
   disk_usage?: number;
@@ -603,6 +648,14 @@ export interface QuickStatus {
     galidima_connected: boolean | null;
     tasks: { pending: number; upcoming: any[] };
     alerts: any[];
+    identity?: { ready?: boolean; missing_required?: string[]; error?: string };
+    heartbeat?: {
+      last_run?: string | null;
+      next_due?: string | null;
+      open_findings?: number;
+      last_consolidation?: string | null;
+      error?: string;
+    };
     recent_changes: Array<{
       agent: string;
       action: string;

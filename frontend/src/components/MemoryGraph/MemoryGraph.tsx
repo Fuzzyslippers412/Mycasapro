@@ -170,6 +170,8 @@ export function MemoryGraph() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "graph">("graph");
   const graphRef = useRef<any>(null);
+  const graphContainerRef = useRef<HTMLDivElement | null>(null);
+  const [graphSize, setGraphSize] = useState({ width: 800, height: 500 });
   
   const fetchGraph = useCallback(async () => {
     setLoading(true);
@@ -207,6 +209,24 @@ export function MemoryGraph() {
   useEffect(() => {
     fetchGraph();
   }, [fetchGraph]);
+
+  useEffect(() => {
+    const node = graphContainerRef.current;
+    if (!node) return;
+    const updateSize = () => {
+      const width = node.clientWidth || 800;
+      const height = Math.max(420, Math.min(560, Math.round(width * 0.6)));
+      setGraphSize({ width, height });
+    };
+    updateSize();
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(updateSize);
+      observer.observe(node);
+      return () => observer.disconnect();
+    }
+    window.addEventListener("resize", updateSize);
+    return () => window.removeEventListener("resize", updateSize);
+  }, []);
 
   // Transform data for force graph
   const forceGraphData = useMemo(() => {
@@ -333,7 +353,7 @@ export function MemoryGraph() {
   const folders = Object.keys(stats.by_folder || {});
 
   return (
-    <Stack gap="md">
+    <Stack gap="md" className="memory-page">
       {/* Header */}
       <Group justify="space-between">
         <Group gap="xs">
@@ -366,7 +386,7 @@ export function MemoryGraph() {
       </Group>
 
       {/* Stats */}
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
+      <SimpleGrid cols={{ base: 2, sm: 4 }} className="memory-stats">
         <StatCard label="Total Notes" value={stats.total_notes} color="violet" />
         <StatCard label="Connections" value={stats.total_edges} color="blue" />
         <StatCard label="Types" value={types.length} color="green" />
@@ -374,7 +394,7 @@ export function MemoryGraph() {
       </SimpleGrid>
 
       {/* Filters */}
-      <Card withBorder p="sm">
+      <Card withBorder p="sm" className="memory-filters">
         <Group gap="sm">
           <TextInput
             placeholder="Search notes..."
@@ -412,18 +432,17 @@ export function MemoryGraph() {
 
       {/* Main content */}
       {viewMode === "graph" ? (
-        <Card withBorder p={0} style={{ position: "relative", overflow: "hidden" }}>
+        <Card withBorder p={0} style={{ position: "relative", overflow: "hidden" }} className="memory-graph-card">
           {/* Graph controls */}
-          <Group 
-            gap="xs" 
-            style={{ 
-              position: "absolute", 
-              top: 10, 
-              right: 10, 
+          <Group
+            gap="xs"
+            className="memory-graph-controls"
+            style={{
+              position: "absolute",
+              top: 10,
+              right: 10,
               zIndex: 10,
-              background: "rgba(255,255,255,0.9)",
               padding: 4,
-              borderRadius: 4,
             }}
           >
             <Tooltip label="Zoom In">
@@ -443,69 +462,69 @@ export function MemoryGraph() {
             </Tooltip>
           </Group>
           
-          {/* Force Graph */}
-          <ForceGraph2D
-            ref={graphRef}
-            graphData={forceGraphData}
-            width={800}
-            height={500}
-            nodeLabel={(node: any) => `${node.title}\n(${node.type})`}
-            nodeColor={(node: any) => node.color}
-            nodeRelSize={6}
-            nodeVal={(node: any) => node.val || 2}
-            linkColor={() => "#e0e0e0"}
-            linkWidth={1}
-            linkDirectionalParticles={1}
-            linkDirectionalParticleWidth={2}
-            onNodeClick={handleNodeClick}
-            onBackgroundClick={() => {
-              setSelectedNode(null);
-              setNoteDetail(null);
-            }}
-            cooldownTicks={100}
-            onEngineStop={() => {
-              if (graphRef.current) {
-                graphRef.current.zoomToFit(400, 50);
-              }
-            }}
-            nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-              const label = node.title.length > 20 ? node.title.slice(0, 20) + "..." : node.title;
-              const fontSize = 12 / globalScale;
-              ctx.font = `${fontSize}px Sans-Serif`;
-              
-              // Draw node circle
-              const isSelected = selectedNode?.id === node.id;
-              ctx.beginPath();
-              ctx.arc(node.x, node.y, node.val * 2, 0, 2 * Math.PI);
-              ctx.fillStyle = node.color;
-              ctx.fill();
-              
-              if (isSelected) {
-                ctx.strokeStyle = "#000";
-                ctx.lineWidth = 2 / globalScale;
-                ctx.stroke();
-              }
-              
-              // Draw label if zoomed in enough
-              if (globalScale > 0.7) {
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillStyle = "#333";
-                ctx.fillText(label, node.x, node.y + node.val * 2 + fontSize);
-              }
-            }}
-          />
+          <Box ref={graphContainerRef} className="memory-graph-canvas">
+            <ForceGraph2D
+              ref={graphRef}
+              graphData={forceGraphData}
+              width={graphSize.width}
+              height={graphSize.height}
+              nodeLabel={(node: any) => `${node.title}\n(${node.type})`}
+              nodeColor={(node: any) => node.color}
+              nodeRelSize={6}
+              nodeVal={(node: any) => node.val || 2}
+              linkColor={() => "#e0e0e0"}
+              linkWidth={1}
+              linkDirectionalParticles={1}
+              linkDirectionalParticleWidth={2}
+              onNodeClick={handleNodeClick}
+              onBackgroundClick={() => {
+                setSelectedNode(null);
+                setNoteDetail(null);
+              }}
+              cooldownTicks={100}
+              onEngineStop={() => {
+                if (graphRef.current) {
+                  graphRef.current.zoomToFit(400, 50);
+                }
+              }}
+              nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+                const label = node.title.length > 20 ? node.title.slice(0, 20) + "..." : node.title;
+                const fontSize = 12 / globalScale;
+                ctx.font = `${fontSize}px Sans-Serif`;
+                
+                // Draw node circle
+                const isSelected = selectedNode?.id === node.id;
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, node.val * 2, 0, 2 * Math.PI);
+                ctx.fillStyle = node.color;
+                ctx.fill();
+                
+                if (isSelected) {
+                  ctx.strokeStyle = "#000";
+                  ctx.lineWidth = 2 / globalScale;
+                  ctx.stroke();
+                }
+                
+                // Draw label if zoomed in enough
+                if (globalScale > 0.7) {
+                  ctx.textAlign = "center";
+                  ctx.textBaseline = "middle";
+                  ctx.fillStyle = "#333";
+                  ctx.fillText(label, node.x, node.y + node.val * 2 + fontSize);
+                }
+              }}
+            />
+          </Box>
           
           {/* Legend */}
-          <Group 
-            gap="xs" 
-            style={{ 
-              position: "absolute", 
-              bottom: 10, 
-              left: 10, 
-              background: "rgba(255,255,255,0.9)",
+          <Group
+            gap="xs"
+            className="memory-graph-legend"
+            style={{
+              position: "absolute",
+              bottom: 10,
+              left: 10,
               padding: 8,
-              borderRadius: 4,
             }}
           >
             {Object.entries(TYPE_COLORS).slice(0, 6).map(([type, color]) => (

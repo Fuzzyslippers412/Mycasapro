@@ -107,8 +107,8 @@ export default function ProjectsPage() {
         subtitle="Track renovation, improvement, and maintenance projects."
         actions={<Button leftSection={<IconPlus size={16} />} onClick={open}>New Project</Button>}
       >
-      <Stack gap="md">
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+      <Stack gap="md" className="projects-page">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} className="projects-stats">
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Total projects</Text>
             <Text size="xl" fw={700} mt={4}>{summary.total}</Text>
@@ -159,9 +159,9 @@ export default function ProjectsPage() {
             </Box>
           </Card>
         ) : (
-          <Stack gap="sm">
+          <Stack gap="sm" className="projects-list">
             {projects.map(project => (
-              <Paper key={project.id} withBorder p="md" radius="md">
+              <Paper key={project.id} withBorder p="md" radius="md" className="projects-card">
                 <Group justify="space-between" mb="sm" wrap="nowrap">
                   <div>
                     <Group gap="xs">

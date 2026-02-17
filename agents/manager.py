@@ -21,6 +21,8 @@ from database import get_db
 from database.models import Notification, AgentLog, ScheduledJob
 from agents.persona_registry import get_persona_registry
 from agents.teams import TeamRouter, TeamType
+from agents.heartbeat_checker import HouseholdHeartbeatChecker, CheckType
+from core.tenant_identity import TenantIdentityManager
 
 
 class ManagerAgent(BaseAgent):
@@ -161,6 +163,12 @@ class ManagerAgent(BaseAgent):
             return await self.coordinate_team(team, task, context)
         # Default: try finance/maintenance based on keywords
         return {"response": f"No team matched. Task: {task}", "handled_by": "manager"}
+
+    async def run_heartbeat(self) -> Dict[str, Any]:
+        """Run the household heartbeat checks and return findings."""
+        checker = HouseholdHeartbeatChecker(self.tenant_id)
+        result = await checker.run_heartbeat()
+        return result.to_dict()
     
     @property
     def maintenance(self):
@@ -349,6 +357,37 @@ class ManagerAgent(BaseAgent):
                 }
                 for r in recent
             ]
+
+            # FACTS: Identity status
+            try:
+                identity_manager = TenantIdentityManager(self.tenant_id)
+                identity_manager.ensure_identity_structure()
+                result["facts"]["identity"] = identity_manager.get_identity_status()
+            except Exception as exc:
+                result["facts"]["identity"] = {"ready": False, "error": str(exc)}
+
+            # FACTS: Household heartbeat status
+            try:
+                checker = HouseholdHeartbeatChecker(self.tenant_id)
+                state = checker._load_state()
+                last_checks = state.get("lastChecks", {})
+                last_run = max(last_checks.values()) if last_checks else None
+                next_due = checker._calculate_next_check_time().isoformat()
+                categories = [c.value for c in CheckType]
+                open_findings = (
+                    db.query(Notification)
+                    .filter(Notification.category.in_(categories))
+                    .filter(Notification.is_read == False)  # noqa: E712
+                    .count()
+                )
+                result["facts"]["heartbeat"] = {
+                    "last_run": last_run,
+                    "next_due": next_due,
+                    "open_findings": open_findings,
+                    "last_consolidation": state.get("lastConsolidation"),
+                }
+            except Exception as exc:
+                result["facts"]["heartbeat"] = {"error": str(exc)}
         
         # RECOMMENDATIONS
         if pending_tasks > 5:

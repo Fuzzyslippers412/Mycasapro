@@ -185,13 +185,29 @@ def refresh_access_token_sync(refresh_token: str) -> Dict[str, Any]:
 def build_oauth_settings(token_data: Dict[str, Any]) -> Dict[str, Any]:
     expires_in = int(token_data.get("expires_in") or 0)
     expiry_date = _now_ms() + (expires_in * 1000)
+    resource_url = token_data.get("resource_url") or DEFAULT_QWEN_RESOURCE_URL
+    resource_url = _normalize_resource_url(resource_url)
     return {
         "access_token": token_data.get("access_token"),
         "refresh_token": token_data.get("refresh_token"),
         "token_type": token_data.get("token_type"),
-        "resource_url": token_data.get("resource_url") or DEFAULT_QWEN_RESOURCE_URL,
+        "resource_url": resource_url,
         "expiry_date": expiry_date,
     }
+
+
+def _normalize_resource_url(raw_url: str) -> str:
+    url = (raw_url or "").strip()
+    if not url:
+        return DEFAULT_QWEN_RESOURCE_URL
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = f"https://{url}"
+    # Qwen device flow may return portal.qwen.ai, which is not the OpenAI-compatible endpoint.
+    if "portal.qwen.ai" in url or "chat.qwen.ai" in url or "qwen.ai" in url and "dashscope" not in url:
+        return DEFAULT_QWEN_RESOURCE_URL
+    if "dashscope.aliyuncs.com" in url and "compatible-mode" not in url:
+        url = url.rstrip("/") + "/compatible-mode/v1"
+    return url
 
 
 def is_token_expired(oauth: Optional[Dict[str, Any]], skew_ms: int = 60000) -> bool:

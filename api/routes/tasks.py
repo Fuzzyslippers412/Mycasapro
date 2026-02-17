@@ -253,9 +253,8 @@ async def complete_task(
         task_id=task_id,
         completion_notes=body.completion_notes if body else None
     )
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Task not found")
+    if not result or result.get("error"):
+        raise HTTPException(status_code=404, detail=result.get("error", "Task not found"))
     
     # Emit event
     emit_sync(EventType.TASK_COMPLETED, {
@@ -283,9 +282,8 @@ async def delete_task(
         raise HTTPException(status_code=503, detail="Maintenance agent not available")
     
     result = maintenance.remove_task(task_id)
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Task not found")
+    if not result or result.get("error"):
+        raise HTTPException(status_code=404, detail=result.get("error", "Task not found"))
     
     # Emit event
     emit_sync(EventType.TASK_DELETED, {

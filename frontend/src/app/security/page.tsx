@@ -3,22 +3,22 @@ import { Shell } from "@/components/layout/Shell";
 import { apiFetch } from "@/lib/api";
 import { WidgetCard } from "@/components/widgets/WidgetCard";
 import { Page } from "@/components/layout/Page";
-import { Card, Text, Title, Stack, Box, Badge, Group, SimpleGrid, ThemeIcon } from "@mantine/core";
+import { Card, Text, Stack, Box, Badge, Group, SimpleGrid, ThemeIcon } from "@mantine/core";
 import { IconShield, IconLock, IconAlertTriangle, IconEye } from "@tabler/icons-react";
 
 export default function SecurityPage() {
   return (
     <Shell>
       <Page title="Security" subtitle="Security posture & incidents">
-      <Stack gap="md">
+      <Stack gap="md" className="security-page">
         <Group justify="space-between">
           <div>
-            <Title order={2}>Security</Title>
-            <Text size="sm" c="dimmed">System security and monitoring</Text>
+            <Text fw={600}>Security status</Text>
+            <Text size="xs" c="dimmed">Monitoring, alerts, and incident tracking</Text>
           </div>
           <Badge color="green" size="lg">Secure</Badge>
         </Group>
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} className="security-stats">
           <Card withBorder p="lg" radius="md">
             <Group justify="space-between">
               <div>

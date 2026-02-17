@@ -86,15 +86,22 @@ function AllocationBar({ allocations }: { allocations: Record<string, number> })
     "China Tech": "red",
     "Cash": "gray",
   };
+  const labelOverrides: Record<string, string> = {
+    "Tech/AI": "Tech/Automation",
+  };
   
   const total = Object.values(allocations).reduce((a, b) => a + b, 0);
   const sections = Object.entries(allocations)
     .filter(([_, value]) => value > 0)
-    .map(([type, value]) => ({
-      value: (value / total) * 100,
-      color: colors[type] || "gray",
-      tooltip: `${type}: ${((value / total) * 100).toFixed(1)}%`,
-    }));
+    .map(([type, value]) => {
+      const label = labelOverrides[type] || type;
+      return {
+        value: (value / total) * 100,
+        color: colors[type] || "gray",
+        tooltip: `${label}: ${((value / total) * 100).toFixed(1)}%`,
+        label,
+      };
+    });
   
   return (
     <Box>
@@ -107,11 +114,14 @@ function AllocationBar({ allocations }: { allocations: Record<string, number> })
         {Object.entries(allocations)
           .filter(([_, value]) => value > 0)
           .slice(0, 6)
-          .map(([type, value]) => (
+          .map(([type, value]) => {
+            const label = labelOverrides[type] || type;
+            return (
             <Badge key={type} size="xs" variant="light" color={colors[type] || "gray"}>
-              {type}: {((value / total) * 100).toFixed(0)}%
+              {label}: {((value / total) * 100).toFixed(0)}%
             </Badge>
-          ))}
+          );
+          })}
       </Group>
     </Box>
   );

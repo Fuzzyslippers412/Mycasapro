@@ -17,6 +17,8 @@ from core.config import get_config
 from core.events_v2 import get_event_bus
 from core.settings_typed import get_settings_store
 from config.settings import DATABASE_URL
+from core.tenant_identity import TenantIdentityManager
+from agents.heartbeat_checker import HouseholdHeartbeatChecker, CheckType
 
 
 # Agent ID aliases between settings/lifecycle and fleet manager
@@ -54,6 +56,38 @@ async def get_system_status():
     personal_mode = get_config().PERSONAL_MODE
     status["personal_mode"] = personal_mode
     status["auth_mode"] = "personal" if personal_mode else "account"
+    # Attach identity + heartbeat summary
+    try:
+        identity_manager = TenantIdentityManager(get_config().TENANT_ID)
+        identity_manager.ensure_identity_structure()
+        status["identity"] = identity_manager.get_identity_status()
+    except Exception as exc:
+        status["identity"] = {"ready": False, "error": str(exc)}
+
+    try:
+        checker = HouseholdHeartbeatChecker(get_config().TENANT_ID)
+        state = checker._load_state()
+        last_checks = state.get("lastChecks", {})
+        last_run = max(last_checks.values()) if last_checks else None
+        next_due = checker._calculate_next_check_time().isoformat()
+        categories = [c.value for c in CheckType]
+        from database import get_db
+        from database.models import Notification
+        with get_db() as db:
+            open_findings = (
+                db.query(Notification)
+                .filter(Notification.category.in_(categories))
+                .filter(Notification.is_read == False)  # noqa: E712
+                .count()
+            )
+        status["heartbeat"] = {
+            "last_run": last_run,
+            "next_due": next_due,
+            "open_findings": open_findings,
+            "last_consolidation": state.get("lastConsolidation"),
+        }
+    except Exception as exc:
+        status["heartbeat"] = {"error": str(exc)}
     return status
 
 

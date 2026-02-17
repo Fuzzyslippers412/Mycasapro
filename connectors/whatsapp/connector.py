@@ -1,6 +1,6 @@
 """
 WhatsApp Connector for MyCasa Pro
-Interfaces with Clawdbot's WhatsApp gateway for messaging.
+Uses wacli for local WhatsApp authentication and messaging.
 
 This connector enables the Manager agent to:
 - Send WhatsApp messages to contacts
@@ -27,21 +27,19 @@ from connectors.base import (
 
 class WhatsAppConnector(BaseConnector):
     """
-    WhatsApp connector using Clawdbot's gateway.
-    
-    Since MyCasa Pro runs as a Clawdbot skill, we leverage the existing
-    WhatsApp gateway connection rather than maintaining a separate one.
+    WhatsApp connector using wacli.
+    Each MyCasa install owns its own WhatsApp session (no shared credentials).
     """
     
     connector_id = "whatsapp"
     display_name = "WhatsApp"
-    description = "Send and receive WhatsApp messages via Clawdbot gateway"
+    description = "Send and receive WhatsApp messages via wacli"
     version = "1.0.0"
     icon = "💬"
     
     can_receive = True
     can_send = True
-    requires_auth = False  # Uses Clawdbot's existing auth
+    requires_auth = True
     
     # Contact directory - loaded from TOOLS.md or database
     _contacts: Dict[str, Dict[str, str]] = {}
@@ -51,9 +49,17 @@ class WhatsAppConnector(BaseConnector):
         self._load_contacts()
     
     def _load_contacts(self) -> None:
-        """Load contacts from TOOLS.md"""
-        tools_path = Path.home() / "clawd" / "TOOLS.md"
-        if not tools_path.exists():
+        """Load contacts from tenant TOOLS.md (or legacy clawd/TOOLS.md)."""
+        tools_paths = []
+        try:
+            from config.settings import DATA_DIR, DEFAULT_TENANT_ID
+            tools_paths.append(DATA_DIR / "tenants" / DEFAULT_TENANT_ID / "TOOLS.md")
+        except Exception:
+            pass
+        tools_paths.append(Path.home() / "clawd" / "TOOLS.md")
+
+        tools_path = next((p for p in tools_paths if p.exists()), None)
+        if not tools_path:
             return
         
         content = tools_path.read_text()
@@ -121,45 +127,42 @@ class WhatsAppConnector(BaseConnector):
     
     async def authenticate(self, tenant_id: str, credentials: Dict[str, Any]) -> ConnectorCredentials:
         """
-        WhatsApp auth is handled by Clawdbot gateway.
-        This just verifies the gateway is connected.
+        WhatsApp auth is handled by wacli.
+        This verifies the local wacli session is authenticated.
         """
         status = await self.health_check(tenant_id)
         if status != ConnectorStatus.HEALTHY:
-            raise Exception("WhatsApp gateway not connected")
+            raise Exception("WhatsApp not authenticated. Run: wacli auth")
         
         return ConnectorCredentials(
             connector_id=self.connector_id,
             tenant_id=tenant_id,
-            credentials={"via": "clawdbot_gateway"}
+            credentials={"via": "wacli"}
         )
     
     async def refresh_auth(self, tenant_id: str, credentials: ConnectorCredentials) -> ConnectorCredentials:
-        """No refresh needed - uses Clawdbot's auth"""
+        """No refresh needed - uses wacli local auth"""
         return credentials
     
     async def health_check(self, tenant_id: str) -> ConnectorStatus:
-        """Check if Clawdbot's WhatsApp gateway is connected"""
+        """Check if wacli is authenticated"""
         try:
-            # Check gateway status via clawdbot CLI
             result = subprocess.run(
-                ["clawdbot", "status", "--json"],
+                ["wacli", "auth", "status", "--json"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
             if result.returncode == 0:
                 status = json.loads(result.stdout)
-                if status.get("whatsapp", {}).get("connected"):
+                data = status.get("data", status)
+                if data.get("authenticated"):
                     self.set_status(tenant_id, ConnectorStatus.HEALTHY)
                     return ConnectorStatus.HEALTHY
         except Exception as e:
             self.logger.warning(f"Health check failed: {e}")
-        
-        # Fallback - assume healthy if we can't check
-        # (gateway connection issues will surface on send)
-        self.set_status(tenant_id, ConnectorStatus.HEALTHY)
-        return ConnectorStatus.HEALTHY
+        self.set_status(tenant_id, ConnectorStatus.FAILED)
+        return ConnectorStatus.FAILED
     
     async def sync(
         self,
@@ -173,7 +176,6 @@ class WhatsAppConnector(BaseConnector):
         """
         events = []
         # TODO: Implement wacli integration for message history
-        # For now, inbound messages come through Clawdbot's gateway
         return events
     
     async def send(
@@ -182,7 +184,7 @@ class WhatsAppConnector(BaseConnector):
         payload: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Send a WhatsApp message via Clawdbot gateway.
+        Send a WhatsApp message via wacli.
         
         Payload format:
         {
@@ -207,25 +209,13 @@ class WhatsAppConnector(BaseConnector):
             else:
                 raise SendError(f"Contact not found: {payload.get('to')}")
         
-        # Send via Clawdbot's gateway using subprocess
-        # This calls the gateway's message API
+        # Send via wacli
         try:
-            cmd = [
-                "clawdbot", "message", "send",
-                "--channel", "whatsapp",
-                "--target", to,
-                "--message", message
-            ]
-            
+            cmd = ["wacli", "send", "text", "--to", to, "--message", message]
             if media_path:
-                cmd.extend(["--media", media_path])
+                cmd = ["wacli", "send", "media", "--to", to, "--file", media_path, "--caption", message]
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0:
                 self.logger.info(f"Message sent to {to}")
@@ -234,8 +224,7 @@ class WhatsAppConnector(BaseConnector):
                     "to": to,
                     "message_preview": message[:50] + "..." if len(message) > 50 else message
                 }
-            else:
-                raise SendError(f"Failed to send: {result.stderr}")
+            raise SendError(f"Failed to send: {result.stderr}")
                 
         except subprocess.TimeoutExpired:
             raise SendError("Message send timed out")
@@ -265,11 +254,11 @@ class WhatsAppConnector(BaseConnector):
         })
     
     def get_auth_schema(self) -> Dict[str, Any]:
-        """WhatsApp uses Clawdbot's existing auth"""
+        """WhatsApp uses local wacli auth"""
         return {
             "type": "object",
             "properties": {},
-            "description": "WhatsApp authentication is handled by Clawdbot gateway. No additional credentials needed."
+            "description": "WhatsApp authentication is handled by wacli. Run 'wacli auth' in terminal."
         }
     
     def get_settings_schema(self) -> Dict[str, Any]:

@@ -7,7 +7,7 @@ file: COMMUNICATIONS
 
 Manager (Galidima) owns external communications for the Tenkiang household.
 
-## 📧 Gmail (tfamsec@gmail.com)
+## 📧 Gmail (your@gmail.com)
 
 **Access via:** `gog` CLI
 **Scope:** House-related communications (contractors, vendors, services, scheduling)

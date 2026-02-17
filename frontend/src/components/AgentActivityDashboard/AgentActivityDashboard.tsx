@@ -72,10 +72,10 @@ interface Props {
 }
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
-  done: <IconCheck size={14} color="#2ee59d" />,
-  in_progress: <IconHourglass size={14} color="#ffb347" />,
-  idea: <IconBulb size={14} color="#87ceeb" />,
-  blocked: <IconCircleFilled size={14} color="#ff4d4d" />,
+  done: <IconCheck size={14} color="var(--color-success)" />,
+  in_progress: <IconHourglass size={14} color="var(--color-warning)" />,
+  idea: <IconBulb size={14} color="var(--color-info)" />,
+  blocked: <IconCircleFilled size={14} color="var(--color-error)" />,
 };
 
 export function AgentActivityDashboard({ agentId, agentName, compact = false }: Props) {
@@ -135,11 +135,11 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
   return (
     <Box
       style={{
-        background: "linear-gradient(180deg, rgba(11,15,20,0.95), rgba(15,22,32,0.98))",
+        background: "var(--surface-1)",
         borderRadius: 16,
-        border: "1px solid rgba(255,255,255,0.06)",
+        border: "1px solid var(--border-1)",
         padding: compact ? 12 : 20,
-        fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+        boxShadow: "var(--shadow-1)",
       }}
     >
       {/* Header */}
@@ -148,9 +148,8 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
           <Text
             size={compact ? "sm" : "md"}
             fw={700}
-            c="white"
             tt="uppercase"
-            style={{ letterSpacing: 1 }}
+            style={{ letterSpacing: 1, color: "var(--text-primary)" }}
           >
             {agentName || agentId.toUpperCase()}
           </Text>
@@ -170,9 +169,11 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
               color={activity.context_percent > 80 ? "red" : activity.context_percent > 50 ? "yellow" : "cyan"}
             />
           </Box>
-          <Text size="xs" c="cyan" fw={600}>
+          <Text size="xs" c="teal" fw={600}>
             {activity.context_percent.toFixed(0)}%{" "}
-            <Text span c="dimmed">({(activity.context_used / 1000).toFixed(0)}k/{(activity.context_limit / 1000).toFixed(0)}k)</Text>
+            <Text span c="dimmed">
+              ({(activity.context_used / 1000).toFixed(0)}k/{(activity.context_limit / 1000).toFixed(0)}k)
+            </Text>
           </Text>
         </Group>
       </Group>
@@ -184,18 +185,18 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
             style={{
               width: 60,
               height: 8,
-              background: "linear-gradient(90deg, #6366f1, #a855f7)",
+              background: "linear-gradient(90deg, var(--color-primary), var(--color-accent))",
               borderRadius: 4,
             }}
           />
           <Text size="xs" c="dimmed">velocity</Text>
         </Group>
-        <Text size="xs" c="#2ee59d" fw={600}>
+        <Text size="xs" c="green" fw={600}>
           runway: ~{(activity.runway_tokens / 1000).toFixed(0)}k tokens
         </Text>
       </Group>
 
-      <Divider color="rgba(255,255,255,0.06)" mb="md" />
+      <Divider color="var(--border-1)" mb="md" />
 
       {/* Main Grid */}
       <Box
@@ -215,16 +216,16 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
               </Text>
               <Box
                 style={{
-                  border: "1px solid rgba(255,255,255,0.08)",
+                  border: "1px solid var(--border-1)",
                   borderRadius: 8,
                   padding: 10,
-                  background: "rgba(0,0,0,0.2)",
+                  background: "var(--surface-2)",
                 }}
               >
                 {activity.threads.slice(0, 3).map((thread) => (
                   <Box key={thread.id} mb={8}>
                     <Group gap={6} mb={4}>
-                      <Text size="xs" c="#ffb347" fw={600}>
+                      <Text size="xs" c="orange" fw={600}>
                         {thread.name}
                       </Text>
                     </Group>
@@ -233,7 +234,7 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
                         <Group key={idx} gap={6}>
                           <Text size="xs" c="dimmed" style={{ fontSize: 10 }}>├─</Text>
                           {STATUS_ICONS[child.status] || STATUS_ICONS.in_progress}
-                          <Text size="xs" c="gray.4">{child.name}</Text>
+                          <Text size="xs" c="dimmed">{child.name}</Text>
                         </Group>
                       ))}
                     </Stack>
@@ -321,7 +322,7 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
                       width: `${(count / maxToolCount) * 100}%`,
                       maxWidth: 100,
                       height: 10,
-                      background: "linear-gradient(90deg, #6366f1, #8b5cf6)",
+                      background: "linear-gradient(90deg, var(--color-primary), var(--color-accent))",
                       borderRadius: 2,
                     }}
                   />
@@ -359,7 +360,7 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
         </Stack>
       </Box>
 
-      <Divider color="rgba(255,255,255,0.06)" my="md" />
+      <Divider color="var(--border-1)" my="md" />
 
       {/* Bottom: Decisions & Questions */}
       <Box
@@ -377,7 +378,7 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
           <Stack gap={4}>
             {activity.decisions.slice(-5).map((decision, idx) => (
               <Group key={idx} gap={6} align="flex-start">
-                <IconCheck size={12} color="#2ee59d" style={{ marginTop: 2 }} />
+                <IconCheck size={12} color="var(--color-success)" style={{ marginTop: 2 }} />
                 <Text size="xs" c="gray.3" style={{ flex: 1 }}>{decision}</Text>
               </Group>
             ))}
@@ -395,7 +396,7 @@ export function AgentActivityDashboard({ agentId, agentName, compact = false }: 
           <Stack gap={4}>
             {activity.questions.slice(-5).map((question, idx) => (
               <Group key={idx} gap={6} align="flex-start">
-                <IconQuestionMark size={12} color="#87ceeb" style={{ marginTop: 2 }} />
+                <IconQuestionMark size={12} color="var(--color-info)" style={{ marginTop: 2 }} />
                 <Text size="xs" c="gray.4" style={{ flex: 1 }}>{question}</Text>
               </Group>
             ))}

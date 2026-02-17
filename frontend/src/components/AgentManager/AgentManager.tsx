@@ -218,7 +218,7 @@ const AGENT_DEFINITIONS: {
     id: "manager",
     displayName: "Galidima",
     name: "Manager",
-    description: "Your AI home manager - coordinates all agents",
+    description: "Your home manager - coordinates all agents",
     color: "violet",
     alwaysOn: true,
   },

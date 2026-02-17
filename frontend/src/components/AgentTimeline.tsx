@@ -25,6 +25,7 @@ import {
   IconCheck,
   IconAlertTriangle,
   IconClock,
+  IconActivity,
 } from "@tabler/icons-react";
 
 const API_URL = getApiBaseUrl();
@@ -127,9 +128,12 @@ export function AgentTimeline() {
   }
   
   return (
-    <Card withBorder padding="lg" radius="md">
+    <Card withBorder padding="lg" radius="md" className="agent-timeline-card">
       <Group justify="space-between" mb="md">
-        <Text fw={600}>Agent Activity</Text>
+        <Group gap="xs">
+          <IconActivity size={16} style={{ color: "var(--mantine-color-dimmed)" }} />
+          <Text fw={600}>Agent Activity</Text>
+        </Group>
         <Tooltip label="Refresh">
           <ActionIcon variant="subtle" size="sm" onClick={fetchEvents} loading={loading}>
             <IconRefresh size={16} />

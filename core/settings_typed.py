@@ -264,6 +264,9 @@ class MailSettings(AgentSettings):
     whatsapp_enabled: bool = True
     sync_interval_minutes: int = Field(default=15, ge=5, le=60)
     auto_triage: bool = True
+    allow_agent_replies: bool = False
+    allow_whatsapp_replies: bool = False
+    allow_email_replies: bool = False
 
 
 class ManagerSettings(AgentSettings):

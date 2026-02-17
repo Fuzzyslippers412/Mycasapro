@@ -2,9 +2,10 @@
 MyCasa Pro API - Messaging Routes
 WhatsApp and other messaging capabilities via Manager agent.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
+from auth.dependencies import require_auth
 
 router = APIRouter(prefix="/messaging", tags=["Messaging"])
 
@@ -64,7 +65,7 @@ async def search_contact(query: str) -> Optional[Contact]:
 
 
 @router.post("/send")
-async def send_message(request: SendMessageRequest):
+async def send_message(request: SendMessageRequest, user: dict = Depends(require_auth)):
     """
     Send a message to a contact.
     
@@ -79,9 +80,19 @@ async def send_message(request: SendMessageRequest):
     from api.main import get_manager
     
     manager = get_manager()
+    from core.settings_typed import get_settings_store
+    settings = get_settings_store().get()
+    mail_settings = settings.agents.mail
+
+    if not mail_settings.enabled:
+        raise HTTPException(status_code=403, detail="Mail agent is disabled in Settings.")
+    if not mail_settings.allow_agent_replies:
+        raise HTTPException(status_code=403, detail="Agent replies are disabled in Settings.")
     
     if request.channel != "whatsapp":
         raise HTTPException(status_code=400, detail=f"Channel '{request.channel}' not yet supported")
+    if not mail_settings.allow_whatsapp_replies:
+        raise HTTPException(status_code=403, detail="WhatsApp replies are disabled in Settings.")
     
     result = manager.send_whatsapp(
         to=request.to,
@@ -96,7 +107,7 @@ async def send_message(request: SendMessageRequest):
 
 
 @router.post("/natural")
-async def natural_language_message(request: NaturalLanguageRequest):
+async def natural_language_message(request: NaturalLanguageRequest, user: dict = Depends(require_auth)):
     """
     Handle a natural language messaging request.
     
@@ -110,6 +121,14 @@ async def natural_language_message(request: NaturalLanguageRequest):
     from api.main import get_manager
     
     manager = get_manager()
+    from core.settings_typed import get_settings_store
+    settings = get_settings_store().get()
+    mail_settings = settings.agents.mail
+
+    if not mail_settings.enabled:
+        raise HTTPException(status_code=403, detail="Mail agent is disabled in Settings.")
+    if not mail_settings.allow_agent_replies:
+        raise HTTPException(status_code=403, detail="Agent replies are disabled in Settings.")
     
     result = manager.handle_messaging_request(
         request=request.request,

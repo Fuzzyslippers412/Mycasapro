@@ -17,7 +17,7 @@ import {
   IconExternalLink, IconChevronDown, IconChevronUp,
   IconCircle, IconSend, IconX, IconMailOpened,
 } from "@tabler/icons-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { apiFetch, getApiBaseUrl, isNetworkError } from "@/lib/api";
 import { notifications } from "@mantine/notifications";
 import { useInboxMessages, useUnreadCount } from "@/lib/hooks";
@@ -90,12 +90,16 @@ function QuickReply({
   recipientName,
   sending = false,
   error,
+  disabled = false,
+  disabledReason,
 }: {
   onSend: (message: string) => void;
   onCancel: () => void;
   recipientName: string;
   sending?: boolean;
   error?: string | null;
+  disabled?: boolean;
+  disabledReason?: string | null;
 }) {
   const [message, setMessage] = useState("");
 
@@ -118,13 +122,19 @@ function QuickReply({
           </ActionIcon>
         </Group>
         <Textarea
-          placeholder="Type your reply..."
+          placeholder={disabled ? "Replies are disabled in Settings" : "Type your reply..."}
           value={message}
           onChange={(e) => setMessage(e.currentTarget.value)}
           minRows={2}
           maxRows={4}
           autoFocus
+          disabled={disabled}
         />
+        {disabled && disabledReason && (
+          <Text size="xs" c="dimmed">
+            {disabledReason}
+          </Text>
+        )}
         {error && (
           <Text size="xs" c="red">
             {error}
@@ -138,7 +148,7 @@ function QuickReply({
             size="xs"
             leftSection={<IconSend size={14} />}
             loading={sending}
-            disabled={!message.trim() || sending}
+            disabled={disabled || !message.trim() || sending}
             onClick={() => {
               onSend(message);
               setMessage("");
@@ -157,10 +167,14 @@ function MessageDetail({
   message,
   onClose,
   onMarkRead,
+  replyAllowed,
+  replyDisabledReason,
 }: {
   message: Message | null;
   onClose: () => void;
   onMarkRead: (id: number) => void;
+  replyAllowed: boolean;
+  replyDisabledReason: string | null;
 }) {
   const [showReply, setShowReply] = useState(false);
   const [replySending, setReplySending] = useState(false);
@@ -192,6 +206,10 @@ function MessageDetail({
     setReplySending(true);
     setReplyError(null);
     try {
+      if (!replyAllowed) {
+        setReplyError(replyDisabledReason || "Replies are disabled in Settings.");
+        return;
+      }
       if (message.source === "whatsapp") {
         const to = message.sender_id || message.sender;
         await apiFetch("/api/messaging/send", {
@@ -229,6 +247,11 @@ function MessageDetail({
       setReplySending(false);
     }
   };
+
+  const bodyText = message.body
+    || (message.source === "whatsapp"
+      ? "WhatsApp preview unavailable. Connect wacli and run Sync to fetch the latest message."
+      : "(No message content available - click Sync to fetch full message)");
 
   return (
     <Card withBorder radius="lg" p={0} h="100%" style={{ display: "flex", flexDirection: "column" }}>
@@ -284,9 +307,17 @@ function MessageDetail({
       {/* Body */}
       <ScrollArea style={{ flex: 1 }} p="md">
         <Text style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
-          {message.body || "(No message content available - click Sync to fetch full message)"}
+          {bodyText}
         </Text>
       </ScrollArea>
+
+      {!replyAllowed && replyDisabledReason && (
+        <Box px="md" pb="sm">
+          <Alert color="yellow" variant="light" icon={<IconAlertCircle size={16} />}>
+            {replyDisabledReason}
+          </Alert>
+        </Box>
+      )}
 
       {/* Quick Reply */}
       <Collapse in={showReply}>
@@ -297,6 +328,8 @@ function MessageDetail({
             onCancel={() => setShowReply(false)}
             sending={replySending}
             error={replyError}
+            disabled={!replyAllowed}
+            disabledReason={replyDisabledReason}
           />
         </Box>
       </Collapse>
@@ -313,7 +346,18 @@ function MessageDetail({
             variant="light"
             leftSection={<IconArrowBackUp size={16} />}
             size="sm"
-            onClick={() => setShowReply(!showReply)}
+            disabled={!replyAllowed}
+            onClick={() => {
+              if (!replyAllowed) {
+                notifications.show({
+                  title: "Replies disabled",
+                  message: replyDisabledReason || "Enable replies in Settings to respond.",
+                  color: "yellow",
+                });
+                return;
+              }
+              setShowReply(!showReply);
+            }}
           >
             {showReply ? "Cancel Reply" : "Quick Reply"}
           </Button>
@@ -476,9 +520,16 @@ export default function InboxPage() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [syncEnabled, setSyncEnabled] = useState<boolean | null>(null);
+  const [mailPolicy, setMailPolicy] = useState({
+    allowAgentReplies: false,
+    allowWhatsappReplies: false,
+    allowEmailReplies: false,
+  });
+  const [mailPolicyError, setMailPolicyError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [managerReport, setManagerReport] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -505,6 +556,25 @@ export default function InboxPage() {
       }
     };
     check();
+  }, []);
+
+  useEffect(() => {
+    const fetchMailPolicy = async () => {
+      setMailPolicyError(null);
+      try {
+        const data = await apiFetch<any>("/api/settings/agent/mail");
+        setMailPolicy({
+          allowAgentReplies: Boolean(data.allow_agent_replies),
+          allowWhatsappReplies: Boolean(data.allow_whatsapp_replies),
+          allowEmailReplies: Boolean(data.allow_email_replies),
+        });
+      } catch (e) {
+        setMailPolicyError(isNetworkError(e)
+          ? `Unable to reach backend at ${API_URL}.`
+          : "Failed to load reply settings.");
+      }
+    };
+    fetchMailPolicy();
   }, []);
 
   // Filter messages - handle both API format and local format
@@ -562,6 +632,7 @@ export default function InboxPage() {
   const handleSync = async () => {
     setSyncing(true);
     setSyncError(null);
+    setSyncWarning(null);
     try {
       const data = await apiFetch<any>("/inbox/ingest", { method: "POST" });
       refetch();
@@ -571,6 +642,11 @@ export default function InboxPage() {
         message: `Pulled ${data?.new_messages || 0} new message(s)`,
         color: "green",
       });
+      if (data?.whatsapp_error) {
+        const warning = `WhatsApp sync issue: ${data.whatsapp_error}. Run wacli auth, then sync again.`;
+        setSyncWarning(warning);
+        notifications.show({ title: "WhatsApp needs attention", message: warning, color: "yellow" });
+      }
     } catch (e) {
       let detail = "Sync failed. Please try again.";
       if (isNetworkError(e)) {
@@ -644,6 +720,21 @@ export default function InboxPage() {
   const unreadTotal = unreadCount?.total || 0;
   const whatsappUnread = unreadCount?.whatsapp || 0;
   const gmailUnread = unreadCount?.gmail || 0;
+  const replyAllowed = useMemo(() => {
+    if (!selectedMessage) return false;
+    if (!mailPolicy.allowAgentReplies) return false;
+    if (selectedMessage.source === "whatsapp") {
+      return mailPolicy.allowWhatsappReplies;
+    }
+    return mailPolicy.allowEmailReplies;
+  }, [selectedMessage, mailPolicy]);
+  const replyDisabledReason = !mailPolicy.allowAgentReplies
+    ? "Agent replies are disabled in Settings."
+    : selectedMessage?.source === "whatsapp" && !mailPolicy.allowWhatsappReplies
+      ? "WhatsApp replies are disabled in Settings."
+      : selectedMessage?.source === "gmail" && !mailPolicy.allowEmailReplies
+        ? "Email replies are disabled in Settings."
+        : mailPolicyError;
 
   // Show launch screen if sync not enabled
   if (syncEnabled === false) {
@@ -769,7 +860,7 @@ export default function InboxPage() {
           </Group>
         }
       >
-        <Stack gap="md" h="calc(100vh - 180px)">
+        <Stack gap="md" h="calc(100vh - 180px)" className="inbox-page">
           {/* Backend Warning */}
           {backendConnected === false && (
             <Alert icon={<IconPlugConnectedX size={18} />} color="orange" title="Backend not connected" variant="light">
@@ -781,8 +872,13 @@ export default function InboxPage() {
               {syncError}
             </Alert>
           )}
+          {syncWarning && (
+            <Alert color="yellow" title="WhatsApp needs attention" variant="light">
+              {syncWarning}
+            </Alert>
+          )}
 
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md" className="inbox-stats">
             <Card withBorder radius="lg">
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Messages in view</Text>
               {loading ? (
@@ -822,7 +918,7 @@ export default function InboxPage() {
           </SimpleGrid>
 
           {/* Filter Pills */}
-          <Group gap="xs">
+          <Group gap="xs" className="inbox-filter-row">
             <FilterPill
               label="All"
               active={filter === "all" && !unreadOnly}
@@ -868,7 +964,7 @@ export default function InboxPage() {
           {/* Split View */}
           <Group gap="md" align="stretch" style={{ flex: 1, minHeight: 0 }}>
             {/* Message List */}
-            <Card withBorder radius="lg" p={0} style={{ width: 380, flexShrink: 0 }}>
+            <Card withBorder radius="lg" p={0} style={{ width: 380, flexShrink: 0 }} className="inbox-list-card">
               <ScrollArea h="100%" offsetScrollbars scrollbarSize={6}>
                 {loading ? (
                   <Box p="xl" style={{ textAlign: "center" }}>
@@ -916,9 +1012,11 @@ export default function InboxPage() {
                   message={selectedMessage}
                   onClose={() => setSelectedMessage(null)}
                   onMarkRead={handleMarkRead}
+                  replyAllowed={replyAllowed}
+                  replyDisabledReason={replyDisabledReason || null}
                 />
               ) : (
-                <Card withBorder radius="lg" h="100%">
+                <Card withBorder radius="lg" h="100%" className="inbox-detail-card">
                   <Box h="100%" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <EmptyState
                       icon={IconMail}

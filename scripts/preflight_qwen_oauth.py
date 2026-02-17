@@ -831,6 +831,46 @@ def main() -> int:
         results.append(_check("agent_context_list", False, f"{e.body or e}"))
         failures += 1
 
+    # 12b) Identity + heartbeat + scheduler checks
+    try:
+        _, identity = _request_json("GET", f"{api_base}/api/identity", token=token, timeout=10)
+        ready = bool(identity.get("status", {}).get("ready"))
+        if ready:
+            results.append(_check("identity_status", True, "ready"))
+        else:
+            missing = identity.get("status", {}).get("missing_required", [])
+            results.append(_check("identity_status", False, f"missing: {missing}"))
+            failures += 1
+    except ApiError as e:
+        results.append(_check("identity_status", False, f"{e.body or e}"))
+        failures += 1
+
+    try:
+        _, hb = _request_json("GET", f"{api_base}/api/heartbeat/household/status", token=token, timeout=10)
+        if hb.get("error"):
+            raise ApiError(500, "heartbeat status error", hb)
+        last_checks = hb.get("heartbeat_state", {}).get("lastChecks", {})
+        last_run = max(last_checks.values()) if last_checks else None
+        results.append(_check("heartbeat_status", True, f"last_run={last_run or 'none'}"))
+    except ApiError as e:
+        results.append(_check("heartbeat_status", False, f"{e.body or e}"))
+        failures += 1
+
+    try:
+        _, live = _request_json("GET", f"{api_base}/api/system/live", timeout=10)
+        jobs = live.get("scheduled_jobs", {}).get("jobs", [])
+        names = [j.get("name") for j in jobs]
+        has_heartbeat = "Household Heartbeat" in names
+        has_consolidation = "Memory Consolidation" in names
+        if has_heartbeat and has_consolidation:
+            results.append(_check("scheduler_jobs", True, "heartbeat+consolidation"))
+        else:
+            results.append(_check("scheduler_jobs", False, f"missing: {names}"))
+            failures += 1
+    except ApiError as e:
+        results.append(_check("scheduler_jobs", False, f"{e.body or e}"))
+        failures += 1
+
     # 13) Janitor audit
     try:
         _, audit = _request_json("POST", f"{api_base}/api/janitor/run-audit", timeout=60)

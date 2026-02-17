@@ -145,7 +145,7 @@ function WelcomeStep({ data, setData }: { data: SetupData; setData: (d: SetupDat
       
       <div style={{ textAlign: "center" }}>
         <Title order={2}>Welcome to MyCasa Pro</Title>
-        <Text size="lg" c="dimmed" mt="xs">Your AI-powered home operating system</Text>
+        <Text size="lg" c="dimmed" mt="xs">Your home operating system</Text>
       </div>
       
       <Paper withBorder p="xl" radius="md" w="100%" maw={500}>
@@ -450,8 +450,8 @@ function BudgetsStep({ data, setData }: { data: SetupData; setData: (d: SetupDat
           />
           
           <NumberInput
-            label="AI System Cost Cap"
-            description="Max monthly spend on AI operations"
+            label="System Cost Cap"
+            description="Max monthly spend on model operations"
             value={data.systemCostCap}
             onChange={(v) => setData({ ...data, systemCostCap: Number(v) || 0 })}
             min={0}
@@ -794,7 +794,7 @@ function WhatsAppStep({ data, setData }: { data: SetupData; setData: (d: SetupDa
           <Stack gap="md">
             <Text fw={500}>Trusted Contacts</Text>
             <Text size="sm" c="dimmed">
-              Only these contacts can interact with your AI
+              Only these contacts can interact with your system
             </Text>
             
             <Group>
@@ -1525,7 +1525,7 @@ export function SetupWizard({ opened, onClose, onComplete, canSkip = true }: Set
   const progress = ((active + 1) / totalSteps) * 100;
   
   const stepNames = [
-    "Welcome", "Clawdbot Import", "Income Source", "Budgets", 
+    "Welcome", "Import", "Income Source", "Budgets", 
     "Contractors", "WhatsApp", "Google Auth", "Connectors", 
     "Notifications", "Launch"
   ];
@@ -1570,7 +1570,7 @@ export function SetupWizard({ opened, onClose, onComplete, canSkip = true }: Set
       
       notifications.show({
         title: "🚀 MyCasa Pro Launched!",
-        message: "Your AI home assistant is ready",
+        message: "Your home system is ready",
         color: "green",
         autoClose: 3000,
       });

@@ -785,8 +785,8 @@ export function SystemConsole() {
               {messages.length === 0 ? (
                 <Box ta="center" py="xl">
                   <IconTerminal size={32} style={{ opacity: 0.15, marginBottom: 8 }} />
-                  <Text c="dimmed" size="sm">Your AI home manager</Text>
-                  <Text c="dimmed" size="xs" mt={4}>Type <Kbd size="xs">/</Kbd> for commands or ask naturally</Text>
+                  <Text c="dimmed" size="sm">Your home manager</Text>
+                  <Text c="dimmed" size="xs" mt={4}>Type <Kbd size="xs">/</Kbd> for commands or ask in plain language</Text>
                 </Box>
               ) : (
                 messages.map((msg) => (

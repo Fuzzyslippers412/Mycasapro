@@ -1,28 +1,24 @@
 """
-MyCasa Pro - Shared Context with Clawdbot/Galidima
+MyCasa Pro - Shared Context
 
-This module provides access to the same memory and context that
-Galidima (the main Clawdbot agent) has, ensuring the MyCasa Pro
-Manager has the same knowledge and history.
+Provides tenant-scoped identity and memory context for the Manager.
 
 Sources:
-- ~/clawd/MEMORY.md - Long-term curated memory
-- ~/clawd/USER.md - User profile
-- ~/clawd/TOOLS.md - Tools and contacts
-- ~/clawd/memory/*.md - Daily memory files
-- ~/.clawdbot/agents/main/sessions/ - Session history
+- data/tenants/<tenant>/USER.md
+- data/tenants/<tenant>/MEMORY.md
+- data/tenants/<tenant>/TOOLS.md
+- data/tenants/<tenant>/memory/*.md
+- chat conversations in the local database
 """
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
-import json
 import logging
+from config.settings import DATA_DIR, DEFAULT_TENANT_ID
 
 logger = logging.getLogger("mycasa.shared_context")
 
-# Base paths
-CLAWD_DIR = Path.home() / "clawd"
-CLAWDBOT_DIR = Path.home() / ".clawdbot"
+TENANT_DIR = DATA_DIR / "tenants" / DEFAULT_TENANT_ID
 
 
 class SharedContext:
@@ -63,7 +59,7 @@ class SharedContext:
         if self._is_cached("user"):
             return self._cache_get("user")
         
-        user_path = CLAWD_DIR / "USER.md"
+        user_path = TENANT_DIR / "USER.md"
         content = ""
         if user_path.exists():
             content = user_path.read_text()
@@ -76,7 +72,7 @@ class SharedContext:
         if self._is_cached("memory"):
             return self._cache_get("memory")
         
-        memory_path = CLAWD_DIR / "MEMORY.md"
+        memory_path = TENANT_DIR / "MEMORY.md"
         content = ""
         if memory_path.exists():
             content = memory_path.read_text()
@@ -89,7 +85,7 @@ class SharedContext:
         if self._is_cached("tools"):
             return self._cache_get("tools")
         
-        tools_path = CLAWD_DIR / "TOOLS.md"
+        tools_path = TENANT_DIR / "TOOLS.md"
         content = ""
         if tools_path.exists():
             content = tools_path.read_text()
@@ -109,7 +105,7 @@ class SharedContext:
         if self._is_cached(cache_key):
             return self._cache_get(cache_key)
         
-        memory_dir = CLAWD_DIR / "memory"
+        memory_dir = TENANT_DIR / "memory"
         memories = []
         
         if memory_dir.exists():
@@ -164,118 +160,50 @@ class SharedContext:
     
     def get_recent_session_messages(self, session_id: str = None, limit: int = 20) -> List[Dict[str, Any]]:
         """
-        Get recent messages from Clawdbot session history.
-        
-        This allows the Manager to see recent conversation context.
-        
-        Clawdbot JSONL format:
-        {
-            "type": "message",
-            "id": "...",
-            "timestamp": "...",
-            "message": {
-                "role": "user" | "assistant",
-                "content": [...] or "string"
-            }
-        }
+        Get recent messages from the local chat store.
         """
-        sessions_dir = CLAWDBOT_DIR / "agents" / "main" / "sessions"
-        
-        if not sessions_dir.exists():
-            return []
-        
-        session_file = None
-        
-        # Find the main session file
-        if session_id:
-            session_file = sessions_dir / f"{session_id}.jsonl"
-        else:
-            # Try to find the active session from sessions.json
-            sessions_meta = sessions_dir / "sessions.json"
-            if sessions_meta.exists():
-                try:
-                    meta = json.loads(sessions_meta.read_text())
-                    # Look for main agent session (agent:main:main)
-                    for key, info in meta.items():
-                        if "agent:main" in key or "main" in key:
-                            sid = info.get("sessionId")
-                            if sid:
-                                candidate = sessions_dir / f"{sid}.jsonl"
-                                if candidate.exists():
-                                    session_file = candidate
-                                    break
-                except Exception as e:
-                    logger.warning(f"Failed to parse sessions.json: {e}")
-            
-            # Fallback: find most recently modified .jsonl file
-            if not session_file:
-                jsonl_files = [f for f in sessions_dir.glob("*.jsonl") if not f.name.endswith('.lock')]
-                if jsonl_files:
-                    session_file = max(jsonl_files, key=lambda f: f.stat().st_mtime)
-        
-        if not session_file or not session_file.exists():
-            return []
-        
-        # Read last N messages from JSONL
-        messages = []
         try:
-            # Read file and get last N lines
-            with open(session_file, 'r') as f:
-                lines = f.readlines()
-            
-            for line in lines[-limit * 3:]:  # Read more lines to filter
-                try:
-                    entry = json.loads(line.strip())
-                    
-                    # Handle Clawdbot nested format
-                    if entry.get("type") == "message":
-                        msg = entry.get("message", {})
-                        role = msg.get("role")
-                        
-                        # Only include user and assistant messages
-                        if role in ["user", "assistant"]:
-                            content = msg.get("content", "")
-                            
-                            # Handle content array (Clawdbot format)
-                            if isinstance(content, list):
-                                # Extract text from content blocks
-                                text_parts = []
-                                for block in content:
-                                    if isinstance(block, dict):
-                                        if block.get("type") == "text":
-                                            text_parts.append(block.get("text", ""))
-                                    elif isinstance(block, str):
-                                        text_parts.append(block)
-                                content = "\n".join(text_parts)
-                            
-                            # Skip empty or very long content
-                            if content and len(content) < 3000:
-                                messages.append({
-                                    "role": role,
-                                    "content": content[:500] + "..." if len(content) > 500 else content,
-                                    "timestamp": entry.get("timestamp")
-                                })
-                    
-                    # Also handle old flat format for backwards compatibility
-                    elif entry.get("role") in ["user", "assistant"]:
-                        content = entry.get("content", "")
-                        if isinstance(content, str) and len(content) < 3000:
-                            messages.append({
-                                "role": entry.get("role"),
-                                "content": content[:500] + "..." if len(content) > 500 else content,
-                                "timestamp": entry.get("timestamp")
-                            })
-                            
-                except json.JSONDecodeError:
-                    continue
-            
-            # Return only the last N
-            messages = messages[-limit:]
-            
+            from database import get_db
+            from database.models import ChatConversation, ChatMessage
+
+            with get_db() as db:
+                conversation = None
+                if session_id:
+                    conversation = (
+                        db.query(ChatConversation)
+                        .filter(ChatConversation.id == session_id)
+                        .first()
+                    )
+                else:
+                    conversation = (
+                        db.query(ChatConversation)
+                        .order_by(ChatConversation.updated_at.desc())
+                        .first()
+                    )
+
+                if not conversation:
+                    return []
+
+                messages = (
+                    db.query(ChatMessage)
+                    .filter(ChatMessage.conversation_id == conversation.id)
+                    .order_by(ChatMessage.created_at.desc())
+                    .limit(limit)
+                    .all()
+                )
+
+                payload = [
+                    {
+                        "role": msg.role,
+                        "content": (msg.content[:500] + "...") if len(msg.content) > 500 else msg.content,
+                        "timestamp": msg.created_at.isoformat() if msg.created_at else None,
+                    }
+                    for msg in reversed(messages)
+                ]
+                return payload
         except Exception as e:
-            logger.warning(f"Failed to read session file: {e}")
-        
-        return messages
+            logger.warning(f"Failed to load recent chat messages: {e}")
+            return []
     
     def get_full_context(self, include_session: bool = True) -> Dict[str, Any]:
         """

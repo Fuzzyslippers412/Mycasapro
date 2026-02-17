@@ -176,7 +176,7 @@ class MaintenanceAgent(BaseAgent):
             db.add(task)
             db.flush()
             
-            self.log_action("task_created", f"Created task: {title}")
+            self.log_action("task_created", f"Created task: {title}", db=db)
             
             return {"success": True, "task": self._task_to_dict(task)}
 
@@ -200,7 +200,7 @@ class MaintenanceAgent(BaseAgent):
             task.completed_date = self._today()
             if evidence:
                 task.notes = (task.notes or "") + f"\n{evidence}"
-            self.log_action("task_completed", f"Completed task: {task_id}")
+            self.log_action("task_completed", f"Completed task: {task_id}", db=db)
             return {"success": True, "task": self._task_to_dict(task)}
 
     def _coerce_date(self, value: Union[date, str, None]) -> Optional[date]:
@@ -269,6 +269,11 @@ class MaintenanceAgent(BaseAgent):
             r"(?i)add (?:a )?task(?: reminder)? to (.+)",
             r"(?i)create (?:a )?task(?: reminder)? to (.+)",
             r"(?i)schedule (.+)",
+            r"(?i)i need to (.+)",
+            r"(?i)i have to (.+)",
+            r"(?i)please (.+)",
+            r"(?i)can you (.+)",
+            r"(?i)could you (.+)",
         ]
         for pattern in patterns:
             match = re.search(pattern, text)
@@ -281,8 +286,30 @@ class MaintenanceAgent(BaseAgent):
 
     def create_task_from_message(self, message: str) -> Optional[Dict[str, Any]]:
         msg_lower = message.lower()
-        if not any(k in msg_lower for k in ["remind", "reminder", "add a task", "add task", "schedule", "task reminder"]):
+        intent_keywords = [
+            "remind",
+            "reminder",
+            "add a task",
+            "add task",
+            "schedule",
+            "task reminder",
+            "need to",
+            "have to",
+            "please",
+            "can you",
+            "could you",
+            "clean",
+            "fix",
+            "repair",
+            "replace",
+            "inspect",
+        ]
+        if not any(k in msg_lower for k in intent_keywords):
             return None
+        # Require either an explicit task word or a detectable date/weekday to reduce false positives.
+        if "task" not in msg_lower and "remind" not in msg_lower:
+            if self._extract_due_date(message) is None:
+                return None
         title = self._extract_task_title(message)
         due_date = self._extract_due_date(message)
         task = self.add_task(
@@ -473,7 +500,7 @@ class MaintenanceAgent(BaseAgent):
             if not task:
                 return {"error": "Task not found"}
             db.delete(task)
-            self.log_action("task_removed", f"Removed task: {task_id}")
+            self.log_action("task_removed", f"Removed task: {task_id}", db=db)
             return {"success": True, "id": task_id}
     
     # ============ CONTRACTORS ============

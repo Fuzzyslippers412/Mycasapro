@@ -21,7 +21,7 @@ wacli messages search "query"
 wacli doctor
 ```
 
-**Note**: wacli sync must be stopped before reading (`pkill -f wacli`). For sending, use gateway `message` tool instead (more reliable).
+**Note**: wacli sync must be stopped before reading (`pkill -f wacli`). For sending, use `wacli send text --to "+15551234567" --message "Hi"` once authenticated.
 
 **Integration Pattern**:
 1. Backend polls wacli periodically for new messages
@@ -35,7 +35,7 @@ wacli doctor
 
 **CLI Tool**: `gog` (Google Workspace CLI)
 
-**Account**: tfamsec@gmail.com
+**Account**: your@gmail.com
 
 **Commands**:
 ```bash

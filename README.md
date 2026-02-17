@@ -34,8 +34,22 @@ MYCASA_PUBLIC_HOST=127.0.0.1 MYCASA_BIND_HOST=127.0.0.1 ./start_all.sh
 **Terminal Setup Wizard (recommended)**
 ```bash
 ./mycasa setup
+# or
+./casa setup
 ```
 The wizard checks dependencies, configures ports/env, initializes DB, starts services, and guides Qwen OAuth.
+It will also prompt you to connect **your own** Gmail (gog) and WhatsApp (wacli) accounts.
+
+Manual connector setup (if you skip the wizard):
+```bash
+# Gmail via gog
+brew install doitintl/tap/gog
+gog auth login
+
+# WhatsApp via wacli
+npm install -g @nicholasoxford/wacli
+wacli auth
+```
 
 **Windows PowerShell**
 ```powershell
@@ -53,6 +67,18 @@ cd frontend; "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" | Out-File -Encoding ut
 - Python 3.11+ (required; 3.9/3.10 will fail)
 - Node.js 18+ (npm)
 - Git
+
+If setup says Python 3.11+ required:
+```bash
+# macOS
+brew install python@3.11
+
+# Ubuntu
+sudo apt-get install python3.11 python3.11-venv
+
+# Windows (PowerShell)
+winget install Python.Python.3.11
+```
 
 ## Repo cleanup (recommended before publishing)
 Remove tracked dev artifacts and duplicate folders:
@@ -114,10 +140,13 @@ Open:
 ```bash
 # Open the UI in your browser
 ./mycasa open
+./casa open
 
 # Start/stop the system runtime (agents + lifecycle)
 ./mycasa system start
 ./mycasa system stop
+./casa system start
+./casa system stop
 ```
 
 ## Factory Reset (start over clean)

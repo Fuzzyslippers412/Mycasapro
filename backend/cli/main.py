@@ -16,13 +16,20 @@ import socket
 import getpass
 from pathlib import Path
 from datetime import date
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict, Any
 
 API_BASE = (
     os.environ.get("MYCASA_API_URL")
     or os.environ.get("MYCASA_API_BASE_URL")
     or "http://127.0.0.1:6709"
 )
+
+def _get_api_base() -> str:
+    return (
+        os.environ.get("MYCASA_API_URL")
+        or os.environ.get("MYCASA_API_BASE_URL")
+        or "http://127.0.0.1:6709"
+    )
 
 def _read_env_value(repo_dir: Path, key: str) -> Optional[str]:
     env_path = repo_dir / ".env"
@@ -48,7 +55,7 @@ def _get_frontend_url() -> str:
 
 def api_call(method: str, endpoint: str, data: dict = None) -> dict:
     """Make API call to backend"""
-    url = f"{API_BASE}{endpoint}"
+    url = f"{_get_api_base()}{endpoint}"
     try:
         if method == "GET":
             resp = requests.get(url, params=data)
@@ -91,6 +98,54 @@ def _run_cmd(cmd: List[str], cwd: Optional[Path] = None) -> Tuple[int, str]:
     except subprocess.CalledProcessError as e:
         return e.returncode, e.output.decode().strip()
 
+def _check_gog_auth() -> Dict[str, Any]:
+    try:
+        result = subprocess.run(
+            ["gog", "auth", "status", "--plain"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        return {"installed": False, "accounts": [], "authenticated": False}
+    except Exception:
+        return {"installed": True, "accounts": [], "authenticated": False}
+
+    accounts: List[str] = []
+    if result.returncode == 0:
+        for line in result.stdout.strip().splitlines():
+            if "@" in line and "account" in line.lower():
+                parts = line.split("\t")
+                if len(parts) >= 2:
+                    accounts.append(parts[1].strip())
+    return {"installed": True, "accounts": accounts, "authenticated": len(accounts) > 0}
+
+def _check_wacli_auth() -> Dict[str, Any]:
+    try:
+        result = subprocess.run(
+            ["wacli", "auth", "status", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        return {"installed": False, "authenticated": False}
+    except Exception:
+        return {"installed": True, "authenticated": False}
+
+    if result.returncode != 0:
+        return {"installed": True, "authenticated": False}
+    try:
+        data = json.loads(result.stdout)
+        payload = data.get("data", data)
+        return {
+            "installed": True,
+            "authenticated": bool(payload.get("authenticated")),
+            "phone": payload.get("phone"),
+        }
+    except Exception:
+        return {"installed": True, "authenticated": False}
+
 def _port_available(port: int, host: str = "127.0.0.1") -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.5)
@@ -123,6 +178,19 @@ def _ensure_env_file(repo_dir: Path) -> None:
     if example_path.exists():
         shutil.copy2(example_path, env_path)
         click.echo("✓ Created .env from .env.example")
+
+def _load_env(repo_dir: Path) -> None:
+    env_path = repo_dir / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        if not line or line.strip().startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 def _set_env_var(env_path: Path, key: str, value: str) -> None:
     if not env_path.exists():
@@ -157,11 +225,59 @@ def _wait_for_health(api_base: str, timeout_seconds: int = 10) -> bool:
         time.sleep(0.5)
     return False
 
+def _check_llm_ready(api_base: str) -> None:
+    try:
+        resp = requests.get(f"{api_base}/api/settings/system", timeout=5)
+        if not resp.ok:
+            _warn(f"LLM status check failed: {resp.status_code}")
+            return
+        data = resp.json()
+        runtime_ready = data.get("llm_runtime_ready")
+        runtime_error = data.get("llm_runtime_error")
+        if runtime_ready:
+            _ok("LLM runtime ready.")
+        else:
+            _warn(f"LLM not ready: {runtime_error or 'Unknown error'}")
+            _warn("If you just connected Qwen, re-open Settings → LLM Provider to verify.")
+    except Exception as exc:
+        _warn(f"LLM status check failed: {exc}")
+
+def _set_llm_env(env_path: Path, provider: str, auth_type: str, api_key: Optional[str], base_url: Optional[str], model: Optional[str]) -> None:
+    _set_env_var(env_path, "LLM_PROVIDER", provider)
+    _set_env_var(env_path, "LLM_AUTH_TYPE", auth_type)
+    if api_key is not None:
+        _set_env_var(env_path, "LLM_API_KEY", api_key)
+    if base_url:
+        _set_env_var(env_path, "LLM_BASE_URL", base_url)
+    if model:
+        _set_env_var(env_path, "LLM_MODEL", model)
+    os.environ["LLM_PROVIDER"] = provider
+    os.environ["LLM_AUTH_TYPE"] = auth_type
+    if api_key is not None:
+        os.environ["LLM_API_KEY"] = api_key
+    if base_url:
+        os.environ["LLM_BASE_URL"] = base_url
+    if model:
+        os.environ["LLM_MODEL"] = model
+
+def _set_llm_settings_via_api(api_base: str, payload: dict) -> bool:
+    try:
+        resp = requests.put(f"{api_base}/api/settings/system", json=payload, timeout=8)
+        if not resp.ok:
+            _warn(f"LLM settings update failed: {resp.status_code} {resp.text}")
+            return False
+        _ok("LLM settings saved.")
+        return True
+    except Exception as exc:
+        _warn(f"LLM settings update failed: {exc}")
+        return False
+
 def _configure_personal_mode(repo_dir: Path) -> None:
     _step("Personal mode")
     env_path = repo_dir / ".env"
     enable_personal = click.confirm("Enable Personal Mode (no account required)?", default=True)
     _set_env_var(env_path, "MYCASA_PERSONAL_MODE", "1" if enable_personal else "0")
+    os.environ["MYCASA_PERSONAL_MODE"] = "1" if enable_personal else "0"
     if not enable_personal:
         _ok("Personal mode disabled. You can enable it later in .env.")
         return
@@ -226,6 +342,11 @@ def _qwen_login_flow(api_base: str, username: Optional[str], password: Optional[
 
     if start.status_code == 401 and not token:
         # Need login (non-personal mode)
+        personal_mode = os.environ.get("MYCASA_PERSONAL_MODE", "1").lower() in {"1", "true", "yes"}
+        if personal_mode and not username:
+            click.echo("✗ Backend requires login. Personal Mode appears off on the backend.")
+            click.echo("  Fix: set MYCASA_PERSONAL_MODE=1 in .env and restart, or pass --username/--password.")
+            return False
         if not username:
             username = click.prompt("Username")
         if not password:
@@ -351,6 +472,9 @@ def _qwen_login_direct(no_browser: bool) -> bool:
             settings.system.llm_auth_type = "qwen-oauth"
             settings.system.llm_provider = "openai-compatible"
             settings.system.llm_base_url = oauth_settings.get("resource_url")
+            current_model = getattr(settings.system, "llm_model", None) or ""
+            if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b"}:
+                settings.system.llm_model = "qwen-plus"
             settings.system.llm_oauth = oauth_settings
             store.save(settings)
             reset_llm_client()
@@ -366,6 +490,9 @@ def _qwen_login_direct(no_browser: bool) -> bool:
 @click.group()
 def cli():
     """MyCasa Pro - Home Operating System CLI"""
+    _load_env(_repo_root())
+    global API_BASE
+    API_BASE = _get_api_base()
 
 
 # ============ BACKEND ============
@@ -550,14 +677,15 @@ def llm():
 
 
 @llm.command("qwen-login")
-@click.option("--api-base", default=API_BASE, help="API base URL")
+@click.option("--api-base", default=None, help="API base URL")
 @click.option("--username", envvar="MYCASA_USERNAME", help="MyCasa username")
 @click.option("--password", envvar="MYCASA_PASSWORD", help="MyCasa password", hide_input=True)
 @click.option("--token", envvar="MYCASA_TOKEN", help="Existing auth token")
 @click.option("--no-browser", is_flag=True, help="Do not open the verification URL in a browser")
 @click.option("--api/--direct", "use_api", default=False, help="Use backend API (requires MyCasa login) instead of direct device flow")
-def qwen_login(api_base: str, username: Optional[str], password: Optional[str], token: Optional[str], no_browser: bool, use_api: bool):
+def qwen_login(api_base: Optional[str], username: Optional[str], password: Optional[str], token: Optional[str], no_browser: bool, use_api: bool):
     """Authenticate Qwen via device OAuth and store tokens."""
+    api_base = api_base or _get_api_base()
     if use_api:
         _qwen_login_flow(api_base, username, password, token, no_browser)
         return
@@ -636,6 +764,13 @@ def setup(api_port: int, start_frontend: bool, start_backend: bool):
 
     # 3b) Personal mode
     _configure_personal_mode(repo_dir)
+    try:
+        from config.settings import DEFAULT_TENANT_ID
+        from core.tenant_identity import TenantIdentityManager
+        TenantIdentityManager(DEFAULT_TENANT_ID).ensure_identity_structure()
+        _ok("Tenant identity templates installed.")
+    except Exception:
+        _warn("Could not install tenant identity templates.")
 
     # 4) Backend
     _step("Backend")
@@ -676,12 +811,77 @@ def setup(api_port: int, start_frontend: bool, start_backend: bool):
         _ok(f"Frontend starting at http://{public_host}:{ui_port}")
 
     # 6) Qwen OAuth
-    _step("Qwen OAuth")
-    if click.confirm("Connect Qwen OAuth now?", default=True):
-        ok = _qwen_login_flow(api_base, None, None, None, False)
-        if not ok:
-            _warn("API OAuth failed. Trying direct device flow...")
-            _qwen_login_direct(False)
+    _step("LLM Provider")
+    env_path = repo_dir / ".env"
+    choice = click.prompt(
+        "Choose LLM provider",
+        type=click.Choice(["qwen", "openai", "anthropic", "skip"], case_sensitive=False),
+        default="qwen",
+    ).lower()
+    if choice == "qwen":
+        if click.confirm("Connect Qwen OAuth now?", default=True):
+            ok = _qwen_login_flow(api_base, None, None, None, False)
+            if not ok:
+                _warn("API OAuth failed. Trying direct device flow...")
+                _qwen_login_direct(False)
+            _check_llm_ready(api_base)
+    elif choice in {"openai", "anthropic"}:
+        key_label = "OpenAI" if choice == "openai" else "Anthropic"
+        api_key = click.prompt(f"Enter {key_label} API key", hide_input=True)
+        default_model = "gpt-4o-mini" if choice == "openai" else "claude-3-5-sonnet"
+        model = click.prompt("Model", default=default_model)
+        payload = {
+            "llm_provider": choice,
+            "llm_auth_type": "api_key",
+            "llm_api_key": api_key,
+            "llm_model": model,
+        }
+        if not _set_llm_settings_via_api(api_base, payload):
+            _warn("Backend not reachable yet; writing settings to .env for later.")
+        _set_llm_env(env_path, choice, "api_key", api_key, None, model)
+        _check_llm_ready(api_base)
+    else:
+        _warn("Skipping LLM setup. You can configure it later in Settings → General.")
+
+    # 7) Inbox connectors (Gmail + WhatsApp)
+    _step("Inbox connectors (Gmail + WhatsApp)")
+    gog_status = _check_gog_auth()
+    if not gog_status["installed"]:
+        _warn("gog CLI not installed (required for Gmail).")
+        click.echo("  Install: brew install doitintl/tap/gog (macOS) or see docs/API_KEYS_REQUIRED.md")
+    else:
+        if gog_status["authenticated"]:
+            _ok(f"Gmail authenticated: {', '.join(gog_status['accounts'])}")
+            if gog_status["accounts"]:
+                _set_env_var(env_path, "MYCASA_GMAIL_ACCOUNT", gog_status["accounts"][0])
+        else:
+            if click.confirm("Gmail not authenticated. Run 'gog auth login' now?", default=True):
+                subprocess.run(["gog", "auth", "login"])
+                gog_status = _check_gog_auth()
+                if gog_status["authenticated"]:
+                    _ok(f"Gmail authenticated: {', '.join(gog_status['accounts'])}")
+                    if gog_status["accounts"]:
+                        _set_env_var(env_path, "MYCASA_GMAIL_ACCOUNT", gog_status["accounts"][0])
+                else:
+                    _warn("Gmail still not authenticated. You can run 'gog auth login' later.")
+
+    wa_status = _check_wacli_auth()
+    if not wa_status["installed"]:
+        _warn("wacli not installed (required for WhatsApp).")
+        click.echo("  Install: npm install -g @nicholasoxford/wacli")
+    else:
+        if wa_status.get("authenticated"):
+            phone = wa_status.get("phone")
+            suffix = f" ({phone})" if phone else ""
+            _ok(f"WhatsApp authenticated{suffix}")
+        else:
+            if click.confirm("WhatsApp not authenticated. Run 'wacli auth' now?", default=True):
+                subprocess.run(["wacli", "auth"])
+                wa_status = _check_wacli_auth()
+                if wa_status.get("authenticated"):
+                    _ok("WhatsApp authenticated.")
+                else:
+                    _warn("WhatsApp still not authenticated. You can run 'wacli auth' later.")
 
     click.echo("\nSetup complete.")
     ui_url = f"http://{public_host}:{ui_port}"

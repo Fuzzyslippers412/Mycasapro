@@ -419,6 +419,16 @@ export const theme = createTheme({
       defaultProps: {
         radius: "md",
       },
+      styles: () => ({
+        root: {
+          border: "1px solid var(--border-1)",
+          backgroundColor: "var(--surface-1)",
+          boxShadow: "var(--shadow-1)",
+        },
+        title: {
+          fontWeight: 600,
+        },
+      }),
     },
 
     Tabs: {

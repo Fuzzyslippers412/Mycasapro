@@ -14,9 +14,10 @@ This provides the comprehensive view Lamido wants:
 from fastapi import APIRouter
 from typing import Dict, Any
 from datetime import datetime
-from pathlib import Path
 
 from config.settings import VAULT_PATH, DEFAULT_TENANT_ID
+from core.tenant_identity import TenantIdentityManager
+from agents.heartbeat_checker import HouseholdHeartbeatChecker, CheckType
 
 router = APIRouter(prefix="/system", tags=["System Live"])
 
@@ -43,6 +44,7 @@ async def get_live_status() -> Dict[str, Any]:
         "shared_context": await _get_shared_context_status(),
         "memory": await _get_memory_status(),
         "scheduled_jobs": await _get_scheduled_jobs(),
+        "household_heartbeat": await _get_household_heartbeat_status(),
     }
 
 
@@ -266,22 +268,51 @@ async def _get_connector_status() -> Dict[str, Any]:
 
 async def _get_chat_status() -> Dict[str, Any]:
     """Get chat session status"""
-    from api.routes.chat import _conversations
-    
-    sessions = []
-    for conv_id, messages in _conversations.items():
-        if messages:
-            sessions.append({
-                "id": conv_id,
-                "message_count": len(messages),
-                "last_activity": messages[-1].get("timestamp") if messages else None,
-            })
-    
-    return {
-        "active_sessions": len(sessions),
-        "sessions": sessions,
-        "total_messages": sum(len(m) for m in _conversations.values()),
-    }
+    try:
+        from database import get_db
+        from database.models import ChatConversation, ChatMessage
+        from datetime import timedelta
+
+        with get_db() as db:
+            conversations = (
+                db.query(ChatConversation)
+                .order_by(ChatConversation.updated_at.desc())
+                .limit(20)
+                .all()
+            )
+            sessions = []
+            for conv in conversations:
+                last_msg = (
+                    db.query(ChatMessage)
+                    .filter(ChatMessage.conversation_id == conv.id)
+                    .order_by(ChatMessage.created_at.desc())
+                    .first()
+                )
+                count = (
+                    db.query(ChatMessage)
+                    .filter(ChatMessage.conversation_id == conv.id)
+                    .count()
+                )
+                sessions.append({
+                    "id": conv.id,
+                    "message_count": count,
+                    "last_activity": last_msg.created_at.isoformat() if last_msg else None,
+                })
+
+            total_messages = db.query(ChatMessage).count()
+            recent_cutoff = datetime.now() - timedelta(hours=12)
+            active_sessions = sum(
+                1 for session in sessions
+                if session.get("last_activity") and datetime.fromisoformat(session["last_activity"]) > recent_cutoff
+            )
+
+        return {
+            "active_sessions": active_sessions,
+            "sessions": sessions,
+            "total_messages": total_messages,
+        }
+    except Exception as e:
+        return {"active_sessions": 0, "sessions": [], "total_messages": 0, "error": str(e)}
 
 
 async def _get_shared_context_status() -> Dict[str, Any]:
@@ -312,28 +343,27 @@ async def _get_shared_context_status() -> Dict[str, Any]:
 
 async def _get_memory_status() -> Dict[str, Any]:
     """Get memory file status"""
-    clawd_dir = Path.home() / "clawd"
-    memory_dir = clawd_dir / "memory"
-    
-    files = {
-        "MEMORY.md": (clawd_dir / "MEMORY.md").exists(),
-        "USER.md": (clawd_dir / "USER.md").exists(),
-        "TOOLS.md": (clawd_dir / "TOOLS.md").exists(),
-        "SOUL.md": (clawd_dir / "SOUL.md").exists(),
-    }
-    
-    # Count daily memory files
+    manager = TenantIdentityManager(DEFAULT_TENANT_ID)
+    manager.ensure_identity_structure()
+    tenant_dir = manager.tenant_dir
+    memory_dir = tenant_dir / "memory"
+
+    files = {}
+    for filename in manager.REQUIRED_FILES + manager.OPTIONAL_FILES:
+        files[filename] = (tenant_dir / filename).exists()
+
     daily_files = list(memory_dir.glob("*.md")) if memory_dir.exists() else []
-    
-    # Get today's memory
     today = datetime.now().strftime("%Y-%m-%d")
     today_file = memory_dir / f"{today}.md"
     today_chars = 0
     if today_file.exists():
-        today_chars = len(today_file.read_text())
-    
+        try:
+            today_chars = len(today_file.read_text())
+        except Exception:
+            today_chars = 0
+
     return {
-        "workspace": str(clawd_dir),
+        "workspace": str(tenant_dir),
         "core_files": files,
         "daily_memory": {
             "total_files": len(daily_files),
@@ -345,31 +375,72 @@ async def _get_memory_status() -> Dict[str, Any]:
 
 async def _get_scheduled_jobs() -> Dict[str, Any]:
     """Get scheduled job status"""
-    from database import get_db
-    from database.models import ScheduledJob
-    
-    jobs = []
     try:
-        with get_db() as db:
-            db_jobs = db.query(ScheduledJob).filter(
-                ScheduledJob.is_active == True
-            ).all()
-            
-            for job in db_jobs:
-                jobs.append({
-                    "id": job.id,
-                    "name": job.name,
-                    "schedule": job.schedule,
-                    "last_run": job.last_run.isoformat() if job.last_run else None,
-                    "next_run": job.next_run.isoformat() if job.next_run else None,
-                })
+        from agents.scheduler import get_scheduler, ScheduleFrequency
+
+        scheduler = get_scheduler()
+        jobs = []
+
+        def _describe(job) -> str:
+            freq = job.frequency
+            if freq == ScheduleFrequency.HOURLY:
+                return f"Hourly @ :{job.minute:02d}"
+            if freq == ScheduleFrequency.DAILY:
+                return f"Daily @ {job.hour:02d}:{job.minute:02d}"
+            if freq == ScheduleFrequency.WEEKLY:
+                return f"Weekly (day {job.day_of_week}) @ {job.hour:02d}:{job.minute:02d}"
+            if freq == ScheduleFrequency.MONTHLY:
+                return f"Monthly (day {job.day_of_month}) @ {job.hour:02d}:{job.minute:02d}"
+            return "Once"
+
+        for job in scheduler.list_jobs(include_disabled=False):
+            jobs.append({
+                "id": job.id,
+                "name": job.name,
+                "schedule": _describe(job),
+                "last_run": job.last_run.isoformat() if job.last_run else None,
+                "next_run": job.next_run.isoformat() if job.next_run else None,
+            })
+
+        return {
+            "active_jobs": len(jobs),
+            "jobs": jobs,
+        }
     except Exception as e:
         return {"status": "error", "error": str(e)}
-    
-    return {
-        "active_jobs": len(jobs),
-        "jobs": jobs,
-    }
+
+
+async def _get_household_heartbeat_status() -> Dict[str, Any]:
+    """Get household heartbeat status and findings summary."""
+    try:
+        checker = HouseholdHeartbeatChecker(DEFAULT_TENANT_ID)
+        state = checker._load_state()
+        last_checks = state.get("lastChecks", {})
+        last_run = None
+        if last_checks:
+            last_run = max(last_checks.values())
+
+        next_due = checker._calculate_next_check_time().isoformat()
+
+        from database import get_db
+        from database.models import Notification
+        categories = [c.value for c in CheckType]
+        with get_db() as db:
+            open_findings = (
+                db.query(Notification)
+                .filter(Notification.category.in_(categories))
+                .filter(Notification.is_read == False)  # noqa: E712
+                .count()
+            )
+
+        return {
+            "last_run": last_run,
+            "next_due": next_due,
+            "open_findings": open_findings,
+            "last_consolidation": state.get("lastConsolidation"),
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @router.get("/health")

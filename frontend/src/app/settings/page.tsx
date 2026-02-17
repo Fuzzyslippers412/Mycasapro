@@ -290,6 +290,19 @@ export default function SettingsPage() {
   const [inboxEnabled, setInboxEnabled] = useState(false);
   const [inboxLaunching, setInboxLaunching] = useState(false);
   const [inboxStatus, setInboxStatus] = useState<string | null>(null);
+  const [mailSettings, setMailSettings] = useState({
+    allowAgentReplies: false,
+    allowWhatsappReplies: false,
+    allowEmailReplies: false,
+    gmailEnabled: true,
+    whatsappEnabled: true,
+  });
+  const [mailSettingsSaving, setMailSettingsSaving] = useState(false);
+  const [mailSettingsError, setMailSettingsError] = useState<string | null>(null);
+  const [connectorStatus, setConnectorStatus] = useState<{
+    whatsapp?: { connected: boolean; phone?: string | null; status?: string; error?: string };
+    gmail?: { connected: boolean; accounts: string[]; status?: string };
+  }>({});
   
   // Database stats
   const [dbStats, setDbStats] = useState<{
@@ -397,6 +410,36 @@ export default function SettingsPage() {
   const [llmSaving, setLlmSaving] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
   const [llmSaved, setLlmSaved] = useState(false);
+  const readInputValue = (eventOrValue: any) => {
+    if (typeof eventOrValue === "string") return eventOrValue;
+    return eventOrValue?.currentTarget?.value ?? "";
+  };
+  const providerDefaults = (provider: string) => {
+    if (provider === "openai") {
+      return { baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" };
+    }
+    if (provider === "anthropic") {
+      return { baseUrl: "", model: "claude-3-5-sonnet" };
+    }
+    return { baseUrl: "https://api.venice.ai/api/v1", model: "qwen2.5-72b-instruct" };
+  };
+  const [identity, setIdentity] = useState({
+    soul: "",
+    user: "",
+    security: "",
+    tools: "",
+    heartbeat: "",
+    memory: "",
+  });
+  const [identityStatus, setIdentityStatus] = useState<any>(null);
+  const [identityLoading, setIdentityLoading] = useState(false);
+  const [identitySaving, setIdentitySaving] = useState(false);
+  const [identityError, setIdentityError] = useState<string | null>(null);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateData, setTemplateData] = useState<Record<string, string>>({});
+  const [templateFile, setTemplateFile] = useState("soul");
   const [qwenOauth, setQwenOauth] = useState({
     status: "idle" as "idle" | "starting" | "pending" | "success" | "error",
     sessionId: null as string | null,
@@ -486,11 +529,11 @@ export default function SettingsPage() {
       const data = await apiFetch<any>("/api/settings/system");
       const merge = (prev: typeof llmConfig) => ({
         ...prev,
-        provider: data.llm_provider || prev.provider,
-        baseUrl: data.llm_base_url || prev.baseUrl,
-        model: data.llm_model || prev.model,
+        provider: data.llm_provider ?? prev.provider,
+        baseUrl: data.llm_base_url ?? prev.baseUrl,
+        model: data.llm_model ?? prev.model,
         apiKeySet: Boolean(data.llm_api_key_set),
-        authType: data.llm_auth_type || prev.authType,
+        authType: data.llm_auth_type ?? prev.authType,
         oauthConnected: Boolean(data.llm_oauth_connected),
         oauthExpiresAt: data.llm_oauth_expires_at ?? null,
         oauthResourceUrl: data.llm_oauth_resource_url ?? null,
@@ -558,11 +601,89 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const fetchMailSettings = useCallback(async () => {
+    setMailSettingsError(null);
+    try {
+      const data = await apiFetch<any>("/api/settings/agent/mail");
+      setMailSettings({
+        allowAgentReplies: Boolean(data.allow_agent_replies),
+        allowWhatsappReplies: Boolean(data.allow_whatsapp_replies),
+        allowEmailReplies: Boolean(data.allow_email_replies),
+        gmailEnabled: Boolean(data.gmail_enabled),
+        whatsappEnabled: Boolean(data.whatsapp_enabled),
+      });
+    } catch (e) {
+      setMailSettingsError(getErrorMessage(e, "Failed to load inbox reply settings"));
+    }
+  }, []);
+
+  const fetchConnectorStatus = useCallback(async () => {
+    try {
+      const [wa, google] = await Promise.all([
+        apiFetch<any>("/api/connectors/whatsapp/status"),
+        apiFetch<any>("/api/google/status"),
+      ]);
+      setConnectorStatus({
+        whatsapp: {
+          connected: Boolean(wa?.connected),
+          phone: wa?.phone || null,
+          status: wa?.status,
+          error: wa?.error,
+        },
+        gmail: {
+          connected: Boolean(google?.accounts?.length),
+          accounts: Array.isArray(google?.accounts) ? google.accounts : [],
+          status: google?.auth_status,
+        },
+      });
+    } catch (e) {
+      // Leave defaults; UI will show unknown
+    }
+  }, []);
+
+  const fetchIdentity = useCallback(async () => {
+    setIdentityLoading(true);
+    setIdentityError(null);
+    try {
+      const data = await apiFetch<any>("/api/identity");
+      setIdentityStatus(data.status || null);
+      const payload = data.identity || {};
+      setIdentity({
+        soul: payload.soul || "",
+        user: payload.user || "",
+        security: payload.security || "",
+        tools: payload.tools || "",
+        heartbeat: payload.heartbeat || "",
+        memory: payload.memory || "",
+      });
+    } catch (e) {
+      setIdentityError(getErrorMessage(e, "Failed to load identity"));
+    } finally {
+      setIdentityLoading(false);
+    }
+  }, []);
+
+  const fetchTemplates = useCallback(async () => {
+    setTemplateLoading(true);
+    setTemplateError(null);
+    try {
+      const data = await apiFetch<any>("/api/identity/templates");
+      setTemplateData(data.templates || {});
+    } catch (e) {
+      setTemplateError(getErrorMessage(e, "Failed to load templates"));
+    } finally {
+      setTemplateLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSystemSettings();
     fetchNotificationSettings();
     fetchSecuritySettings();
-  }, [fetchSystemSettings, fetchNotificationSettings, fetchSecuritySettings]);
+    fetchMailSettings();
+    fetchConnectorStatus();
+    fetchIdentity();
+  }, [fetchSystemSettings, fetchNotificationSettings, fetchSecuritySettings, fetchMailSettings, fetchConnectorStatus, fetchIdentity]);
 
   useEffect(() => () => stopQwenPolling(), []);
 
@@ -768,11 +889,11 @@ export default function SettingsPage() {
       if (res?.settings) {
         const merge = (prev: typeof llmConfig) => ({
           ...prev,
-          provider: res.settings.llm_provider || prev.provider,
-          baseUrl: res.settings.llm_base_url || prev.baseUrl,
-          model: res.settings.llm_model || prev.model,
+          provider: res.settings.llm_provider ?? prev.provider,
+          baseUrl: res.settings.llm_base_url ?? prev.baseUrl,
+          model: res.settings.llm_model ?? prev.model,
           apiKeySet: Boolean(res.settings.llm_api_key_set),
-          authType: res.settings.llm_auth_type || prev.authType,
+          authType: res.settings.llm_auth_type ?? prev.authType,
           oauthConnected: Boolean(res.settings.llm_oauth_connected),
           oauthExpiresAt: res.settings.llm_oauth_expires_at ?? null,
           oauthResourceUrl: res.settings.llm_oauth_resource_url ?? null,
@@ -810,6 +931,66 @@ export default function SettingsPage() {
       });
     } finally {
       setLlmSaving(false);
+    }
+  };
+
+  const handleSaveIdentity = async () => {
+    setIdentitySaving(true);
+    setIdentityError(null);
+    try {
+      await apiFetch<any>("/api/identity", {
+        method: "PUT",
+        body: JSON.stringify(identity),
+      });
+      notifications.show({
+        title: "Identity updated",
+        message: "Tenant identity files saved.",
+        color: "green",
+      });
+      fetchIdentity();
+    } catch (e) {
+      const message = getErrorMessage(e, "Failed to save identity");
+      setIdentityError(message);
+      notifications.show({
+        title: "Identity save failed",
+        message,
+        color: "red",
+      });
+    } finally {
+      setIdentitySaving(false);
+    }
+  };
+
+  const handleRestoreIdentity = async (scope: "selected" | "all") => {
+    const files = scope === "selected" ? [templateFile] : undefined;
+    const confirmText =
+      scope === "selected"
+        ? `Restore ${templateFile.toUpperCase()} from template? This will overwrite your edits.`
+        : "Restore ALL identity files from templates? This will overwrite your edits.";
+    if (typeof window !== "undefined" && !window.confirm(confirmText)) return;
+    setIdentitySaving(true);
+    setIdentityError(null);
+    try {
+      await apiFetch<any>("/api/identity/restore", {
+        method: "POST",
+        body: JSON.stringify({ files }),
+      });
+      notifications.show({
+        title: "Templates restored",
+        message: scope === "selected" ? "Selected file restored." : "All identity files restored.",
+        color: "green",
+      });
+      fetchIdentity();
+    } catch (e) {
+      const message = getErrorMessage(e, "Failed to restore templates");
+      setIdentityError(message);
+      notifications.show({
+        title: "Restore failed",
+        message,
+        color: "red",
+      });
+    } finally {
+      setIdentitySaving(false);
     }
   };
 
@@ -1131,6 +1312,49 @@ export default function SettingsPage() {
     }
   };
 
+  const updateMailSetting = async (patch: Partial<typeof mailSettings>) => {
+    setMailSettingsSaving(true);
+    setMailSettingsError(null);
+    try {
+      const res = await apiFetch<any>("/api/settings/agent/mail", {
+        method: "PUT",
+        body: JSON.stringify({
+          allow_agent_replies: patch.allowAgentReplies ?? mailSettings.allowAgentReplies,
+          allow_whatsapp_replies: patch.allowWhatsappReplies ?? mailSettings.allowWhatsappReplies,
+          allow_email_replies: patch.allowEmailReplies ?? mailSettings.allowEmailReplies,
+          gmail_enabled: patch.gmailEnabled ?? mailSettings.gmailEnabled,
+          whatsapp_enabled: patch.whatsappEnabled ?? mailSettings.whatsappEnabled,
+        }),
+      });
+      if (res?.settings) {
+        setMailSettings({
+          allowAgentReplies: Boolean(res.settings.allow_agent_replies),
+          allowWhatsappReplies: Boolean(res.settings.allow_whatsapp_replies),
+          allowEmailReplies: Boolean(res.settings.allow_email_replies),
+          gmailEnabled: Boolean(res.settings.gmail_enabled),
+          whatsappEnabled: Boolean(res.settings.whatsapp_enabled),
+        });
+      } else {
+        setMailSettings((prev) => ({ ...prev, ...patch }));
+      }
+      notifications.show({
+        title: "Inbox settings updated",
+        message: "Reply controls saved.",
+        color: "green",
+        autoClose: 2000,
+      });
+    } catch (e) {
+      setMailSettingsError(getErrorMessage(e, "Failed to update inbox reply settings"));
+      notifications.show({
+        title: "Update failed",
+        message: getErrorMessage(e, "Failed to update inbox reply settings"),
+        color: "red",
+      });
+    } finally {
+      setMailSettingsSaving(false);
+    }
+  };
+
   const handleContextSave = async () => {
     if (!selectedContextAgent) return;
     setContextSaving(true);
@@ -1373,12 +1597,54 @@ export default function SettingsPage() {
           )}
         </Stack>
       </Modal>
-      <Stack gap="md">
+      <Modal
+        opened={templateModalOpen}
+        onClose={() => setTemplateModalOpen(false)}
+        title="Template comparison"
+        size="xl"
+      >
+        <Stack gap="md">
+          {templateLoading && (
+            <Group gap="xs">
+              <Loader size="sm" />
+              <Text size="sm">Loading templates…</Text>
+            </Group>
+          )}
+          {templateError && (
+            <Alert color="red">{templateError}</Alert>
+          )}
+          <SimpleGrid cols={{ base: 1, md: 2 }}>
+            <Textarea
+              label={`Current ${templateFile.toUpperCase()}.md`}
+              value={(identity as any)[templateFile] || ""}
+              minRows={12}
+              readOnly
+            />
+            <Textarea
+              label={`Template ${templateFile.toUpperCase()}.md`}
+              value={templateData[templateFile] || ""}
+              minRows={12}
+              readOnly
+            />
+          </SimpleGrid>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setTemplateModalOpen(false)}>
+              Close
+            </Button>
+            <Button color="red" variant="light" onClick={() => handleRestoreIdentity("selected")}>
+              Restore selected
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+      <Stack gap="md" className="settings-page">
         {/* Header */}
-        <Group justify="space-between">
+        <Group justify="space-between" className="settings-header">
           <div>
-            <Title order={2}>Settings</Title>
-            <Text size="sm" c="dimmed">Configure MyCasa Pro</Text>
+            <Text fw={600}>System status</Text>
+            <Text size="xs" c="dimmed">
+              Backend connection and runtime state
+            </Text>
           </div>
           <Group gap="md">
             {/* Backend Status */}
@@ -1446,10 +1712,13 @@ export default function SettingsPage() {
           </Alert>
         )}
 
-        <Tabs value={activeTab} onChange={handleTabChange} orientation="vertical" style={{ minHeight: 600 }}>
-          <Tabs.List style={{ width: 200 }}>
+        <Tabs value={activeTab} onChange={handleTabChange} orientation="vertical" style={{ minHeight: 600 }} className="settings-tabs">
+          <Tabs.List style={{ width: 200 }} className="settings-tabs-list">
             <Tabs.Tab value="general" leftSection={<IconSettings size={16} />}>
               General
+            </Tabs.Tab>
+            <Tabs.Tab value="identity" leftSection={<IconHome size={16} />}>
+              Identity
             </Tabs.Tab>
             <Tabs.Tab value="agents" leftSection={<IconCpu size={16} />}>
               Agents
@@ -1491,7 +1760,7 @@ export default function SettingsPage() {
                   <Group justify="space-between" align="flex-start">
                     <div>
                       <Text size="sm">Monthly System Cost Cap</Text>
-                      <Text size="xs" c="dimmed">Alert when AI API costs approach limit</Text>
+                      <Text size="xs" c="dimmed">Alert when model API costs approach limit</Text>
                     </div>
                     <NumberInput 
                       value={settings.systemCostCap}
@@ -1579,18 +1848,30 @@ export default function SettingsPage() {
                     )}
                   </Group>
                   </div>
-                  <Badge color="violet" variant="light">AI Core</Badge>
+                  <Badge color="violet" variant="light">Model Core</Badge>
                 </Group>
                 <Stack gap="sm">
                   <SegmentedControl
                     fullWidth
                     value={llmConfig.authType}
                     onChange={(value) =>
-                      setLlmConfig((s) => ({
-                        ...s,
-                        authType: value as "api_key" | "qwen-oauth",
-                        provider: value === "qwen-oauth" ? "openai-compatible" : s.provider,
-                      }))
+                      setLlmConfig((s) => {
+                        const nextAuth = value as "api_key" | "qwen-oauth";
+                        if (nextAuth === "qwen-oauth") {
+                          return {
+                            ...s,
+                            authType: nextAuth,
+                            provider: "openai-compatible",
+                          };
+                        }
+                        const defaults = providerDefaults(s.provider || "openai");
+                        return {
+                          ...s,
+                          authType: nextAuth,
+                          baseUrl: s.baseUrl || defaults.baseUrl,
+                          model: s.model || defaults.model,
+                        };
+                      })
                     }
                     data={[
                       { value: "qwen-oauth", label: "Qwen OAuth" },
@@ -1605,28 +1886,43 @@ export default function SettingsPage() {
                       { value: "anthropic", label: "Anthropic" },
                     ]}
                     value={llmConfig.provider}
-                    onChange={(v) => v && setLlmConfig((s) => ({ ...s, provider: v }))}
+                    onChange={(v) =>
+                      v &&
+                      setLlmConfig((s) => {
+                        const defaults = providerDefaults(v);
+                        return {
+                          ...s,
+                          provider: v,
+                          authType: v === "openai-compatible" ? s.authType : "api_key",
+                          baseUrl: defaults.baseUrl,
+                          model: defaults.model,
+                        };
+                      })
+                    }
                     disabled={llmConfig.authType === "qwen-oauth"}
                   />
                   <TextInput
                     label="Base URL"
                     placeholder="https://api.venice.ai/api/v1"
                     value={llmConfig.baseUrl}
-                    onChange={(e) => setLlmConfig((s) => ({ ...s, baseUrl: e.currentTarget.value }))}
-                    disabled={llmConfig.authType === "qwen-oauth" && llmConfig.oauthConnected}
+                    onChange={(e) => setLlmConfig((s) => ({ ...s, baseUrl: readInputValue(e) }))}
+                    disabled={
+                      (llmConfig.authType === "qwen-oauth" && llmConfig.oauthConnected) ||
+                      llmConfig.provider === "anthropic"
+                    }
                   />
                   <TextInput
                     label="Model"
                     placeholder="qwen2.5-72b-instruct"
                     value={llmConfig.model}
-                    onChange={(e) => setLlmConfig((s) => ({ ...s, model: e.currentTarget.value }))}
+                    onChange={(e) => setLlmConfig((s) => ({ ...s, model: readInputValue(e) }))}
                   />
                   {llmConfig.authType === "api_key" && (
                     <PasswordInput
                       label="API Key"
                       placeholder={llmConfig.apiKeySet ? "Key stored" : "Enter API key"}
                       value={llmConfig.apiKey}
-                      onChange={(e) => setLlmConfig((s) => ({ ...s, apiKey: e.currentTarget.value }))}
+                      onChange={(e) => setLlmConfig((s) => ({ ...s, apiKey: readInputValue(e) }))}
                       description={llmConfig.apiKeySet ? "A key is already saved. Enter a new one to replace it." : undefined}
                     />
                   )}
@@ -1732,7 +2028,7 @@ export default function SettingsPage() {
                     label="Household Name"
                     placeholder="Tenkiang Residence"
                     value={settings.householdName}
-                    onChange={(e) => setSettings((prev) => ({ ...prev, householdName: e.currentTarget.value }))}
+                    onChange={(e) => setSettings((prev) => ({ ...prev, householdName: readInputValue(e) }))}
                   />
                   <Select 
                     label="Timezone" 
@@ -1792,7 +2088,7 @@ export default function SettingsPage() {
                     label="Focus Sectors"
                     description="Industries you want to prioritize"
                     data={[
-                      { value: "tech", label: "Technology & AI" },
+                      { value: "tech", label: "Technology & Automation" },
                       { value: "dividend", label: "Dividend & Income" },
                       { value: "growth", label: "High Growth" },
                       { value: "value", label: "Value Investing" },
@@ -1803,7 +2099,7 @@ export default function SettingsPage() {
                   <Textarea 
                     label="Investment Notes"
                     description="Any specific goals or constraints for the Finance agent"
-                    placeholder="e.g., Building retirement fund, saving for kids college, want exposure to AI sector..."
+                    placeholder="e.g., Building retirement fund, saving for college, want exposure to the technology sector..."
                     minRows={3}
                   />
                   <Divider my="xs" />
@@ -1831,6 +2127,132 @@ export default function SettingsPage() {
                     />
                   </SimpleGrid>
                 </Stack>
+              </Card>
+            </Stack>
+          </Tabs.Panel>
+
+          {/* IDENTITY TAB */}
+          <Tabs.Panel value="identity" pl="md" style={{ flex: 1 }}>
+            <Stack gap="md">
+              <Card withBorder p="lg" radius="md">
+                <Group justify="space-between" align="flex-start">
+                  <div>
+                    <Text fw={600}>Tenant Identity</Text>
+                    <Text size="xs" c="dimmed">
+                      These files define who Galidima is, who it serves, and the household context.
+                    </Text>
+                  </div>
+                  <Badge color={identityStatus?.ready ? "green" : "yellow"} variant="light">
+                    {identityStatus?.ready ? "Ready" : "Missing required files"}
+                  </Badge>
+                </Group>
+                {identityStatus?.missing_required?.length > 0 && (
+                  <Text size="xs" c="dimmed" mt="sm">
+                    Missing: {identityStatus.missing_required.join(", ")}
+                  </Text>
+                )}
+                {identityLoading && (
+                  <Group gap="xs" mt="sm">
+                    <Loader size="sm" />
+                    <Text size="xs" c="dimmed">Loading identity files...</Text>
+                  </Group>
+                )}
+                {identityError && (
+                  <Alert color="red" mt="sm">
+                    {identityError}
+                  </Alert>
+                )}
+              </Card>
+
+              <Card withBorder p="lg" radius="md">
+                <Stack gap="sm">
+                  <Group justify="space-between" align="flex-end">
+                    <Select
+                      label="Template file"
+                      data={[
+                        { value: "soul", label: "SOUL.md" },
+                        { value: "user", label: "USER.md" },
+                        { value: "security", label: "SECURITY.md" },
+                        { value: "tools", label: "TOOLS.md" },
+                        { value: "heartbeat", label: "HEARTBEAT.md" },
+                        { value: "memory", label: "MEMORY.md" },
+                      ]}
+                      value={templateFile}
+                      onChange={(value) => setTemplateFile(value || "soul")}
+                      w={220}
+                    />
+                    <Group gap="xs">
+                      <Button
+                        variant="light"
+                        onClick={async () => {
+                          if (!Object.keys(templateData).length) {
+                            await fetchTemplates();
+                          }
+                          setTemplateModalOpen(true);
+                        }}
+                        disabled={templateLoading}
+                      >
+                        Compare to template
+                      </Button>
+                      <Button variant="default" onClick={() => handleRestoreIdentity("selected")}>
+                        Restore selected
+                      </Button>
+                      <Button color="red" variant="light" onClick={() => handleRestoreIdentity("all")}>
+                        Restore all
+                      </Button>
+                    </Group>
+                  </Group>
+                  <Textarea
+                    label="SOUL.md"
+                    description="Persona, principles, and voice"
+                    minRows={4}
+                    value={identity.soul}
+                    onChange={(e) => setIdentity((prev) => ({ ...prev, soul: readInputValue(e) }))}
+                  />
+                  <Textarea
+                    label="USER.md"
+                    description="Who the system serves"
+                    minRows={4}
+                    value={identity.user}
+                    onChange={(e) => setIdentity((prev) => ({ ...prev, user: readInputValue(e) }))}
+                  />
+                  <Textarea
+                    label="SECURITY.md"
+                    description="Trust boundaries and privacy rules"
+                    minRows={4}
+                    value={identity.security}
+                    onChange={(e) => setIdentity((prev) => ({ ...prev, security: readInputValue(e) }))}
+                  />
+                  <Textarea
+                    label="TOOLS.md"
+                    description="Household specifics, contacts, preferences"
+                    minRows={4}
+                    value={identity.tools}
+                    onChange={(e) => setIdentity((prev) => ({ ...prev, tools: readInputValue(e) }))}
+                  />
+                  <Textarea
+                    label="HEARTBEAT.md"
+                    description="Proactive checklist for Galidima"
+                    minRows={4}
+                    value={identity.heartbeat}
+                    onChange={(e) => setIdentity((prev) => ({ ...prev, heartbeat: readInputValue(e) }))}
+                  />
+                  <Textarea
+                    label="MEMORY.md"
+                    description="Curated long-term memory"
+                    minRows={4}
+                    value={identity.memory}
+                    onChange={(e) => setIdentity((prev) => ({ ...prev, memory: readInputValue(e) }))}
+                  />
+                </Stack>
+                <Group justify="flex-end" mt="md">
+                  <Button variant="default" onClick={fetchIdentity} disabled={identityLoading}>
+                    Reload
+                  </Button>
+                  <Button onClick={handleSaveIdentity} loading={identitySaving}>
+                    Save Identity
+                  </Button>
+                </Group>
               </Card>
             </Stack>
           </Tabs.Panel>
@@ -2252,14 +2674,66 @@ export default function SettingsPage() {
               
               <Divider />
               
+              <Text fw={600}>Reply Controls</Text>
+              <Card withBorder p="lg" radius="md">
+                <Stack gap="sm">
+                  <Group justify="space-between">
+                    <div>
+                      <Text fw={600}>Allow agent replies</Text>
+                      <Text size="xs" c="dimmed">Enable automated replies for inbox messages.</Text>
+                    </div>
+                    <Switch
+                      checked={mailSettings.allowAgentReplies}
+                      onChange={(e) => updateMailSetting({ allowAgentReplies: e.currentTarget.checked })}
+                      disabled={mailSettingsSaving}
+                    />
+                  </Group>
+                  <Group justify="space-between">
+                    <div>
+                      <Text fw={600}>WhatsApp replies</Text>
+                      <Text size="xs" c="dimmed">Allow sending WhatsApp replies from the inbox.</Text>
+                    </div>
+                    <Switch
+                      checked={mailSettings.allowWhatsappReplies}
+                      onChange={(e) => updateMailSetting({ allowWhatsappReplies: e.currentTarget.checked })}
+                      disabled={mailSettingsSaving || !mailSettings.allowAgentReplies}
+                    />
+                  </Group>
+                  <Group justify="space-between">
+                    <div>
+                      <Text fw={600}>Email replies</Text>
+                      <Text size="xs" c="dimmed">Allow sending email replies from the inbox.</Text>
+                    </div>
+                    <Switch
+                      checked={mailSettings.allowEmailReplies}
+                      onChange={(e) => updateMailSetting({ allowEmailReplies: e.currentTarget.checked })}
+                      disabled={mailSettingsSaving || !mailSettings.allowAgentReplies}
+                    />
+                  </Group>
+                  {mailSettingsError && (
+                    <Alert color="red" variant="light" icon={<IconAlertCircle size={16} />}>
+                      {mailSettingsError}
+                    </Alert>
+                  )}
+                </Stack>
+              </Card>
+
+              <Divider />
+              
               <Text fw={600}>Connected Accounts</Text>
               <ConnectorCard
                 name="WhatsApp"
                 icon={IconBrandWhatsapp}
                 color="green"
-                connected={true}
-                account="+1 267 718 0107"
-                lastSync="5 minutes ago"
+                connected={Boolean(connectorStatus.whatsapp?.connected)}
+                account={
+                  connectorStatus.whatsapp?.phone
+                    ? connectorStatus.whatsapp.phone
+                    : connectorStatus.whatsapp?.connected
+                      ? "Connected"
+                      : "Not connected"
+                }
+                lastSync={connectorStatus.whatsapp?.status || "Unknown"}
                 onConnect={() => {}}
                 onDisconnect={() => {}}
               />
@@ -2267,9 +2741,15 @@ export default function SettingsPage() {
                 name="Gmail"
                 icon={IconMail}
                 color="red"
-                connected={true}
-                account="tfamsec@gmail.com"
-                lastSync="10 minutes ago"
+                connected={Boolean(connectorStatus.gmail?.connected)}
+                account={
+                  connectorStatus.gmail?.accounts?.length
+                    ? connectorStatus.gmail.accounts[0]
+                    : connectorStatus.gmail?.connected
+                      ? "Connected"
+                      : "Not connected"
+                }
+                lastSync={connectorStatus.gmail?.status || "Unknown"}
                 onConnect={() => {}}
                 onDisconnect={() => {}}
               />
@@ -2337,7 +2817,7 @@ export default function SettingsPage() {
                     label="Alert Email"
                     placeholder="alerts@example.com"
                     value={settings.notifications.alertEmail}
-                    onChange={(e) => setSettings(s => ({...s, notifications: { ...s.notifications, alertEmail: e.currentTarget.value }}))}
+                    onChange={(e) => setSettings(s => ({...s, notifications: { ...s.notifications, alertEmail: readInputValue(e) }}))}
                   />
                 )}
                 <Divider />

@@ -9,6 +9,7 @@ import {
   Stack,
   Text,
   TextInput,
+  Button,
   ActionIcon,
   Avatar,
   ScrollArea,
@@ -24,6 +25,7 @@ import {
   Loader,
   Select,
   Alert,
+  SimpleGrid,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import {
@@ -213,10 +215,11 @@ function getStatusLabel(state: string, enabled: boolean): string {
   }
 }
 
-export function GlobalChat() {
+export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedded" }) {
   const { isAuthenticated, user } = useAuth();
   const router = useRouter();
-  const [expanded, { toggle }] = useDisclosure(false);
+  const isEmbedded = mode === "embedded";
+  const [expanded, { toggle }] = useDisclosure(isEmbedded);
   const [showAgentSettings, setShowAgentSettings] = useState(false);
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
@@ -270,11 +273,9 @@ export function GlobalChat() {
         return { label: "Command", accent: tokens.colors.primary[500], color: "blue" as const };
     }
   })();
-  const chatAllowed = isAuthenticated || personalMode;
+  const chatAllowed = !personalModeError;
   const lipTitle = !chatAllowed
-    ? personalModeError
-      ? "Backend unavailable"
-      : "Sign in to chat"
+    ? personalModeError || "Backend unavailable"
     : expanded
       ? "Close chat"
       : `Ask ${agentTheme.label}`;
@@ -331,10 +332,10 @@ export function GlobalChat() {
     }
 
     if (!chatAllowed) {
-      setHistoryStatus("idle");
-      setHistoryError(null);
-      return;
-    }
+        setHistoryStatus("idle");
+        setHistoryError("Backend unavailable. Start the API to load history.");
+        return;
+      }
 
     const storedConversation = window.localStorage.getItem(conversationKey(selectedAgent, user?.id)) || undefined;
     setHistoryStatus("loading");
@@ -362,7 +363,7 @@ export function GlobalChat() {
         if (isNetworkError(err)) {
           setHistoryError(`Unable to reach backend at ${API_URL}.`);
         } else if (err?.status === 401) {
-          setHistoryError(personalMode ? "Session unavailable. Retry shortly." : "Sign in required to load history.");
+          setHistoryError("History unavailable on this server. Enable Personal Mode or sign in.");
         } else {
           setHistoryError(err?.detail || "Unable to load history.");
         }
@@ -452,16 +453,6 @@ export function GlobalChat() {
   useEffect(() => {
     let active = true;
     const fetchLlmStatus = async () => {
-      if (!chatAllowed) {
-        if (active) {
-          setLlmStatus((prev) => ({
-            ...prev,
-            loading: false,
-            error: personalMode ? "Personal mode active" : "Not signed in",
-          }));
-        }
-        return;
-      }
       try {
         const data = await apiFetch<any>("/api/settings/system");
         if (!active) return;
@@ -504,6 +495,7 @@ export function GlobalChat() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (isEmbedded) return;
     const root = rootRef.current;
     if (!root) return;
 
@@ -663,8 +655,10 @@ export function GlobalChat() {
           continue;
         }
         if (status === 401) {
-          addLocalResponse(personalMode ? "Session unavailable. Retry shortly." : "Session expired. Please sign in again.", "System");
-          if (!personalMode) router.push("/login");
+          addLocalResponse(
+            "This server requires sign-in. Enable Personal Mode in .env or sign in from the login page.",
+            "System"
+          );
         } else if (detail) {
           if (String(detail).toLowerCase().includes("api key")) {
             addLocalResponse(
@@ -712,12 +706,11 @@ export function GlobalChat() {
       const localMessage: Message = {
         id: nextMessageId(),
         role: "assistant",
-        content: "Sign in is required on this server. Enable Personal Mode to chat without login.",
+        content: "Backend unavailable. Start the API and try again.",
         timestamp: new Date().toISOString(),
         agent: "System",
       };
       setMessages((prev) => [...prev, localMessage]);
-      if (!personalMode) router.push("/login");
       return;
     }
 
@@ -870,9 +863,9 @@ export function GlobalChat() {
 
       await sendToAgents(targetAgents, messageContent, addLocalResponse);
     } catch (error) {
-      let errorContent = "Sorry, I couldn't connect to the backend. Please check if the server is running.";
+      let errorContent = "We can’t reach the backend. Start the server and try again.";
       if (error instanceof Error && error.name === "AbortError") {
-        errorContent = "The request timed out. The AI is taking longer than expected. Please try again.";
+        errorContent = "The request timed out. The response is taking longer than expected. Please try again.";
       }
       const errorMessage: Message = {
         id: nextMessageId(),
@@ -923,29 +916,36 @@ export function GlobalChat() {
           llmStatus.authType || "unknown"
         } • ${llmConnected ? "Connected" : "Not connected"}`;
 
+  const showPanel = isEmbedded || expanded;
+
   return (
     <Box
-      className="global-chat"
+      className={`global-chat${isEmbedded ? " global-chat--embedded" : ""}`}
       ref={rootRef}
       style={{
-        position: "fixed",
-        bottom: 16,
-        right: 24,
-        left: "auto",
-        transform: "none",
+        position: isEmbedded ? "sticky" : "fixed",
+        top: isEmbedded ? 88 : undefined,
+        bottom: isEmbedded ? "auto" : 16,
+        left: isEmbedded ? "auto" : "50%",
+        right: "auto",
+        transform: isEmbedded ? "none" : "translateX(-50%)",
         zIndex: 200,
-        width: "min(520px, calc(100vw - 32px))",
+        width: isEmbedded ? "100%" : "min(560px, calc(100vw - 32px))",
+        minWidth: isEmbedded ? "100%" : undefined,
+        maxWidth: isEmbedded ? "100%" : undefined,
+        alignSelf: isEmbedded ? "stretch" : undefined,
       }}
     >
       {/* Chat panel */}
-      <Collapse in={expanded}>
+      <Collapse in={showPanel}>
         <Box
           className="global-chat-panel"
           style={{
             marginBottom: -1,
             display: "flex",
             flexDirection: "column",
-            height: "min(520px, calc(100vh - 160px))",
+            height: isEmbedded ? "min(840px, calc(100vh - 140px))" : "min(520px, calc(100vh - 160px))",
+            minHeight: isEmbedded ? 520 : undefined,
           }}
         >
           {/* Header with Agent Controls Toggle */}
@@ -967,11 +967,11 @@ export function GlobalChat() {
               </ThemeIcon>
               <Stack gap={0}>
                 <Text fw={600} size="sm">
-                  MyCasa Command Hub • {agentTheme.label}
+                  Home Command • {agentTheme.label}
                 </Text>
                 <Text size="xs" c="dimmed">
                   {selectedAgent === "manager"
-                    ? "Galidima routes requests across your home systems"
+                    ? "Galidima routes requests and logs outcomes for your home"
                     : `Focused on ${agentTheme.label.toLowerCase()} workflows`}
                 </Text>
               </Stack>
@@ -1172,11 +1172,6 @@ export function GlobalChat() {
           {/* Messages */}
           <ScrollArea style={{ flex: 1 }} p="sm" type="auto" className="global-chat-messages">
             <Stack gap="sm">
-              {!chatAllowed && personalModeChecked && !personalModeError && (
-                <Alert color="yellow" title="Sign in required">
-                  Sign in to send messages and sync your conversation history.
-                </Alert>
-              )}
               {!chatAllowed && personalModeChecked && personalModeError && (
                 <Alert color="red" title="Backend unavailable">
                   {personalModeError}
@@ -1190,13 +1185,24 @@ export function GlobalChat() {
               {!isLoading && messages.length === 0 && (
                 <Box py="xl" style={{ textAlign: "center" }}>
                   <Text c="dimmed" size="sm">
-                    Start with one of these prompts:
+                    Try one of these prompts:
                   </Text>
-                  <Stack mt="sm" gap="xs">
-                    <Text size="sm">• Review today’s tasks</Text>
-                    <Text size="sm">• Summarize recent activity</Text>
-                    <Text size="sm">• Run a system health check</Text>
-                  </Stack>
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs" mt="sm">
+                    {[
+                      "Review today’s tasks",
+                      "Summarize recent activity",
+                      "Run a system health check",
+                    ].map((prompt) => (
+                      <Button
+                        key={prompt}
+                        size="xs"
+                        variant="light"
+                        onClick={() => setInputValue(prompt)}
+                      >
+                        {prompt}
+                      </Button>
+                    ))}
+                  </SimpleGrid>
                 </Box>
               )}
               {messages.map((message) => (
@@ -1311,7 +1317,7 @@ export function GlobalChat() {
                   placeholder={
                     chatAllowed
                       ? `Message ${agentTheme.label}... (@agent or /help)`
-                      : "Sign in to chat with Galidima"
+                      : "Start the backend to send messages"
                   }
                   value={inputValue}
                   onChange={(e) => setInputValue(e.currentTarget.value)}
@@ -1342,45 +1348,46 @@ export function GlobalChat() {
         </Box>
       </Collapse>
 
-      {/* Chat lip/tab - fades into page when collapsed */}
-      <Box onClick={toggle} className="global-chat-lip" data-expanded={expanded}>
-        <Box className="global-chat-lip-inner">
-          <Box className="global-chat-lip-notch" aria-hidden="true" />
-          <Group
-            justify="center"
-            gap="xs"
-            py={expanded ? 6 : 8}
-            px="lg"
-          >
-            <ThemeIcon
-              variant={expanded ? "light" : "filled"}
-              color={agentTheme.color}
-              size="sm"
-              radius="md"
-              style={{ transition: "opacity 200ms ease" }}
+      {!isEmbedded && (
+        <Box onClick={toggle} className="global-chat-lip" data-expanded={expanded}>
+          <Box className="global-chat-lip-inner">
+            <Box className="global-chat-lip-notch" aria-hidden="true" />
+            <Group
+              justify="center"
+              gap="xs"
+              py={expanded ? 6 : 8}
+              px="lg"
             >
-              <IconMessage size={14} />
-            </ThemeIcon>
-            <Text fw={expanded ? 500 : 600} size="xs" c={expanded ? "dimmed" : "gray.7"}>
-              {lipTitle}
-            </Text>
-            {!expanded && (
-              <Badge
-                size="xs"
-                variant="light"
-                color={onlineCount > 0 ? "green" : "gray"}
+              <ThemeIcon
+                variant={expanded ? "light" : "filled"}
+                color={agentTheme.color}
+                size="sm"
+                radius="md"
+                style={{ transition: "opacity 200ms ease" }}
               >
-                {onlineCount}
-              </Badge>
-            )}
-            {expanded ? (
-              <IconChevronDown size={14} style={{ color: "var(--mantine-color-dimmed)" }} />
-            ) : (
-              <IconChevronUp size={14} style={{ color: "var(--mantine-color-gray-6)" }} />
-            )}
-          </Group>
+                <IconMessage size={14} />
+              </ThemeIcon>
+              <Text fw={expanded ? 500 : 600} size="xs" c={expanded ? "dimmed" : "gray.7"}>
+                {lipTitle}
+              </Text>
+              {!expanded && (
+                <Badge
+                  size="xs"
+                  variant="light"
+                  color={onlineCount > 0 ? "green" : "gray"}
+                >
+                  {onlineCount}
+                </Badge>
+              )}
+              {expanded ? (
+                <IconChevronDown size={14} style={{ color: "var(--mantine-color-dimmed)" }} />
+              ) : (
+                <IconChevronUp size={14} style={{ color: "var(--mantine-color-gray-6)" }} />
+              )}
+            </Group>
+          </Box>
         </Box>
-      </Box>
+      )}
     </Box>
   );
 }

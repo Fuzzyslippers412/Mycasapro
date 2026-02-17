@@ -391,7 +391,7 @@ export default function SystemPage() {
           </Alert>
         )}
 
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="md" className="system-stats">
           <Paper withBorder p="md" radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>System status</Text>
             <Group gap="xs" mt={6}>
@@ -468,8 +468,8 @@ export default function SystemPage() {
           </Group>
         </Card>
 
-        <Tabs defaultValue="live">
-          <Tabs.List mb="md">
+        <Tabs defaultValue="live" className="system-tabs">
+          <Tabs.List mb="md" className="system-tabs-list">
             <Tabs.Tab value="live" leftSection={<IconChartLine size={16} />}>
               Live Overview
             </Tabs.Tab>
@@ -514,7 +514,7 @@ export default function SystemPage() {
                 </Alert>
               )}
               {/* Summary Cards */}
-              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }}>
+              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} className="system-portfolio-grid">
                 <Paper withBorder p="md" radius="md">
                   <Text size="sm" c="dimmed">Total Portfolio Value</Text>
                   <div style={{ marginTop: '4px' }}>
@@ -668,7 +668,7 @@ export default function SystemPage() {
                 </Alert>
               )}
 
-              <Grid gutter="md">
+              <Grid gutter="md" className="system-db-grid">
                 <Grid.Col span={{ base: 12, md: 6 }}>
                   <Paper withBorder p="md" radius="md">
                     <Group justify="space-between">

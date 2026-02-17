@@ -34,9 +34,11 @@ class MailSkillAgent(BaseAgent):
     
     def __init__(self):
         super().__init__("mail-skill")
-        self.gmail_account = "tfamsec@gmail.com"
+        import os
+        self.gmail_account = os.getenv("MYCASA_GMAIL_ACCOUNT", "")
         self._last_gmail_fetch = None
         self._last_whatsapp_fetch = None
+        self._last_whatsapp_error = None
     
     def execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a task - Mail Skill only ingests, doesn't execute"""
@@ -212,6 +214,7 @@ class MailSkillAgent(BaseAgent):
         Returns list of normalized messages.
         """
         try:
+            self._last_whatsapp_error = None
             # Get recent chats with messages
             result = subprocess.run(
                 ["wacli", "chats", "list", "--limit", str(limit), "--json"],
@@ -221,11 +224,13 @@ class MailSkillAgent(BaseAgent):
             )
             
             if result.returncode != 0:
-                self.logger.error(f"wacli chats list failed: {result.stderr}")
+                self._last_whatsapp_error = (result.stderr or "").strip() or "wacli chats list failed"
+                self.logger.error(f"wacli chats list failed: {self._last_whatsapp_error}")
                 return []
             
             data = json.loads(result.stdout)
             if not data.get("success"):
+                self._last_whatsapp_error = "wacli returned an error"
                 return []
             
             chats = data.get("data", [])
@@ -250,12 +255,15 @@ class MailSkillAgent(BaseAgent):
             return messages
             
         except subprocess.TimeoutExpired:
+            self._last_whatsapp_error = "wacli timed out"
             self.logger.error("wacli chats list timed out")
             return []
         except json.JSONDecodeError as e:
+            self._last_whatsapp_error = "invalid wacli response"
             self.logger.error(f"Failed to parse wacli output: {e}")
             return []
         except Exception as e:
+            self._last_whatsapp_error = str(e)
             self.logger.error(f"WhatsApp fetch error: {e}")
             return []
     
@@ -415,7 +423,8 @@ class MailSkillAgent(BaseAgent):
             "gmail_count": len(gmail_messages),
             "whatsapp_count": len(whatsapp_messages),
             "new_messages": new_count,
-            "updated_messages": updated_count
+            "updated_messages": updated_count,
+            "whatsapp_error": self._last_whatsapp_error
         }
     
     def get_inbox_messages(

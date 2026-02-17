@@ -15,11 +15,12 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from threading import Lock
+import re
 
 from config.settings import DEFAULT_TENANT_ID
 from auth.dependencies import require_auth
 from database.connection import get_db
-from database.models import ChatConversation, ChatMessage
+from database.models import ChatConversation, ChatMessage, AgentLog, Notification
 from core.chat_store import get_or_create_conversation, add_message, get_history
 from sqlalchemy.orm import Session
 from core.secondbrain import SecondBrain
@@ -63,6 +64,20 @@ class AgentResponse(BaseModel):
     grounded_in: Optional[int] = None  # Number of RAG memories used
     conversation_id: Optional[str] = None
     error: Optional[str] = None
+    task_created: Optional[Dict[str, Any]] = None
+
+
+class AgentLogRequest(BaseModel):
+    action: str
+    details: Optional[str] = None
+    status: Optional[str] = "success"
+
+
+class AgentNotifyRequest(BaseModel):
+    message: str
+    title: Optional[str] = None
+    category: Optional[str] = None
+    priority: Optional[str] = "medium"
 
 
 # Agent prompts are now imported from core.agent_prompts
@@ -80,6 +95,18 @@ def _extract_llm_error(text: Optional[str]) -> Optional[str]:
     prefix = "LLM_ERROR:"
     if text.startswith(prefix):
         return text[len(prefix):].strip() or "LLM error"
+    return None
+
+
+def _extract_task_delete_id(message: str) -> Optional[int]:
+    if not message:
+        return None
+    match = re.search(r"(?:delete|remove|cancel)\s+(?:task|reminder)\s*(?:#|id\s*)?(\d+)", message, re.IGNORECASE)
+    if match:
+        try:
+            return int(match.group(1))
+        except Exception:
+            return None
     return None
 
 
@@ -186,9 +213,38 @@ async def get_agent_response(agent_id: str, message: str, context: Optional[str]
     agent = _get_cached_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found or not loaded")
+    canonical_id = _canonical_agent_id(agent_id)
 
     # Action-first: attempt real task creation for maintenance-style intents
     try:
+        delete_id = _extract_task_delete_id(message)
+        if delete_id is not None:
+            target_agent = agent
+            if not hasattr(target_agent, "remove_task"):
+                target_agent = _get_cached_agent("maintenance")
+            if not target_agent or not hasattr(target_agent, "remove_task"):
+                return {
+                    "agent_id": agent_id,
+                    "response": "Sorry — I couldn’t delete that task because the maintenance agent isn’t available.",
+                    "timestamp": datetime.now().isoformat(),
+                    "grounded_in": 0,
+                    "error": "Maintenance agent not available",
+                }
+            result = target_agent.remove_task(delete_id)
+            if not result or result.get("error"):
+                return {
+                    "agent_id": agent_id,
+                    "response": f"Sorry — I couldn’t delete task #{delete_id}. {result.get('error', 'Task not found')}.",
+                    "timestamp": datetime.now().isoformat(),
+                    "grounded_in": 0,
+                    "error": result.get("error", "Task not found"),
+                }
+            return {
+                "agent_id": agent_id,
+                "response": f"Deleted task #{delete_id}.",
+                "timestamp": datetime.now().isoformat(),
+                "grounded_in": 0,
+            }
         if hasattr(agent, "create_task_from_message"):
             task_result = agent.create_task_from_message(message)
             if task_result:
@@ -214,6 +270,34 @@ async def get_agent_response(agent_id: str, message: str, context: Optional[str]
                     "grounded_in": 0,
                     "task_created": task_result,
                 }
+        # If talking to the manager, also try routing task intents through maintenance.
+        if canonical_id == "manager":
+            maintenance_agent = _get_cached_agent("maintenance")
+            if maintenance_agent and hasattr(maintenance_agent, "create_task_from_message"):
+                task_result = maintenance_agent.create_task_from_message(message)
+                if task_result:
+                    if not task_result.get("success", True):
+                        return {
+                            "agent_id": agent_id,
+                            "response": f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')}",
+                            "timestamp": datetime.now().isoformat(),
+                            "grounded_in": 0,
+                            "error": task_result.get("error"),
+                            "task_created": task_result,
+                        }
+                    due = task_result.get("due_date")
+                    response_text = (
+                        f"Got it. I added the task \"{task_result.get('title', 'Task')}\" due {due}."
+                        if due
+                        else f"Got it. I added the task \"{task_result.get('title', 'Task')}\"."
+                    )
+                    return {
+                        "agent_id": agent_id,
+                        "response": response_text,
+                        "timestamp": datetime.now().isoformat(),
+                        "grounded_in": 0,
+                        "task_created": task_result,
+                    }
     except Exception as exc:
         return {
             "agent_id": agent_id,
@@ -315,6 +399,108 @@ async def chat_with_agent(
         grounded_in = 0
 
         if agent:
+            # Fast-path task deletion by ID (e.g., "delete task 12")
+            delete_id = _extract_task_delete_id(req.message)
+            if delete_id is not None:
+                target_agent = agent
+                if not hasattr(target_agent, "remove_task"):
+                    target_agent = _get_cached_agent("maintenance")
+                if not target_agent or not hasattr(target_agent, "remove_task"):
+                    response_text = "Sorry — I couldn’t delete that task because the maintenance agent isn’t available."
+                    assistant_msg = add_message(db, conversation, "assistant", response_text)
+                    return AgentResponse(
+                        agent_id=agent_id,
+                        response=response_text,
+                        timestamp=assistant_msg.created_at.isoformat(),
+                        thinking=None,
+                        conversation_id=conversation.id,
+                        error="Maintenance agent not available",
+                    )
+                try:
+                    result = target_agent.remove_task(delete_id)
+                    if not result or result.get("error"):
+                        response_text = f"Sorry — I couldn’t delete task #{delete_id}. {result.get('error', 'Task not found')}."
+                        assistant_msg = add_message(db, conversation, "assistant", response_text)
+                        return AgentResponse(
+                            agent_id=agent_id,
+                            response=response_text,
+                            timestamp=assistant_msg.created_at.isoformat(),
+                            thinking=None,
+                            conversation_id=conversation.id,
+                            error=result.get("error", "Task not found"),
+                        )
+                    try:
+                        from core.events_v2 import emit_sync, EventType
+                        emit_sync(EventType.TASK_DELETED, {"user_id": user.get("id"), "task_id": delete_id})
+                    except Exception:
+                        pass
+                    response_text = f"Deleted task #{delete_id}."
+                    assistant_msg = add_message(db, conversation, "assistant", response_text)
+                    return AgentResponse(
+                        agent_id=agent_id,
+                        response=response_text,
+                        timestamp=assistant_msg.created_at.isoformat(),
+                        thinking=None,
+                        conversation_id=conversation.id,
+                        error=None,
+                    )
+                except Exception as exc:
+                    response_text = f"Sorry — I couldn’t delete that task. {str(exc)}"
+                    assistant_msg = add_message(db, conversation, "assistant", response_text)
+                    return AgentResponse(
+                        agent_id=agent_id,
+                        response=response_text,
+                        timestamp=assistant_msg.created_at.isoformat(),
+                        thinking=None,
+                        conversation_id=conversation.id,
+                        error=str(exc),
+                    )
+
+            # Fast-path task creation for maintenance-style intents
+            if hasattr(agent, "create_task_from_message"):
+                try:
+                    task_result = agent.create_task_from_message(req.message)
+                    if task_result:
+                        if not task_result.get("success", True):
+                            response_text = f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')}"
+                            assistant_msg = add_message(db, conversation, "assistant", response_text)
+                            return AgentResponse(
+                                agent_id=agent_id,
+                                response=response_text,
+                                timestamp=assistant_msg.created_at.isoformat(),
+                                thinking=None,
+                                conversation_id=conversation.id,
+                                error=task_result.get("error"),
+                                task_created=task_result,
+                            )
+                        due = task_result.get("due_date")
+                        response_text = (
+                            f"Got it. I added the task \"{task_result.get('title', 'Task')}\" due {due}."
+                            if due
+                            else f"Got it. I added the task \"{task_result.get('title', 'Task')}\"."
+                        )
+                        assistant_msg = add_message(db, conversation, "assistant", response_text)
+                        return AgentResponse(
+                            agent_id=agent_id,
+                            response=response_text,
+                            timestamp=assistant_msg.created_at.isoformat(),
+                            thinking=None,
+                            conversation_id=conversation.id,
+                            error=None,
+                            task_created=task_result,
+                        )
+                except Exception as exc:
+                    response_text = f"Sorry — I couldn’t create that task. {str(exc)}"
+                    assistant_msg = add_message(db, conversation, "assistant", response_text)
+                    return AgentResponse(
+                        agent_id=agent_id,
+                        response=response_text,
+                        timestamp=assistant_msg.created_at.isoformat(),
+                        thinking=None,
+                        conversation_id=conversation.id,
+                        error=str(exc),
+                        task_created=None,
+                    )
             request_id = getattr(http_request.state, "request_id", None)
             response_text = await agent.chat(
                 req.message,
@@ -408,6 +594,76 @@ async def clear_agent_history(
         _agent_conversations[agent_id] = []
 
     return {"success": True, "agent_id": agent_id, "cleared": cleared, "conversation_id": conversation.id if conversation else None}
+
+
+@router.get("/{agent_id}/activity")
+async def get_agent_activity(
+    agent_id: str,
+    limit: int = 30,
+    user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Return recent activity logs for a specific agent."""
+    canonical_id = _canonical_agent_id(agent_id)
+    logs = (
+        db.query(AgentLog)
+        .filter(AgentLog.agent == canonical_id)
+        .order_by(AgentLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "agent_id": canonical_id,
+        "activity": [
+            {
+                "timestamp": log.created_at.isoformat(),
+                "action": log.action,
+                "details": log.details,
+            }
+            for log in logs
+        ],
+    }
+
+
+@router.post("/{agent_id}/log")
+async def log_agent_action(
+    agent_id: str,
+    req: AgentLogRequest,
+    user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Write an agent log entry (used by Setup Wizard and system tooling)."""
+    canonical_id = _canonical_agent_id(agent_id)
+    agent = _get_real_agent(canonical_id)
+    status = req.status or "success"
+    if agent and hasattr(agent, "log_action"):
+        agent.log_action(req.action, req.details, status=status)
+    else:
+        entry = AgentLog(agent=canonical_id, action=req.action, details=req.details, status=status)
+        db.add(entry)
+        db.commit()
+    return {"success": True}
+
+
+@router.post("/{agent_id}/notify")
+async def notify_agent(
+    agent_id: str,
+    req: AgentNotifyRequest,
+    user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Create a notification attributed to an agent."""
+    canonical_id = _canonical_agent_id(agent_id)
+    agent = _get_real_agent(canonical_id)
+    title = req.title or "Setup Wizard"
+    category = req.category or canonical_id
+    priority = req.priority or "medium"
+    if agent and hasattr(agent, "create_notification"):
+        agent.create_notification(title=title, message=req.message, category=category, priority=priority)
+    else:
+        db.add(Notification(title=title, message=req.message, category=category, priority=priority))
+        db.commit()
+    return {"success": True}
 
 
 @router.get("/available")

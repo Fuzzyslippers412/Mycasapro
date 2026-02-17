@@ -33,6 +33,7 @@ import {
   Timeline,
   RingProgress,
   Center,
+  Switch,
 } from "@mantine/core";
 import {
   IconSparkles,
@@ -52,6 +53,7 @@ import {
   IconSend,
   IconWand,
   IconBulb,
+  IconRocket,
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 
@@ -80,6 +82,8 @@ interface JanitorStatus {
   };
   metrics: {
     last_audit: string;
+    last_preflight?: string;
+    last_preflight_status?: string;
     findings_count: number;
     recent_edits: number;
     system_health: string;
@@ -170,6 +174,14 @@ interface WizardHistoryItem {
   checks_total: number;
 }
 
+interface PreflightInfo {
+  script_path: string;
+  command: string;
+  command_destructive?: string;
+  command_use_existing?: string;
+  notes?: string;
+}
+
 export default function JanitorPage() {
   // State
   const [status, setStatus] = useState<JanitorStatus | null>(null);
@@ -186,6 +198,12 @@ export default function JanitorPage() {
   const [wizardFixing, setWizardFixing] = useState<string | null>(null);
   const [wizardHistory, setWizardHistory] = useState<WizardHistoryItem[]>([]);
   const [wizardHistoryLoading, setWizardHistoryLoading] = useState(false);
+  const [preflightInfo, setPreflightInfo] = useState<PreflightInfo | null>(null);
+  const [preflightRunning, setPreflightRunning] = useState(false);
+  const [preflightResult, setPreflightResult] = useState<any>(null);
+  const [preflightIsolated, setPreflightIsolated] = useState(true);
+  const [preflightIncludeOauth, setPreflightIncludeOauth] = useState(false);
+  const [preflightAllowDestructive, setPreflightAllowDestructive] = useState(false);
 
   // Chat state
   const [chatMessage, setChatMessage] = useState("");
@@ -263,6 +281,18 @@ export default function JanitorPage() {
     }
   }, []);
 
+  const fetchPreflightInfo = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/janitor/preflight-info`);
+      if (res.ok) {
+        const data = await res.json();
+        setPreflightInfo(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch preflight info:", e);
+    }
+  }, []);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     await Promise.all([
@@ -271,9 +301,10 @@ export default function JanitorPage() {
       fetchBackups(),
       fetchLogs(),
       fetchWizardHistory(),
+      fetchPreflightInfo(),
     ]);
     setLoading(false);
-  }, [fetchStatus, fetchEditHistory, fetchBackups, fetchLogs, fetchWizardHistory]);
+  }, [fetchStatus, fetchEditHistory, fetchBackups, fetchLogs, fetchWizardHistory, fetchPreflightInfo]);
 
   useEffect(() => {
     fetchAll();
@@ -397,6 +428,47 @@ export default function JanitorPage() {
       });
     } finally {
       setWizardFixing(null);
+    }
+  };
+
+  const runPreflight = async () => {
+    setPreflightRunning(true);
+    try {
+      const payload = {
+        api_base: preflightIsolated ? undefined : API_URL,
+        skip_oauth: !preflightIncludeOauth,
+        open_browser: preflightIncludeOauth,
+        allow_destructive: preflightAllowDestructive,
+        isolated: preflightIsolated,
+      };
+      const res = await fetch(`${API_URL}/api/janitor/run-preflight`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPreflightResult(data);
+        notifications.show({
+          title: "Preflight Complete",
+          message: data?.result?.status === "pass" ? "All checks passed." : "Preflight reported issues.",
+          color: data?.result?.status === "pass" ? "green" : "yellow",
+          icon: <IconRocket size={16} />,
+        });
+        fetchStatus();
+        fetchWizardHistory();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail || "Preflight failed");
+      }
+    } catch (e: unknown) {
+      notifications.show({
+        title: "Preflight Failed",
+        message: e instanceof Error ? e.message : "Could not run preflight",
+        color: "red",
+      });
+    } finally {
+      setPreflightRunning(false);
     }
   };
 
@@ -596,16 +668,16 @@ export default function JanitorPage() {
         </Stack>
       </Modal>
 
-      <Container size="xl" py="md">
+      <Container size="xl" py="md" className="janitor-page">
         <Group justify="space-between" mb="xs">
           <Group gap="sm">
-            <ThemeIcon size="xl" variant="light" color="violet">
-              <IconSparkles size={28} />
+            <ThemeIcon size="lg" variant="light" color="violet">
+              <IconSparkles size={20} />
             </ThemeIcon>
             <div>
-              <Title order={2}>Janitor</Title>
+              <Text fw={600}>Janitor</Text>
               <Text c="dimmed" size="sm">
-                Salimata ✨ — System health, audits & safe code editing
+                Salimata ✨ — System health, audits, and safe edits
               </Text>
             </div>
           </Group>
@@ -618,8 +690,8 @@ export default function JanitorPage() {
           </Group>
         </Group>
 
-        <Tabs defaultValue="overview">
-          <Tabs.List mb="md">
+        <Tabs defaultValue="overview" className="janitor-tabs">
+          <Tabs.List mb="md" className="janitor-tabs-list">
             <Tabs.Tab value="overview" leftSection={<IconHeart size={16} />}>
               Overview
             </Tabs.Tab>
@@ -647,7 +719,7 @@ export default function JanitorPage() {
           <Tabs.Panel value="overview">
             <Stack gap="md">
               {/* Status Cards */}
-              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }}>
+              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} className="janitor-stats">
                 <Card withBorder p="lg" radius="md">
                   <Group justify="space-between">
                     <div>
@@ -739,6 +811,15 @@ export default function JanitorPage() {
                   Quick Actions
                 </Text>
                 <Group gap="sm">
+                  <Button
+                    leftSection={<IconRocket size={16} />}
+                    variant="light"
+                    color="blue"
+                    onClick={runPreflight}
+                    loading={preflightRunning}
+                  >
+                    Run Test Flight
+                  </Button>
                   <Button
                     leftSection={<IconWand size={16} />}
                     variant="light"
@@ -872,6 +953,95 @@ export default function JanitorPage() {
                     Last run: {new Date(wizardResult.timestamp).toLocaleString()}
                   </Text>
                 )}
+              </Card>
+
+              <Card withBorder p="md" radius="md">
+                <Group justify="space-between" align="center" wrap="wrap">
+                  <div>
+                    <Text fw={600}>Test Flight</Text>
+                    <Text size="sm" c="dimmed">
+                      End-to-end preflight checks for auth, tasks, and agent health.
+                    </Text>
+                  </div>
+                  <Button
+                    leftSection={<IconRocket size={16} />}
+                    onClick={runPreflight}
+                    loading={preflightRunning}
+                    variant="light"
+                    color="blue"
+                  >
+                    Run Test Flight
+                  </Button>
+                </Group>
+
+                <SimpleGrid cols={{ base: 1, sm: 3 }} mt="md">
+                  <Paper withBorder p="sm" radius="md">
+                    <Text size="xs" c="dimmed" mb={6}>
+                      Execution mode
+                    </Text>
+                    <Switch
+                      label={preflightIsolated ? "Isolated (recommended)" : "Use live backend"}
+                      checked={preflightIsolated}
+                      onChange={(e) => setPreflightIsolated(e.currentTarget.checked)}
+                    />
+                  </Paper>
+                  <Paper withBorder p="sm" radius="md">
+                    <Text size="xs" c="dimmed" mb={6}>
+                      OAuth coverage
+                    </Text>
+                    <Switch
+                      label={preflightIncludeOauth ? "Include Qwen OAuth (opens browser)" : "Skip OAuth"}
+                      checked={preflightIncludeOauth}
+                      onChange={(e) => setPreflightIncludeOauth(e.currentTarget.checked)}
+                    />
+                  </Paper>
+                  <Paper withBorder p="sm" radius="md">
+                    <Text size="xs" c="dimmed" mb={6}>
+                      Destructive checks
+                    </Text>
+                    <Switch
+                      label={preflightAllowDestructive ? "Allow destructive test actions" : "Read-only tests"}
+                      checked={preflightAllowDestructive}
+                      onChange={(e) => setPreflightAllowDestructive(e.currentTarget.checked)}
+                    />
+                  </Paper>
+                </SimpleGrid>
+
+                <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
+                  <Paper withBorder p="sm" radius="md">
+                    <Text size="xs" c="dimmed">
+                      Last test flight
+                    </Text>
+                    <Text fw={600}>
+                      {preflightResult?.result?.status
+                        ? preflightResult.result.status.toUpperCase()
+                        : status?.metrics.last_preflight_status
+                        ? status.metrics.last_preflight_status.toUpperCase()
+                        : "Not run"}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {preflightResult?.result?.timestamp ||
+                        status?.metrics.last_preflight ||
+                        "No timestamp available"}
+                    </Text>
+                    {preflightResult?.result?.failures !== undefined && (
+                      <Text size="xs" mt="xs">
+                        Failures: {preflightResult.result.failures}
+                      </Text>
+                    )}
+                  </Paper>
+                  <Paper withBorder p="sm" radius="md">
+                    <Text size="xs" c="dimmed">
+                      Command (CLI)
+                    </Text>
+                    <Code block>{preflightInfo?.command || "Unavailable"}</Code>
+                    {preflightInfo?.notes && (
+                      <Text size="xs" c="dimmed" mt="xs">
+                        {preflightInfo.notes}
+                      </Text>
+                    )}
+                  </Paper>
+                </SimpleGrid>
               </Card>
 
               {wizardError && (
@@ -1437,7 +1607,7 @@ export default function JanitorPage() {
                           ? "var(--mantine-color-blue-light)"
                           : msg.role === "error"
                           ? "var(--mantine-color-red-light)"
-                          : "var(--mantine-color-dark-6)"
+                          : "var(--surface-2)"
                       }
                       style={{
                         alignSelf: msg.role === "user" ? "flex-end" : "flex-start",

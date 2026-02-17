@@ -67,7 +67,7 @@ async def get_google_status():
                 lines = result.stdout.strip().split("\n")
                 for line in lines:
                     if "@" in line and "account" in line.lower():
-                        # Extract email from line like "account\ttfamsec@gmail.com"
+                        # Extract email from line like "account\tyour@gmail.com"
                         parts = line.split("\t")
                         if len(parts) >= 2:
                             accounts.append(parts[1])

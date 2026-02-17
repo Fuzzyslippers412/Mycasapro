@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 from enum import Enum
+import os
 
 router = APIRouter(prefix="/connectors", tags=["Connectors"])
 
@@ -161,7 +162,9 @@ def _get_connector_status(connector_id: str) -> Dict[str, Any]:
             if result.returncode == 0:
                 status_info["status"] = ConnectorStatus.CONNECTED
                 status_info["health"] = "healthy"
-                status_info["config_values"] = {"account": "tfamsec@gmail.com"}
+                account = os.getenv("MYCASA_GMAIL_ACCOUNT")
+                if account:
+                    status_info["config_values"] = {"account": account}
             else:
                 status_info["status"] = ConnectorStatus.INSTALLED
                 status_info["health"] = "needs auth"

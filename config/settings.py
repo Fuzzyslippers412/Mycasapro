@@ -16,14 +16,21 @@ BACKUP_DIR = DATA_DIR / "backups"
 BACKUP_DIR.mkdir(exist_ok=True)
 
 # SecondBrain Vault Path
-VAULT_BASE = Path.home() / "moltbot" / "vaults"
+LEGACY_VAULT_BASE = Path.home() / "moltbot" / "vaults"
+VAULT_BASE = DATA_DIR / "vaults"
+if (LEGACY_VAULT_BASE / DEFAULT_TENANT_ID / "secondbrain").exists():
+    VAULT_BASE = LEGACY_VAULT_BASE
+VAULT_BASE.mkdir(parents=True, exist_ok=True)
 VAULT_PATH = VAULT_BASE / DEFAULT_TENANT_ID / "secondbrain"
+VAULT_PATH.mkdir(parents=True, exist_ok=True)
 
 
 def get_vault_path(tenant_id: str = None) -> Path:
     """Get the vault path for a tenant"""
     tid = tenant_id or DEFAULT_TENANT_ID
-    return VAULT_BASE / tid / "secondbrain"
+    path = VAULT_BASE / tid / "secondbrain"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 # Database Configuration
 # Set MYCASA_DATABASE_URL env var for PostgreSQL, otherwise uses SQLite

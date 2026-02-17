@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""
+Casa CLI entry point (alias for ./mycasa).
+"""
+from pathlib import Path
+import os
+import sys
+
+REPO_DIR = Path(__file__).resolve().parent
+MYCASA_BIN = REPO_DIR / "mycasa"
+
+if __name__ == "__main__":
+    os.execv(sys.executable, [sys.executable, str(MYCASA_BIN), *sys.argv[1:]])

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { getApiBaseUrl } from "@/lib/api";
 import {
   Card,
+  Button,
   Group,
   Stack,
   Text,
@@ -28,7 +29,6 @@ import {
   IconRobot,
   IconBrain,
   IconPlugConnected,
-  IconMessage,
   IconDatabase,
   IconClock,
   IconRefresh,
@@ -36,7 +36,6 @@ import {
   IconX,
   IconAlertTriangle,
   IconFileText,
-  IconUsers,
   IconBrandWhatsapp,
   IconMail,
   IconCalendar,
@@ -76,11 +75,19 @@ interface LiveStatus {
     active_jobs: number;
     jobs: Array<any>;
   };
+  household_heartbeat?: {
+    last_run?: string | null;
+    next_due?: string | null;
+    open_findings?: number;
+    last_consolidation?: string | null;
+    error?: string;
+  };
 }
 
 function StatusBadge({ status }: { status: string }) {
   const color = status === "healthy" || status === "active" ? "green" 
     : status === "available" ? "blue"
+    : status === "warning" ? "yellow"
     : status === "error" ? "red" 
     : "gray";
   
@@ -131,6 +138,7 @@ export function LiveSystemDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [heartbeatRunning, setHeartbeatRunning] = useState(false);
 
   const fetchStatus = async () => {
     try {
@@ -184,11 +192,36 @@ export function LiveSystemDashboard() {
   const sbRecent = status?.secondbrain?.recent_notes ?? [];
   const connectorStats = status?.connectors?.stats ?? { total: 0, healthy: 0 };
   const connectorMap = status?.connectors?.connectors ?? {};
-  const chatStats = status?.chat ?? { total_messages: 0, active_sessions: 0 };
   const sharedContext = status?.shared_context ?? { status: "unavailable", sources: {} as Record<string, any> };
   const sharedSources = sharedContext.sources || {};
   const memory = status?.memory ?? { core_files: {} as Record<string, boolean>, daily_memory: { total_files: 0, today_exists: false, today_chars: 0 } };
   const scheduled = status?.scheduled_jobs ?? { active_jobs: 0, jobs: [] as Array<any> };
+  const heartbeat = status?.household_heartbeat ?? {
+    last_run: null,
+    next_due: null,
+    open_findings: 0,
+    last_consolidation: null,
+  };
+  const heartbeatStatus =
+    heartbeat.error
+      ? "error"
+      : (heartbeat.open_findings || 0) > 0
+        ? "warning"
+        : heartbeat.last_run
+          ? "healthy"
+          : "idle";
+
+  const runHeartbeatNow = async () => {
+    setHeartbeatRunning(true);
+    try {
+      await fetch(`${API_URL}/api/heartbeat/household/run`, { method: "POST" });
+      fetchStatus();
+    } catch (e) {
+      // Keep quiet; error shows in status refresh
+    } finally {
+      setHeartbeatRunning(false);
+    }
+  };
 
   return (
     <Stack gap="md">
@@ -236,11 +269,11 @@ export function LiveSystemDashboard() {
           subtitle="healthy"
         />
         <StatCard
-          title="Chat Messages"
-          value={chatStats.total_messages}
-          icon={IconMessage}
-          color="cyan"
-          subtitle={`${chatStats.active_sessions} sessions`}
+          title="Heartbeat"
+          value={heartbeat.open_findings || 0}
+          icon={IconActivity}
+          color={heartbeatStatus === "error" ? "red" : heartbeatStatus === "warning" ? "yellow" : "teal"}
+          subtitle={heartbeat.last_run ? "open findings" : "not run yet"}
         />
       </SimpleGrid>
 
@@ -408,12 +441,68 @@ export function LiveSystemDashboard() {
           </Stack>
         </Card>
 
+        {/* Household Heartbeat */}
+        <Card withBorder p="md" radius="md">
+          <Group justify="space-between" mb="md">
+            <Group gap="xs">
+              <ThemeIcon variant="light" color="primary" size="sm" radius="md">
+                <IconActivity size={14} />
+              </ThemeIcon>
+              <Text fw={600} size="sm">
+                Household Heartbeat
+              </Text>
+            </Group>
+            <StatusBadge status={heartbeatStatus} />
+          </Group>
+          <Stack gap="xs">
+            <Group justify="space-between">
+              <Text size="sm">Last run</Text>
+              <Text size="xs" c="dimmed">
+                {heartbeat.last_run ? new Date(heartbeat.last_run).toLocaleString() : "—"}
+              </Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm">Next check due</Text>
+              <Text size="xs" c="dimmed">
+                {heartbeat.next_due ? new Date(heartbeat.next_due).toLocaleString() : "—"}
+              </Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm">Open findings</Text>
+              <Badge size="xs" color={(heartbeat.open_findings || 0) > 0 ? "yellow" : "green"}>
+                {heartbeat.open_findings || 0}
+              </Badge>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm">Last consolidation</Text>
+              <Text size="xs" c="dimmed">
+                {heartbeat.last_consolidation ? new Date(heartbeat.last_consolidation).toLocaleString() : "—"}
+              </Text>
+            </Group>
+            <Group justify="flex-end" mt="xs">
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<IconRefresh size={14} />}
+                loading={heartbeatRunning}
+                onClick={runHeartbeatNow}
+              >
+                Run now
+              </Button>
+            </Group>
+          </Stack>
+        </Card>
+
         {/* Scheduled Jobs */}
         <Card withBorder p="md" radius="md">
           <Group justify="space-between" mb="md">
             <Group gap="xs">
-              <IconClock size={20} />
-              <Title order={5}>Scheduled Jobs</Title>
+              <ThemeIcon variant="light" color="primary" size="sm" radius="md">
+                <IconClock size={14} />
+              </ThemeIcon>
+              <Text fw={600} size="sm">
+                Scheduled Jobs
+              </Text>
             </Group>
             <Badge color="blue" variant="light">
               {scheduled.active_jobs} active

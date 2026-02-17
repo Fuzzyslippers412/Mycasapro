@@ -418,7 +418,7 @@ export function SchedulerManager() {
   }
 
   return (
-    <Stack gap="md">
+    <Stack gap="md" className="scheduler-page">
       {/* Header */}
       <Group justify="space-between">
         <Group gap="xs">
@@ -461,7 +461,7 @@ export function SchedulerManager() {
       )}
 
       {/* Status cards */}
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
+      <SimpleGrid cols={{ base: 2, sm: 4 }} className="scheduler-stats">
         <Paper p="xs" withBorder>
           <Text size="xs" c="dimmed">Active Jobs</Text>
           <Text size="lg" fw={700} c="blue">{status?.enabled_jobs || 0}</Text>
@@ -485,7 +485,7 @@ export function SchedulerManager() {
       </SimpleGrid>
 
       {/* Jobs list */}
-      <Card withBorder p="sm">
+      <Card withBorder p="sm" className="scheduler-jobs-card">
         <Title order={6} mb="sm">Scheduled Jobs</Title>
         
         {jobs.length === 0 ? (

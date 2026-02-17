@@ -546,7 +546,7 @@ export default function FinancePage() {
           </Group>
         }
       >
-        <Stack gap="lg">
+        <Stack gap="lg" className="finance-page">
           {error && (
             <Alert
               icon={<IconAlertTriangle size={16} />}
@@ -572,7 +572,7 @@ export default function FinancePage() {
           )}
 
           {/* Stats Cards */}
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md" className="finance-stats">
             <StatCard
               title="Total Value"
               value={`$${(portfolio?.total_value || 0).toLocaleString()}`}
@@ -610,7 +610,7 @@ export default function FinancePage() {
           </SimpleGrid>
 
           {/* Charts Row */}
-          <Grid gutter="lg">
+          <Grid gutter="lg" className="finance-grid">
             <Grid.Col span={{ base: 12, lg: 8 }}>
               <Card radius="lg" withBorder padding="lg">
                 <PerformancePanel
@@ -639,7 +639,7 @@ export default function FinancePage() {
           </Grid>
 
           {/* Holdings Table */}
-          <Card radius="lg" withBorder padding="lg">
+          <Card radius="lg" withBorder padding="lg" className="finance-holdings-card">
             <Group justify="space-between" mb="md">
               <Group gap="xs">
                 <ThemeIcon variant="light" color="primary" size="sm" radius="md">

@@ -22,8 +22,17 @@ LEGACY_DEFAULT_BUDGETS: Dict[str, int] = {
     "safety_margin": 512,
 }
 
-DEFAULT_BUDGETS: Dict[str, int] = {
+LEGACY_DEFAULT_BUDGETS_V2: Dict[str, int] = {
     "system": 4096,
+    "memory": 4096,
+    "history": 8192,
+    "retrieval": 4096,
+    "tool_results": 2048,
+    "safety_margin": 512,
+}
+
+DEFAULT_BUDGETS: Dict[str, int] = {
+    "system": 6144,
     "memory": 4096,
     "history": 8192,
     "retrieval": 4096,
@@ -38,10 +47,10 @@ def get_known_agent_ids() -> List[str]:
 
 def _is_legacy_defaults(source: Dict[str, Any]) -> bool:
     try:
-        for key, value in LEGACY_DEFAULT_BUDGETS.items():
-            if int(source.get(key, -1)) != value:
-                return False
-        return True
+        for legacy in (LEGACY_DEFAULT_BUDGETS, LEGACY_DEFAULT_BUDGETS_V2):
+            if all(int(source.get(key, -1)) == value for key, value in legacy.items()):
+                return True
+        return False
     except (TypeError, ValueError):
         return False
 

@@ -185,7 +185,7 @@ observe → evaluate → decide → delegate → verify → summarize → persis
 ## COMMUNICATIONS (External)
 
 You own external communications for the household via:
-- **Gmail** (tfamsec@gmail.com) via `gog` CLI
+- **Gmail** (your@gmail.com) via `gog` CLI
 - **WhatsApp** via `wacli` CLI
 
 **Scope:** Contractor coordination, vendor communications, scheduling meetings, service requests.
@@ -205,7 +205,7 @@ You own external communications for the household via:
 
 ### Mail-Skill (Inbox Ingestion)
 You have the **Mail-Skill** attached as a capability module for:
-- Fetching Gmail messages (tfamsec@gmail.com)
+- Fetching Gmail messages (your@gmail.com)
 - Fetching WhatsApp messages (whitelisted contacts)
 - Normalizing to common schema
 - Deduplication and metadata extraction

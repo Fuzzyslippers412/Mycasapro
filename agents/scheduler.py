@@ -436,6 +436,24 @@ def get_scheduler() -> AgentScheduler:
 
 # Pre-built job templates
 JOB_TEMPLATES = {
+    "household_heartbeat": {
+        "name": "Household Heartbeat",
+        "description": "Run proactive household checks (inbox, calendar, bills, maintenance, security)",
+        "agent": "heartbeat",
+        "task": "Run household heartbeat checks and record findings.",
+        "frequency": ScheduleFrequency.HOURLY,
+        "minute": 5,
+    },
+    "memory_consolidation": {
+        "name": "Memory Consolidation",
+        "description": "Summarize recent daily notes into MEMORY.md",
+        "agent": "heartbeat",
+        "task": "Consolidate recent daily notes into long-term memory.",
+        "frequency": ScheduleFrequency.DAILY,
+        "hour": 2,
+        "minute": 15,
+        "config": {"action": "memory_consolidation"},
+    },
     "daily_finance_review": {
         "name": "Daily Finance Review",
         "description": "Review recent transactions and budget status",
