@@ -269,7 +269,7 @@ function RightRail() {
   const system = useSystemStatus(30000);
   const systemIndicator: "healthy" | "warning" | "error" = system.error
     ? "error"
-    : system.data?.running
+    : system.data
       ? "healthy"
       : "warning";
 
