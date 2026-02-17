@@ -20,18 +20,18 @@ import {
   IconInbox,
 } from '@tabler/icons-react';
 
-interface Column {
+interface Column<T> {
   key: string;
   label: string;
   sortable?: boolean;
   width?: number | string;
   align?: 'left' | 'center' | 'right';
-  render?: (value: unknown, row: Record<string, unknown>) => React.ReactNode;
+  render?: (value: unknown, row: T) => React.ReactNode;
 }
 
-interface WidgetTableProps {
-  columns: Column[];
-  data: Record<string, unknown>[];
+interface WidgetTableProps<T extends object> {
+  columns: Column<T>[];
+  data: T[];
   loading?: boolean;
   loadingRows?: number;
   emptyMessage?: string;
@@ -40,12 +40,12 @@ interface WidgetTableProps {
   maxHeight?: number | string;
   striped?: boolean;
   highlightOnHover?: boolean;
-  onRowClick?: (row: Record<string, unknown>) => void;
+  onRowClick?: (row: T) => void;
 }
 
 type SortDirection = 'asc' | 'desc' | null;
 
-export function WidgetTable({
+export function WidgetTable<T extends object>({
   columns,
   data,
   loading = false,
@@ -57,7 +57,7 @@ export function WidgetTable({
   striped = true,
   highlightOnHover = true,
   onRowClick,
-}: WidgetTableProps) {
+}: WidgetTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
@@ -81,8 +81,8 @@ export function WidgetTable({
     if (!sortKey || !sortDirection) return data;
 
     return [...data].sort((a, b) => {
-      const aValue = a[sortKey];
-      const bValue = b[sortKey];
+      const aValue = (a as Record<string, unknown>)[sortKey];
+      const bValue = (b as Record<string, unknown>)[sortKey];
 
       if (aValue === bValue) return 0;
       if (aValue === null || aValue === undefined) return 1;
@@ -216,8 +216,8 @@ export function WidgetTable({
                 style={{ textAlign: col.align || 'left' }}
               >
                 {col.render
-                  ? col.render(row[col.key], row)
-                  : String(row[col.key] ?? '')}
+                  ? col.render((row as Record<string, unknown>)[col.key], row)
+                  : String((row as Record<string, unknown>)[col.key] ?? '')}
               </Table.Td>
             ))}
           </Table.Tr>
