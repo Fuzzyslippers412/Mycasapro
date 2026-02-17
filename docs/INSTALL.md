@@ -30,6 +30,11 @@ npm install
 npm run dev
 ```
 
+Or on macOS/Linux:
+```bash
+./start_all.sh
+```
+
 ## Windows PowerShell
 ```powershell
 cd C:\path\to\mycasa-pro

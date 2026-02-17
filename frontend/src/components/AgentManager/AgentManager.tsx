@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { getApiBaseUrl } from "@/lib/api";
+import { apiFetch, isNetworkError } from "@/lib/api";
 import {
   DndContext,
   closestCenter,
@@ -61,8 +61,6 @@ import { notifications } from "@mantine/notifications";
 import { sendAgentChat, sendManagerChat } from "@/lib/api";
 import { useAgentContext } from "@/lib/AgentContext";
 
-const API_URL = getApiBaseUrl();
-
 const FLEET_ID_ALIASES: Record<string, string> = {
   security: "security-manager",
   backup: "backup-recovery",
@@ -95,36 +93,31 @@ interface ActivityLog {
 // API functions
 async function fetchSystemMonitor(): Promise<any> {
   try {
-    const res = await fetch(`${API_URL}/api/system/monitor`);
-    if (res.ok) {
-      return await res.json();
-    }
+    return await apiFetch<any>("/api/system/monitor");
   } catch (e) {
-    console.error("Failed to fetch system monitor:", e);
+    if (!isNetworkError(e)) {
+      console.error("Failed to fetch system monitor:", e);
+    }
   }
   return null;
 }
 
 async function fetchFleetAgents(): Promise<any[]> {
   try {
-    const res = await fetch(`${API_URL}/api/fleet/agents`);
-    if (res.ok) {
-      const data = await res.json();
-      return data.agents || [];
-    }
+    const data = await apiFetch<any>("/api/fleet/agents");
+    return data.agents || [];
   } catch (e) {
-    console.error("Failed to fetch fleet agents:", e);
+    if (!isNetworkError(e)) {
+      console.error("Failed to fetch fleet agents:", e);
+    }
   }
   return [];
 }
 
 async function fetchAgentActivity(agentId: string): Promise<ActivityLog[]> {
   try {
-    const res = await fetch(`${API_URL}/api/agents/${agentId}/activity`);
-    if (res.ok) {
-      const data = await res.json();
-      return data.activity || [];
-    }
+    const data = await apiFetch<any>(`/api/agents/${agentId}/activity`);
+    return data.activity || [];
   } catch (e) {
     // API may not exist yet - return empty
   }
@@ -133,27 +126,28 @@ async function fetchAgentActivity(agentId: string): Promise<ActivityLog[]> {
 
 async function fetchAgentWorkspace(agentId: string): Promise<Record<string, string>> {
   try {
-    const res = await fetch(`${API_URL}/api/memory/agents/${agentId}/workspace`);
-    if (res.ok) {
-      const data = await res.json();
-      return data.files || {};
-    }
+    const data = await apiFetch<any>(`/api/memory/agents/${agentId}/workspace`);
+    return data.files || {};
   } catch (e) {
-    console.error("Failed to fetch workspace:", e);
+    if (!isNetworkError(e)) {
+      console.error("Failed to fetch workspace:", e);
+    }
   }
   return {};
 }
 
 async function saveWorkspaceFile(agentId: string, filename: string, content: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/api/memory/agents/${agentId}/workspace/${filename}`, {
+    await apiFetch<any>(`/api/memory/agents/${agentId}/workspace/${filename}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content }),
     });
-    return res.ok;
+    return true;
   } catch (e) {
-    console.error("Failed to save workspace:", e);
+    if (!isNetworkError(e)) {
+      console.error("Failed to save workspace:", e);
+    }
     return false;
   }
 }
@@ -177,8 +171,8 @@ async function sendMessageToAgent(agentId: string, message: string, userId?: num
 
 async function startAgent(agentId: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/api/system/agents/${agentId}/start`, { method: "POST" });
-    return res.ok;
+    await apiFetch<any>(`/api/system/agents/${agentId}/start`, { method: "POST" });
+    return true;
   } catch (e) {
     return false;
   }
@@ -186,8 +180,8 @@ async function startAgent(agentId: string): Promise<boolean> {
 
 async function stopAgent(agentId: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/api/system/agents/${agentId}/stop`, { method: "POST" });
-    return res.ok;
+    await apiFetch<any>(`/api/system/agents/${agentId}/stop`, { method: "POST" });
+    return true;
   } catch (e) {
     return false;
   }
@@ -199,12 +193,12 @@ async function updateAgentConfig(agent: Agent): Promise<boolean> {
     max_tier: THINKING_TO_TIER[agent.thinking] || "medium",
   };
   try {
-    const res = await fetch(`${API_URL}/api/fleet/agents/${resolveFleetId(agent.id)}`, {
+    await apiFetch<any>(`/api/fleet/agents/${resolveFleetId(agent.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return res.ok;
+    return true;
   } catch (e) {
     console.error("Failed to update agent config:", e);
     return false;

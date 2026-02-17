@@ -17,7 +17,7 @@ if [ -z "$PUBLIC_HOST" ]; then
   fi
 fi
 
-API_PORT="${MYCASA_API_PORT:-8000}"
+API_PORT="${MYCASA_API_PORT:-6709}"
 BIND_HOST="${MYCASA_BIND_HOST:-0.0.0.0}"
 
 export DATABASE_URL="${DATABASE_URL:-sqlite:///$REPO_DIR/data/mycasa.db}"

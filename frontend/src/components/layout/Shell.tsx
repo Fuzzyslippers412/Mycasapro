@@ -689,6 +689,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     : headerSystem.data
       ? "healthy"
       : "warning";
+  const systemIndicator = headerSystemIndicator;
 
   // Hot keys
   useHotkeys([

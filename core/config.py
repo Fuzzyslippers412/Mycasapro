@@ -42,7 +42,7 @@ class Config:
     )
 
     API_BASE_URL: str = field(
-        default_factory=lambda: os.getenv("MYCASA_API_BASE_URL", "http://localhost:8000")
+        default_factory=lambda: os.getenv("MYCASA_API_BASE_URL", "http://127.0.0.1:6709")
     )
 
     FRONTEND_URL: str = field(
@@ -50,7 +50,7 @@ class Config:
     )
 
     BACKEND_PORT: int = field(
-        default_factory=lambda: int(os.getenv("MYCASA_BACKEND_PORT", "8000"))
+        default_factory=lambda: int(os.getenv("MYCASA_BACKEND_PORT", "6709"))
     )
 
     FRONTEND_PORT: int = field(
@@ -124,7 +124,7 @@ class Config:
 
     GMAIL_REDIRECT_URI: str = field(
         default_factory=lambda: os.getenv(
-            "GMAIL_REDIRECT_URI", "http://localhost:8000/oauth/gmail/callback"
+            "GMAIL_REDIRECT_URI", "http://127.0.0.1:6709/oauth/gmail/callback"
         )
     )
 
@@ -146,7 +146,7 @@ class Config:
 
     CALENDAR_REDIRECT_URI: str = field(
         default_factory=lambda: os.getenv(
-            "CALENDAR_REDIRECT_URI", "http://localhost:8000/oauth/calendar/callback"
+            "CALENDAR_REDIRECT_URI", "http://127.0.0.1:6709/oauth/calendar/callback"
         )
     )
 

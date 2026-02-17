@@ -17,6 +17,11 @@ python -m uvicorn api.main:app --host 127.0.0.1 --port 6709
 cd frontend && echo "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" > .env.local && npm install && npm run dev
 ```
 
+**macOS / Linux (single command)**
+```bash
+./start_all.sh
+```
+
 **Windows PowerShell**
 ```powershell
 cd C:\path\to\mycasa-pro

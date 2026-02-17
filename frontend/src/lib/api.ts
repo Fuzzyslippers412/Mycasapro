@@ -36,10 +36,12 @@ const API_URL = getApiBaseUrl();
 
 export class ApiNetworkError extends Error {
   status: number;
-  constructor(message: string = "Network error") {
+  attempted?: string[];
+  constructor(message: string = "Network error", attempted?: string[]) {
     super(message);
     this.name = "ApiNetworkError";
     this.status = 0;
+    this.attempted = attempted;
   }
 }
 
@@ -82,15 +84,31 @@ export async function apiFetch<T>(path: string, opts: RequestInit = {}, timeoutM
     }
   };
 
-  const getFallbackBase = (): string | null => {
+  const getFallbackBases = (): string[] => {
     try {
       const parsed = new URL(API_URL);
       const isLocal = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-      if (!isLocal) return null;
-      if (parsed.port !== "8000") return null;
-      return `${parsed.protocol}//${parsed.hostname}:6709`;
+      if (!isLocal) return [];
+
+      const hosts = new Set<string>([parsed.hostname]);
+      if (parsed.hostname === "localhost") hosts.add("127.0.0.1");
+      if (parsed.hostname === "127.0.0.1") hosts.add("localhost");
+
+      const ports = new Set<string>();
+      if (parsed.port) ports.add(parsed.port);
+      ports.add("6709");
+      ports.add("8000");
+
+      const bases: string[] = [];
+      for (const host of hosts) {
+        for (const port of ports) {
+          bases.push(`${parsed.protocol}//${host}:${port}`);
+        }
+      }
+      // Remove the current API_URL from fallbacks
+      return bases.filter((b) => b !== API_URL);
     } catch {
-      return null;
+      return [];
     }
   };
 
@@ -98,20 +116,24 @@ export async function apiFetch<T>(path: string, opts: RequestInit = {}, timeoutM
   try {
     res = await attemptRequest(API_URL);
   } catch (err: any) {
-    const fallback = getFallbackBase();
-    if (fallback) {
+    const fallbacks = getFallbackBases();
+    for (const fallback of fallbacks) {
       try {
         res = await attemptRequest(fallback);
         if (typeof window !== "undefined") {
           window.localStorage.setItem("mycasa_api_base_override", fallback);
         }
-      } catch (retryErr: any) {
-        const message = retryErr?.name === "AbortError" ? "Request timed out" : retryErr?.message || "Failed to fetch";
-        throw new ApiNetworkError(message);
+        break;
+      } catch {
+        // continue trying
       }
-    } else {
-      const message = err?.name === "AbortError" ? "Request timed out" : err?.message || "Failed to fetch";
-      throw new ApiNetworkError(message);
+    }
+    if (!res) {
+      const attempted = [API_URL, ...fallbacks].filter((v, i, a) => a.indexOf(v) === i);
+      const message = err?.name === "AbortError"
+        ? `Request timed out. Tried: ${attempted.join(", ")}`
+        : `Unable to reach backend. Tried: ${attempted.join(", ")}`;
+      throw new ApiNetworkError(message, attempted);
     }
   }
 
