@@ -53,7 +53,15 @@ export function ContextStackedBar({ contextWindow, reservedOutput, tokens }: Con
 
   return (
     <Stack gap="xs">
-      <Progress data-testid="context-progress" sections={progressSections} radius="lg" size="lg" />
+      <Progress.Root data-testid="context-progress" radius="lg" size="lg">
+        {progressSections.map((section, index) => (
+          <Progress.Section
+            key={`${section.color}-${index}`}
+            value={section.value}
+            color={section.color}
+          />
+        ))}
+      </Progress.Root>
       <Group gap="xs">
         {sections.map((section) => (
           <Badge
