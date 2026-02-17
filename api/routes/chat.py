@@ -583,15 +583,15 @@ async def send_chat_message(request: SendMessageRequest) -> SendMessageResponse:
     msg_id = _add_message(conversation_id, "assistant", result["response"])
     
     # Record to SecondBrain (async, non-blocking)
-        try:
-            from api.main import get_manager
-            manager = get_manager()
-            manager.record_event_to_sb(
-                event=f"Chat: {request.message[:50]}...",
-                details=f"User: {request.message}\n\nManager: {result['response'][:200]}..."
-            )
-        except Exception:
-            pass  # Don't fail chat if SecondBrain write fails
+    try:
+        from api.main import get_manager
+        manager = get_manager()
+        manager.record_event_to_sb(
+            event=f"Chat: {request.message[:50]}...",
+            details=f"User: {request.message}\n\nManager: {result['response'][:200]}..."
+        )
+    except Exception:
+        pass  # Don't fail chat if SecondBrain write fails
     
     return SendMessageResponse(
         response=result["response"],
