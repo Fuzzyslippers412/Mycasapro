@@ -76,6 +76,7 @@ interface LlmStatus {
 const API_URL = getApiBaseUrl();
 const HISTORY_KEY_PREFIX = "mycasa_global_chat_history_v1";
 const CONVERSATION_KEY_PREFIX = "mycasa_conversation";
+const CLEAR_KEY_PREFIX = "mycasa_chat_cleared_v1";
 
 const AGENT_NAMES: Record<string, string> = {
   manager: "Galidima",
@@ -172,8 +173,19 @@ function conversationKey(agentId: string, userId?: number | null): string {
   return `${CONVERSATION_KEY_PREFIX}_${userScope}_${agentId}`;
 }
 
+function clearedKey(agentId: string, userId?: number | null): string {
+  const userScope = userId ? `user_${userId}` : "anon";
+  return `${CLEAR_KEY_PREFIX}_${userScope}_${agentId}`;
+}
+
+function isHistoryCleared(agentId: string, userId?: number | null): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean(window.localStorage.getItem(clearedKey(agentId, userId)));
+}
+
 function loadHistory(agentId: string, userId?: number | null): Message[] {
   if (typeof window === "undefined") return [];
+  if (isHistoryCleared(agentId, userId)) return [];
   try {
     const raw = window.localStorage.getItem(historyKey(agentId, userId));
     if (!raw) return [];
@@ -185,6 +197,7 @@ function loadHistory(agentId: string, userId?: number | null): Message[] {
 
 function saveHistory(agentId: string, userId: number | null, messages: Message[]): void {
   if (typeof window === "undefined") return;
+  if (isHistoryCleared(agentId, userId)) return;
   try {
     window.localStorage.setItem(historyKey(agentId, userId), JSON.stringify(messages.slice(-100)));
   } catch {}
@@ -376,6 +389,12 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     } else {
       setMessages([]);
       messageIdRef.current = 1;
+    }
+
+    if (isHistoryCleared(selectedAgent, user?.id)) {
+      setHistoryStatus("idle");
+      setHistoryError(null);
+      return;
     }
 
     if (!chatAllowed) {
@@ -790,6 +809,9 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setIsLoading(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(clearedKey(selectedAgent, user?.id ?? null));
+    }
     setPendingRoute(routeHintForMessage(userMessage.content, selectedAgent));
 
     const addLocalResponse = (content: string, agent?: string) => {
@@ -991,6 +1013,9 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     if (!confirmClear) return;
     const convKey = conversationKey(selectedAgent, user?.id);
     const conversationId = typeof window !== "undefined" ? localStorage.getItem(convKey) || undefined : undefined;
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(clearedKey(selectedAgent, user?.id ?? null), String(Date.now()));
+    }
     try {
       await apiFetch(`/api/agents/${selectedAgent}/history${conversationId ? `?conversation_id=${conversationId}` : ""}`, {
         method: "DELETE",

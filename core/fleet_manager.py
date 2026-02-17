@@ -318,6 +318,10 @@ class FleetManager:
             return False
 
         with agent._lock:
+            # Auto-recover from error state on new request attempts
+            if agent.state == AgentState.ERROR and agent.config.enabled:
+                agent.state = AgentState.IDLE
+                agent.last_error = None
             if not agent.is_available():
                 return False
             if not agent.is_within_budget():

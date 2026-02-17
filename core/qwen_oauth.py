@@ -27,7 +27,7 @@ QWEN_OAUTH_CLIENT_ID = (
 QWEN_OAUTH_SCOPE = "openid profile email model.completion"
 QWEN_OAUTH_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 QWEN_OAUTH_CODE_CHALLENGE_METHOD = "S256"
-DEFAULT_QWEN_RESOURCE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_QWEN_RESOURCE_URL = "https://portal.qwen.ai/v1"
 QWEN_OAUTH_AUTHORIZE_URL = f"{QWEN_OAUTH_BASE_URL}/authorize"
 QWEN_OAUTH_CLIENT_SLUG = "qwen-code"
 QWEN_OAUTH_HEADERS = {
@@ -196,18 +196,43 @@ def build_oauth_settings(token_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _ensure_v1(url: str) -> str:
+    if url.endswith("/v1"):
+        return url
+    if url.endswith("/v1/"):
+        return url[:-1]
+    return url.rstrip("/") + "/v1"
+
+
 def _normalize_resource_url(raw_url: str) -> str:
     url = (raw_url or "").strip()
     if not url:
         return DEFAULT_QWEN_RESOURCE_URL
     if not url.startswith("http://") and not url.startswith("https://"):
         url = f"https://{url}"
-    # Qwen device flow may return portal.qwen.ai, which is not the OpenAI-compatible endpoint.
-    if "portal.qwen.ai" in url or "chat.qwen.ai" in url or "qwen.ai" in url and "dashscope" not in url:
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+
+    # Preferred free OAuth endpoint: Qwen Portal OpenAI-compatible API.
+    if host.endswith("portal.qwen.ai"):
+        return _ensure_v1(url)
+
+    # Chat UI host is not an API base; fall back to portal.
+    if host.endswith("chat.qwen.ai"):
         return DEFAULT_QWEN_RESOURCE_URL
-    if "dashscope.aliyuncs.com" in url and "compatible-mode" not in url:
-        url = url.rstrip("/") + "/compatible-mode/v1"
-    return url
+
+    # DashScope compatible-mode endpoint.
+    if "dashscope.aliyuncs.com" in host:
+        if "compatible-mode" not in url:
+            return url.rstrip("/") + "/compatible-mode/v1"
+        return url
+
+    # Any other qwen.ai host defaults to portal.
+    if host.endswith("qwen.ai"):
+        return DEFAULT_QWEN_RESOURCE_URL
+
+    return _ensure_v1(url)
 
 
 def is_token_expired(oauth: Optional[Dict[str, Any]], skew_ms: int = 60000) -> bool:

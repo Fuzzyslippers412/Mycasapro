@@ -472,9 +472,10 @@ def _qwen_login_direct(no_browser: bool) -> bool:
             settings.system.llm_auth_type = "qwen-oauth"
             settings.system.llm_provider = "openai-compatible"
             settings.system.llm_base_url = oauth_settings.get("resource_url")
+            settings.system.llm_api_key = None
             current_model = getattr(settings.system, "llm_model", None) or ""
-        if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus"}:
-            settings.system.llm_model = "qwen3-coder-next"
+        if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus", "qwen3-coder-next"}:
+            settings.system.llm_model = "qwen3-coder-plus"
             settings.system.llm_oauth = oauth_settings
             store.save(settings)
             reset_llm_client()
@@ -705,6 +706,12 @@ def setup(api_port: int, start_frontend: bool, start_backend: bool):
     """Interactive setup wizard (env, deps, backend, frontend, Qwen OAuth)."""
     repo_dir = _repo_root()
     click.echo("MyCasa Pro setup wizard (step-by-step)\n")
+    click.echo("Alpha disclaimer")
+    click.echo("This is an alpha release. Some features may be incomplete or unstable.")
+    click.echo("Use at your own risk. Do not rely on it for safety-critical or irreversible actions.")
+    if not click.confirm("I understand and want to continue", default=False):
+        click.echo("Setup cancelled.")
+        return
 
     # 0) System checks
     _step("System checks")
@@ -724,6 +731,13 @@ def setup(api_port: int, start_frontend: bool, start_backend: bool):
         _ok(f"npm {npm_ver}")
     else:
         _warn("npm not found (required for frontend)")
+    if start_frontend and (node_code != 0 or npm_code != 0):
+        _warn("Frontend requires Node.js 18+ and npm.")
+        if click.confirm("Continue with backend-only setup?", default=True):
+            start_frontend = False
+        else:
+            click.echo("Install Node.js 18+ and npm, then rerun ./mycasa setup.")
+            return
 
     # 1) Ports
     _step("Ports")

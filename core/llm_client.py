@@ -32,6 +32,13 @@ except ImportError:
     GOOGLE_AVAILABLE = False
     logger.warning("google-generativeai SDK not installed")
 
+QWEN_OAUTH_DEFAULT_MODEL = "qwen3-coder-plus"
+QWEN_OAUTH_FALLBACK_MODELS = [
+    "qwen3-coder-plus",
+    "qwen3-coder-flash",
+    "qwen-plus",
+]
+
 
 class LLMClient:
     """
@@ -136,7 +143,7 @@ class LLMClient:
             }
             if self.base_url:
                 kwargs["base_url"] = self.base_url
-            if self.auth_type == "qwen-oauth":
+            if self.auth_type == "qwen-oauth" and self.base_url and "dashscope.aliyuncs.com" in self.base_url:
                 kwargs["default_headers"] = {
                     "X-DashScope-AuthType": "qwen-oauth",
                 }
@@ -229,7 +236,7 @@ class LLMClient:
         return (
             os.getenv("QWEN_MODEL")
             or os.getenv("OLLAMA_MODEL")
-            or "qwen3-coder-next"
+            or QWEN_OAUTH_DEFAULT_MODEL
         )
 
     def _normalize_base_url(self, raw_url: str) -> str:
@@ -266,6 +273,29 @@ class LLMClient:
         if response is not None:
             resp_code = getattr(response, "status_code", None)
             if resp_code in {401, 403}:
+                return True
+        return False
+
+    def _is_invalid_model_error(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        return ("model" in message and "not supported" in message) or "invalid_parameter_error" in message
+
+    def _maybe_switch_qwen_model(self, exc: Exception) -> bool:
+        if self.auth_type != "qwen-oauth":
+            return False
+        if not self._is_invalid_model_error(exc):
+            return False
+        for model in QWEN_OAUTH_FALLBACK_MODELS:
+            if model and model != self.model:
+                self.model = model
+                try:
+                    from core.settings_typed import get_settings_store
+                    store = get_settings_store()
+                    settings = store.get()
+                    settings.system.llm_model = model
+                    store.save(settings)
+                except Exception:
+                    pass
                 return True
         return False
 
@@ -412,6 +442,9 @@ class LLMClient:
                 except Exception as e:
                     if self.auth_type == "qwen-oauth" and self._is_auth_error(e):
                         await self._ensure_qwen_oauth()
+                        response = await asyncio.to_thread(_sync_call)
+                    elif self._maybe_switch_qwen_model(e):
+                        use_model = self.model
                         response = await asyncio.to_thread(_sync_call)
                     else:
                         raise
@@ -671,7 +704,13 @@ class LLMClient:
             )
             return response
 
-        response = await asyncio.to_thread(_sync_call)
+        try:
+            response = await asyncio.to_thread(_sync_call)
+        except Exception as e:
+            if self._maybe_switch_qwen_model(e):
+                response = await asyncio.to_thread(_sync_call)
+            else:
+                raise
 
         if response.text:
             return response.text
@@ -865,6 +904,8 @@ def _resolve_settings_llm_config() -> dict:
                 try:
                     from core.qwen_oauth import _normalize_resource_url, DEFAULT_QWEN_RESOURCE_URL
                     normalized = _normalize_resource_url(oauth.get("resource_url") or DEFAULT_QWEN_RESOURCE_URL)
+                    if "dashscope.aliyuncs.com" in normalized:
+                        normalized = DEFAULT_QWEN_RESOURCE_URL
                     if normalized != oauth.get("resource_url"):
                         oauth["resource_url"] = normalized
                         settings.system.llm_oauth = oauth
@@ -875,8 +916,8 @@ def _resolve_settings_llm_config() -> dict:
                     config["base_url"] = oauth.get("resource_url")
             if oauth.get("access_token"):
                 config["api_key"] = oauth.get("access_token")
-            if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus"}:
-                settings.system.llm_model = "qwen3-coder-next"
+            if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus", "qwen3-coder-next"}:
+                settings.system.llm_model = QWEN_OAUTH_DEFAULT_MODEL
                 try:
                     get_settings_store().save(settings)
                 except Exception:
@@ -935,8 +976,8 @@ def get_llm_client() -> LLMClient:
             base_url = settings_config.get("base_url")
             model = settings_config.get("model")
             api_key = settings_config.get("api_key")
-            if model in {None, "", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus"}:
-                model = "qwen3-coder-next"
+            if model in {None, "", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus", "qwen3-coder-next"}:
+                model = QWEN_OAUTH_DEFAULT_MODEL
         else:
             provider = os.getenv("LLM_PROVIDER") or settings_config.get("provider")
             base_url = os.getenv("LLM_BASE_URL") or settings_config.get("base_url")

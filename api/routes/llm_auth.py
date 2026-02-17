@@ -149,9 +149,10 @@ async def poll_qwen_oauth(
     settings.system.llm_auth_type = "qwen-oauth"
     settings.system.llm_provider = "openai-compatible"
     settings.system.llm_base_url = oauth_settings.get("resource_url")
+    settings.system.llm_api_key = None
     current_model = getattr(settings.system, "llm_model", None) or ""
-    if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus"}:
-        settings.system.llm_model = "qwen3-coder-next"
+    if current_model.strip() in {"", "qwen2.5-72b-instruct", "qwen2.5-72b", "qwen-plus", "qwen3-coder-next"}:
+        settings.system.llm_model = "qwen3-coder-plus"
     settings.system.llm_oauth = oauth_settings
     store.save(settings)
     reset_llm_client()

@@ -105,6 +105,10 @@ async def update_system_settings(update: SystemSettingsUpdate):
     if update_dict.get("llm_auth_type") and update_dict.get("llm_auth_type") != "qwen-oauth":
         if hasattr(settings.system, "llm_oauth"):
             settings.system.llm_oauth = None
+    if update_dict.get("llm_auth_type") == "qwen-oauth":
+        update_dict["llm_api_key"] = None
+        if hasattr(settings.system, "llm_api_key"):
+            settings.system.llm_api_key = None
     
     store.save(settings)
 
@@ -118,7 +122,9 @@ async def update_system_settings(update: SystemSettingsUpdate):
         if update_dict.get("llm_auth_type"):
             os.environ["LLM_AUTH_TYPE"] = update_dict["llm_auth_type"]
         if "llm_api_key" in update_dict:
-            if update_dict["llm_api_key"]:
+            if update_dict.get("llm_auth_type") == "qwen-oauth":
+                os.environ.pop("LLM_API_KEY", None)
+            elif update_dict["llm_api_key"]:
                 os.environ["LLM_API_KEY"] = update_dict["llm_api_key"]
             else:
                 os.environ.pop("LLM_API_KEY", None)
@@ -185,6 +191,9 @@ async def update_security_agent_settings(update: SecuritySettingsUpdate):
 def _mask_system_settings(data: Dict[str, Any]) -> Dict[str, Any]:
     masked = dict(data)
     api_key = masked.get("llm_api_key")
+    if masked.get("llm_auth_type") == "qwen-oauth":
+        api_key = None
+        masked["llm_api_key"] = None
     if api_key:
         masked["llm_api_key"] = f"{api_key[:4]}...{api_key[-4:]}"
         masked["llm_api_key_set"] = True

@@ -66,7 +66,7 @@ npm run dev
 ```bash
 ./mycasa llm qwen-login
 ```
-Default model: `qwen3-coder-next`.
+Default model: `qwen3-coder-plus`.
 
 ## Connectors (user-owned credentials)
 ### Gmail (gog)

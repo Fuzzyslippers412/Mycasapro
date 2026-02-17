@@ -388,7 +388,7 @@ export default function SettingsPage() {
   const defaultLlmState = {
     provider: "openai-compatible",
     baseUrl: "https://api.venice.ai/api/v1",
-    model: "qwen3-coder-next",
+    model: "qwen3-coder-plus",
     apiKey: "",
     apiKeySet: false,
     authType: "api_key",
@@ -419,15 +419,15 @@ export default function SettingsPage() {
       return { baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" };
     }
     if (provider === "anthropic") {
-      return { baseUrl: "", model: "claude-3-5-sonnet" };
+      return { baseUrl: "https://api.anthropic.com", model: "claude-3-5-sonnet" };
     }
-    return { baseUrl: "https://api.venice.ai/api/v1", model: "qwen3-coder-next" };
+    return { baseUrl: "https://portal.qwen.ai/v1", model: "qwen3-coder-plus" };
   };
   const qwenDefaults = () => {
     const currentModel = llmConfig.model || "";
-    const model = currentModel.toLowerCase().startsWith("qwen") ? currentModel : "qwen3-coder-next";
+    const model = currentModel.toLowerCase().startsWith("qwen") ? currentModel : "qwen3-coder-plus";
     return {
-      baseUrl: llmConfig.oauthResourceUrl || llmActive.oauthResourceUrl || "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      baseUrl: llmConfig.oauthResourceUrl || llmActive.oauthResourceUrl || "https://portal.qwen.ai/v1",
       model,
       provider: "openai-compatible",
     };
@@ -1207,7 +1207,7 @@ export default function SettingsPage() {
             oauthResourceUrl: res.resource_url ?? prev.oauthResourceUrl,
             provider: "openai-compatible",
             baseUrl: res.resource_url ?? prev.baseUrl,
-            model: prev.model?.toLowerCase().startsWith("qwen") ? prev.model : "qwen3-coder-next",
+            model: prev.model?.toLowerCase().startsWith("qwen") ? prev.model : "qwen3-coder-plus",
           }));
           setLlmActive((prev) => ({
             ...prev,
@@ -1217,7 +1217,7 @@ export default function SettingsPage() {
             oauthResourceUrl: res.resource_url ?? prev.oauthResourceUrl,
             provider: "openai-compatible",
             baseUrl: res.resource_url ?? prev.baseUrl,
-            model: prev.model?.toLowerCase().startsWith("qwen") ? prev.model : "qwen3-coder-next",
+            model: prev.model?.toLowerCase().startsWith("qwen") ? prev.model : "qwen3-coder-plus",
           }));
           try {
             const latest = await apiFetch<any>("/api/settings/system");
@@ -1956,7 +1956,7 @@ export default function SettingsPage() {
                   <Select
                     label="Provider"
                     data={[
-                      { value: "openai-compatible", label: "OpenAI-compatible (Qwen/Venice)" },
+                      { value: "openai-compatible", label: "OpenAI-compatible (Qwen/DashScope/Venice)" },
                       { value: "openai", label: "OpenAI" },
                       { value: "anthropic", label: "Anthropic" },
                     ]}
@@ -1978,7 +1978,7 @@ export default function SettingsPage() {
                   />
                   <TextInput
                     label="Base URL"
-                    placeholder="https://api.venice.ai/api/v1"
+                    placeholder={providerDefaults(llmConfig.provider).baseUrl}
                     value={llmConfig.baseUrl}
                     onChange={(e) => setLlmConfig((s) => ({ ...s, baseUrl: readInputValue(e) }))}
                     disabled={
@@ -1986,9 +1986,14 @@ export default function SettingsPage() {
                       llmConfig.provider === "anthropic"
                     }
                   />
+                  <Text size="xs" c="dimmed">
+                    {llmConfig.authType === "qwen-oauth"
+                      ? "Qwen OAuth sets the base URL automatically after connection."
+                      : `Recommended: ${providerDefaults(llmConfig.provider).baseUrl}`}
+                  </Text>
                   <TextInput
                     label="Model"
-                    placeholder="qwen3-coder-next"
+                    placeholder={providerDefaults(llmConfig.provider).model}
                     value={llmConfig.model}
                     onChange={(e) => setLlmConfig((s) => ({ ...s, model: readInputValue(e) }))}
                   />
@@ -2031,6 +2036,9 @@ export default function SettingsPage() {
                           <Stack gap={6}>
                             <Text size="sm">
                               Complete Qwen sign‑in in your browser, then return here.
+                            </Text>
+                            <Text size="xs" c="dimmed">
+                              Steps: Settings → LLM Provider → Qwen OAuth → Connect Qwen → Save → (optional) restart backend.
                             </Text>
                             <Group gap="xs">
                               <Code>{qwenOauth.userCode}</Code>

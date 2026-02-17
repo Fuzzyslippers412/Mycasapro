@@ -91,7 +91,7 @@ pkill -f 'uvicorn|next dev|wacli sync'
 ```bash
 ./mycasa llm qwen-login
 ```
-Default model: `qwen3-coder-next`.
+Default model: `qwen3-coder-plus`.
 
 ### OpenAI / Anthropic
 Use Settings → LLM Provider in the UI to enter your API key and model.
