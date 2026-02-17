@@ -1,13 +1,13 @@
 "use client";
 
-import { Stack, Title, Text, Card, Group, Button, Modal, TextInput, PasswordInput, Alert } from "@mantine/core";
+import { Stack, Title, Text, Card, Group, Button, Modal, TextInput, PasswordInput, Alert, Divider } from "@mantine/core";
 import { LoginForm } from "@/components/forms/LoginForm";
 import { RegisterForm } from "@/components/forms/RegisterForm";
 import { useAuth } from "@/contexts/AuthContext";
 import { getApiBaseUrl } from "@/lib/api";
 import { notifications } from "@mantine/notifications";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const auth = useAuth();
@@ -22,6 +22,28 @@ export default function LoginPage() {
   const [resetPassword, setResetPassword] = useState("");
   const [resetStatus, setResetStatus] = useState<"idle" | "sending" | "ready" | "saving" | "done" | "error">("idle");
   const [resetError, setResetError] = useState<string | null>(null);
+  const [personalMode, setPersonalMode] = useState<boolean | null>(null);
+  const [guestLoading, setGuestLoading] = useState(false);
+
+  useEffect(() => {
+    const checkPersonalMode = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/system/status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setPersonalMode(Boolean(data.personal_mode));
+      } catch {
+        setPersonalMode(null);
+      }
+    };
+    checkPersonalMode();
+  }, [apiBase]);
+
+  useEffect(() => {
+    if (auth.user) {
+      router.replace("/dashboard");
+    }
+  }, [auth.user, router]);
 
   const handleLogin = async (data: { username: string; password: string }) => {
     try {
@@ -130,6 +152,22 @@ export default function LoginPage() {
     }
   };
 
+  const handleGuest = async () => {
+    setGuestLoading(true);
+    setError(null);
+    try {
+      const user = await auth.refreshUser();
+      if (!user) {
+        throw new Error("Personal mode is not available on this server.");
+      }
+      router.push("/dashboard");
+    } catch (err: any) {
+      setError(err?.message || "Personal mode is not available.");
+    } finally {
+      setGuestLoading(false);
+    }
+  };
+
   return (
     <div style={{ 
       minHeight: "100vh", 
@@ -156,6 +194,17 @@ export default function LoginPage() {
             <Button variant="subtle" onClick={() => setResetOpen(true)}>
               Forgot password?
             </Button>
+          )}
+          {mode === "login" && personalMode && (
+            <>
+              <Divider />
+              <Button variant="light" onClick={handleGuest} loading={guestLoading}>
+                Continue without an account
+              </Button>
+              <Text size="xs" c="dimmed" ta="center">
+                Personal mode stores everything locally and can be personalized later in Settings.
+              </Text>
+            </>
           )}
           <Button
             variant="subtle"

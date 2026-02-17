@@ -60,6 +60,8 @@ class SystemStatusResponse(BaseModel):
     agents_enabled: Dict[str, bool]
     agents_enabled_count: int
     agents_running_count: int
+    personal_mode: Optional[bool] = None
+    auth_mode: Optional[str] = None
 
 
 class StartupRequest(BaseModel):

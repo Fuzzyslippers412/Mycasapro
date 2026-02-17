@@ -322,8 +322,15 @@ export function MemoryGraph() {
 
   if (!graphData) return null;
 
-  const types = Object.keys(graphData.stats.by_type);
-  const folders = Object.keys(graphData.stats.by_folder);
+  const stats = graphData.stats ?? {
+    total_notes: 0,
+    total_edges: 0,
+    by_type: {} as Record<string, number>,
+    by_folder: {} as Record<string, number>,
+    by_agent: {} as Record<string, number>,
+  };
+  const types = Object.keys(stats.by_type || {});
+  const folders = Object.keys(stats.by_folder || {});
 
   return (
     <Stack gap="md">
@@ -336,7 +343,7 @@ export function MemoryGraph() {
           <div>
             <Text fw={600}>SecondBrain Knowledge Graph</Text>
             <Text size="xs" c="dimmed">
-              {graphData.stats.total_notes} notes, {graphData.stats.total_edges} connections
+              {stats.total_notes} notes, {stats.total_edges} connections
             </Text>
           </div>
         </Group>
@@ -360,8 +367,8 @@ export function MemoryGraph() {
 
       {/* Stats */}
       <SimpleGrid cols={{ base: 2, sm: 4 }}>
-        <StatCard label="Total Notes" value={graphData.stats.total_notes} color="violet" />
-        <StatCard label="Connections" value={graphData.stats.total_edges} color="blue" />
+        <StatCard label="Total Notes" value={stats.total_notes} color="violet" />
+        <StatCard label="Connections" value={stats.total_edges} color="blue" />
         <StatCard label="Types" value={types.length} color="green" />
         <StatCard label="Folders" value={folders.length} color="orange" />
       </SimpleGrid>
@@ -380,7 +387,7 @@ export function MemoryGraph() {
             placeholder="Type"
             data={[
               { value: "", label: "All types" },
-              ...types.map(t => ({ value: t, label: `${t} (${graphData.stats.by_type[t]})` }))
+              ...types.map(t => ({ value: t, label: `${t} (${stats.by_type[t]})` }))
             ]}
             value={filterType || ""}
             onChange={(v) => setFilterType(v || null)}
@@ -392,7 +399,7 @@ export function MemoryGraph() {
             placeholder="Folder"
             data={[
               { value: "", label: "All folders" },
-              ...folders.map(f => ({ value: f, label: `${f}/ (${graphData.stats.by_folder[f]})` }))
+              ...folders.map(f => ({ value: f, label: `${f}/ (${stats.by_folder[f]})` }))
             ]}
             value={filterFolder || ""}
             onChange={(v) => setFilterFolder(v || null)}
@@ -542,7 +549,7 @@ export function MemoryGraph() {
             
             <Text size="xs" fw={600} mb="xs">By Type</Text>
             <Stack gap={4} mb="md">
-              {Object.entries(graphData.stats.by_type).map(([type, count]) => (
+              {Object.entries(stats.by_type).map(([type, count]) => (
                 <Group key={type} justify="space-between">
                   <Group gap="xs">
                     <Box 
@@ -564,7 +571,7 @@ export function MemoryGraph() {
 
             <Text size="xs" fw={600} mb="xs">By Folder</Text>
             <Stack gap={4} mb="md">
-              {Object.entries(graphData.stats.by_folder).map(([folder, count]) => (
+              {Object.entries(stats.by_folder).map(([folder, count]) => (
                 <Group key={folder} justify="space-between">
                   <Group gap="xs">
                     <IconFolder size={14} color={FOLDER_COLORS[folder] || "#868e96"} />
@@ -579,7 +586,7 @@ export function MemoryGraph() {
 
             <Text size="xs" fw={600} mb="xs">By Agent</Text>
             <Stack gap={4}>
-              {Object.entries(graphData.stats.by_agent).map(([agent, count]) => (
+              {Object.entries(stats.by_agent).map(([agent, count]) => (
                 <Group key={agent} justify="space-between">
                   <Group gap="xs">
                     <IconRobot size={14} />

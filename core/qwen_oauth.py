@@ -30,6 +30,11 @@ QWEN_OAUTH_CODE_CHALLENGE_METHOD = "S256"
 DEFAULT_QWEN_RESOURCE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 QWEN_OAUTH_AUTHORIZE_URL = f"{QWEN_OAUTH_BASE_URL}/authorize"
 QWEN_OAUTH_CLIENT_SLUG = "qwen-code"
+QWEN_OAUTH_HEADERS = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Accept": "application/json",
+    "User-Agent": "MyCasaPro/1.0",
+}
 
 
 def _now_ms() -> int:
@@ -63,10 +68,7 @@ def request_device_authorization_sync() -> Dict[str, Any]:
         "client_id": QWEN_OAUTH_CLIENT_ID,
         "scope": QWEN_OAUTH_SCOPE,
     }
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
-    }
+    headers = dict(QWEN_OAUTH_HEADERS)
     endpoints = [QWEN_OAUTH_DEVICE_ENDPOINT, QWEN_OAUTH_DEVICE_CODE_ENDPOINT]
     payloads = [payload_with_pkce, payload_minimal]
     response = None
@@ -76,14 +78,20 @@ def request_device_authorization_sync() -> Dict[str, Any]:
         for endpoint in endpoints:
             for payload in payloads:
                 response = client.post(endpoint, data=_form_encode(payload), headers=headers)
-                if response.status_code < 400:
+                if response.status_code >= 400:
+                    continue
+                try:
                     data = response.json()
+                except Exception:
+                    # Non-JSON response, try next endpoint/payload
+                    data = None
+                if data:
                     break
             if data:
                 break
 
     if response is None or data is None:
-        raise RuntimeError("Device authorization failed: no response from Qwen")
+        raise RuntimeError("Device authorization failed: no valid JSON response from Qwen")
     if response.status_code >= 400:
         raise RuntimeError(f"Device authorization failed: {response.status_code} {response.text}")
     if "device_code" not in data:
@@ -109,28 +117,34 @@ def poll_device_token_sync(device_code: str, code_verifier: str) -> Dict[str, An
         "device_code": device_code,
         "code_verifier": code_verifier,
     }
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
-    }
+    headers = dict(QWEN_OAUTH_HEADERS)
     with httpx.Client(timeout=15) as client:
         response = client.post(QWEN_OAUTH_TOKEN_ENDPOINT, data=_form_encode(payload), headers=headers)
 
     # OAuth device flow polling responses
     if response.status_code == 400:
-        data = response.json()
+        try:
+            data = response.json()
+        except Exception:
+            return {"status": "error", "error": "invalid_response", "error_description": response.text}
         if data.get("error") == "authorization_pending":
             return {"status": "pending"}
         return {"status": "error", "error": data.get("error"), "error_description": data.get("error_description")}
     if response.status_code == 429:
-        data = response.json()
+        try:
+            data = response.json()
+        except Exception:
+            return {"status": "error", "error": "rate_limited", "error_description": response.text}
         if data.get("error") == "slow_down":
             return {"status": "pending", "slow_down": True}
 
     if response.status_code >= 400:
         return {"status": "error", "error": "http_error", "error_description": response.text}
 
-    data = response.json()
+    try:
+        data = response.json()
+    except Exception:
+        return {"status": "error", "error": "invalid_response", "error_description": response.text}
     if "access_token" not in data:
         return {"status": "error", "error": data.get("error", "unknown_error"), "error_description": data.get("error_description")}
     return {"status": "success", "token": data}
@@ -154,15 +168,15 @@ def refresh_access_token_sync(refresh_token: str) -> Dict[str, Any]:
         "refresh_token": refresh_token,
         "client_id": QWEN_OAUTH_CLIENT_ID,
     }
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
-    }
+    headers = dict(QWEN_OAUTH_HEADERS)
     with httpx.Client(timeout=15) as client:
         response = client.post(QWEN_OAUTH_TOKEN_ENDPOINT, data=_form_encode(payload), headers=headers)
     if response.status_code >= 400:
         raise RuntimeError(f"Token refresh failed: {response.status_code} {response.text}")
-    data = response.json()
+    try:
+        data = response.json()
+    except Exception:
+        raise RuntimeError(f"Token refresh failed: invalid response {response.text}")
     if "access_token" not in data:
         raise RuntimeError(f"Token refresh failed: {data}")
     return data

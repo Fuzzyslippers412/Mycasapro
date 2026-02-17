@@ -386,7 +386,12 @@ class BaseAgent(ABC):
     
     # ============ CHAT METHOD ============
 
-    async def chat(self, message: str, context: Optional[Dict[str, Any]] = None) -> str:
+    async def chat(
+        self,
+        message: str,
+        context: Optional[Dict[str, Any]] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
         """
         Process a chat message and return a response using LLM.
 
@@ -449,6 +454,8 @@ class BaseAgent(ABC):
 
             # Build request with enforceable context budgets
             history_messages = context.get("history") if context else None
+            if not history_messages and conversation_history:
+                history_messages = conversation_history
             tool_results = context.get("tool_results") if context else None
             request_id = context.get("request_id") if context else None
 

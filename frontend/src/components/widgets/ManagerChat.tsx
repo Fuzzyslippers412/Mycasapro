@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { getApiBaseUrl, isNetworkError } from "@/lib/api";
+import { getApiBaseUrl, isNetworkError, apiFetch } from "@/lib/api";
 import {
   Paper,
   Stack,
@@ -152,10 +152,28 @@ export function ManagerChat() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "error">("idle");
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [personalMode, setPersonalMode] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatAllowed = isAuthenticated || personalMode;
+
+  useEffect(() => {
+    let active = true;
+    const checkPersonalMode = async () => {
+      try {
+        const data = await apiFetch<any>("/api/system/status");
+        if (active) setPersonalMode(Boolean(data.personal_mode));
+      } catch {
+        // ignore
+      }
+    };
+    checkPersonalMode();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Filter commands based on input
   const filteredCommands = useMemo(() => {
@@ -180,7 +198,7 @@ export function ManagerChat() {
       : null;
     setConversationId(storedConversation || null);
 
-    if (!isAuthenticated) {
+    if (!chatAllowed) {
       setHistoryStatus("idle");
       setHistoryError(null);
       return;
@@ -210,12 +228,12 @@ export function ManagerChat() {
         if (isNetworkError(err)) {
           setHistoryError(`Unable to reach backend at ${API_URL}. Start the server and try again.`);
         } else if (err?.status === 401) {
-          setHistoryError("Sign in required to load history.");
+          setHistoryError(personalMode ? "Session unavailable. Retry shortly." : "Sign in required to load history.");
         } else {
           setHistoryError(err?.detail || "Unable to load history");
         }
       });
-  }, [isAuthenticated, user?.id]);
+  }, [chatAllowed, isAuthenticated, personalMode, user?.id]);
 
   useEffect(() => {
     if (mounted && messages.length > 0) {
@@ -279,11 +297,11 @@ export function ManagerChat() {
   // Core message sending logic (extracted for reuse)
   const handleSendMessage = async (messageText: string) => {
     if (!messageText.trim() || isLoading) return;
-    if (!isAuthenticated) {
+    if (!chatAllowed) {
       const systemMsg: Message = {
         id: `sys_${Date.now()}`,
         role: "system",
-        text: "Please sign in to chat with Galidima.",
+        text: "Sign in is required on this server. Enable Personal Mode to chat without login.",
         timestamp: new Date().toISOString(),
       };
       setMessages(prev => [...prev, systemMsg]);
@@ -373,7 +391,7 @@ export function ManagerChat() {
     } catch (e: any) {
       let message = e?.detail || e?.message || "Connection error";
       if (e?.status === 401) {
-        message = "Session expired. Please sign in again.";
+        message = personalMode ? "Session unavailable. Retry shortly." : "Session expired. Please sign in again.";
       } else if (isNetworkError(e)) {
         message = `Unable to reach backend at ${API_URL}. Start the server and try again.`;
       } else if (String(message).toLowerCase().includes("api key")) {
@@ -942,7 +960,7 @@ export function ManagerChat() {
                   color="gray"
                   size="lg"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading || !isAuthenticated}
+                  disabled={isLoading || !chatAllowed}
                 >
                   <IconPaperclip size={18} />
                 </ActionIcon>
@@ -951,7 +969,7 @@ export function ManagerChat() {
               <TextInput
                 ref={inputRef}
                 placeholder={
-                  !isAuthenticated
+                  !chatAllowed
                     ? "Sign in to chat with Galidima"
                     : isLoading
                       ? "Processing..."
@@ -971,7 +989,7 @@ export function ManagerChat() {
                 style={{ flex: 1 }}
                 size="sm"
                 radius="xl"
-                disabled={isLoading || !isAuthenticated}
+                disabled={isLoading || !chatAllowed}
                 styles={{
                   input: {
                     background: "var(--surface-1)",
@@ -990,7 +1008,7 @@ export function ManagerChat() {
                 size="lg"
                 radius="xl"
                 onClick={handleSend} 
-                disabled={(!input.trim() && !pendingAttachments.some(a => a.uploaded)) || isLoading || !isAuthenticated}
+                disabled={(!input.trim() && !pendingAttachments.some(a => a.uploaded)) || isLoading || !chatAllowed}
                 loading={isLoading}
               >
                 <IconSend size={16} />

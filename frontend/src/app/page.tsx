@@ -453,16 +453,42 @@ function SystemHealthCard({
   loading,
   error,
 }: {
-  status: { cpu_usage: number; memory_usage: number; disk_usage: number; uptime: number } | null;
+  status: {
+    cpu_usage?: number | null;
+    memory_usage?: number | null;
+    disk_usage?: number | null;
+    uptime?: number | null;
+  } | null;
   loading: boolean;
   error: Error | null;
 }) {
-  const rows = [
-    { label: "CPU usage", value: formatPercent(status?.cpu_usage) },
-    { label: "Memory usage", value: formatPercent(status?.memory_usage) },
-    { label: "Disk usage", value: formatPercent(status?.disk_usage) },
-    { label: "Uptime", value: formatUptime(status?.uptime) },
+  const metrics = [
+    {
+      label: "CPU usage",
+      value: status?.cpu_usage,
+      format: formatPercent,
+    },
+    {
+      label: "Memory usage",
+      value: status?.memory_usage,
+      format: formatPercent,
+    },
+    {
+      label: "Disk usage",
+      value: status?.disk_usage,
+      format: formatPercent,
+    },
+    {
+      label: "Uptime",
+      value: status?.uptime,
+      format: formatUptime,
+    },
   ];
+
+  const availableMetrics = metrics.filter(
+    (m) => typeof m.value === "number" && Number.isFinite(m.value)
+  );
+  const hasMetrics = availableMetrics.length > 0;
 
   return (
     <Card radius="lg" withBorder padding="md" className="system-health-card">
@@ -475,8 +501,12 @@ function SystemHealthCard({
             System Health
           </Text>
         </Group>
-        <Badge size="sm" variant="light" color={error ? "gray" : "success"}>
-          {error ? "Offline" : "Live"}
+        <Badge
+          size="sm"
+          variant="light"
+          color={error ? "gray" : hasMetrics ? "success" : "yellow"}
+        >
+          {error ? "Offline" : hasMetrics ? "Live" : "Unavailable"}
         </Badge>
       </Group>
 
@@ -484,9 +514,13 @@ function SystemHealthCard({
         <Text size="sm" c="dimmed">
           System metrics unavailable right now.
         </Text>
+      ) : !hasMetrics ? (
+        <Text size="sm" c="dimmed">
+          Live telemetry is not available on this host.
+        </Text>
       ) : (
         <Stack gap="xs">
-          {rows.map((row) => (
+          {availableMetrics.map((row) => (
             <Group key={row.label} justify="space-between">
               <Text size="sm" c="dimmed">
                 {row.label}
@@ -495,7 +529,7 @@ function SystemHealthCard({
                 <Skeleton height={12} width={60} />
               ) : (
                 <Text size="sm" fw={600}>
-                  {row.value}
+                  {row.format(row.value as number)}
                 </Text>
               )}
             </Group>
@@ -689,7 +723,7 @@ export default function HomePage() {
           )}
 
           <StatusHeader
-            userName={user?.username || "there"}
+            userName={user?.display_name || user?.username || "there"}
             pendingTasks={pendingTaskCount}
             unreadMessages={unreadMessageCount}
             portfolioChange={portfolioChange}

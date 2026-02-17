@@ -185,6 +185,11 @@ class Config:
         default_factory=lambda: os.getenv("MYCASA_ENABLE_SECONDBRAIN", "true").lower() == "true"
     )
 
+    # ============ PERSONAL MODE ============
+    PERSONAL_MODE: bool = field(
+        default_factory=lambda: os.getenv("MYCASA_PERSONAL_MODE", "1").lower() in {"1", "true", "yes"}
+    )
+
     # ============ SYSTEM SETTINGS ============
     MONTHLY_COST_CAP: int = field(
         default_factory=lambda: int(os.getenv("MYCASA_MONTHLY_COST_CAP", "1000"))

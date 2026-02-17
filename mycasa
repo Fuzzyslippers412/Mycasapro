@@ -17,11 +17,15 @@ def _venv_python(venv_dir: Path) -> Path:
     return venv_dir / "bin" / "python"
 
 def _ensure_deps() -> None:
-    try:
-        import click  # noqa: F401
+    required = ("click", "requests", "httpx")
+    missing = []
+    for mod in required:
+        try:
+            __import__(mod)
+        except Exception:
+            missing.append(mod)
+    if not missing:
         return
-    except Exception:
-        pass
 
     venv_dir = REPO_DIR / ".venv"
     venv_py = _venv_python(venv_dir)

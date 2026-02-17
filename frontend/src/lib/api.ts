@@ -131,6 +131,9 @@ export async function apiFetch<T>(path: string, opts: RequestInit = {}, timeoutM
       }
     }
     if (!res) {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("mycasa_api_base_override");
+      }
       const attempted = [API_URL, ...fallbacks].filter((v, i, a) => a.indexOf(v) === i);
       const message = err?.name === "AbortError"
         ? `Request timed out. Tried: ${attempted.join(", ")}`
@@ -582,13 +585,13 @@ export interface SystemStatus {
   last_startup?: string | null;
   last_backup?: string | null;
   agents_enabled?: Record<string, boolean>;
-  cpu_usage: number;
-  memory_usage: number;
-  disk_usage: number;
-  network_in: number;
-  network_out: number;
-  uptime: number;
-  load_average: number[];
+  cpu_usage?: number;
+  memory_usage?: number;
+  disk_usage?: number;
+  network_in?: number;
+  network_out?: number;
+  uptime?: number;
+  load_average?: number[];
 }
 
 // Quick status from /status endpoint

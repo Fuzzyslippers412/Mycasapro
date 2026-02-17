@@ -255,6 +255,20 @@ class LLMClient:
         """Check if LLM client is ready to use"""
         return self.client is not None
 
+    def _is_auth_error(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        if "401" in message or "unauthorized" in message or "authentication failed" in message:
+            return True
+        status_code = getattr(exc, "status_code", None)
+        if status_code in {401, 403}:
+            return True
+        response = getattr(exc, "response", None)
+        if response is not None:
+            resp_code = getattr(response, "status_code", None)
+            if resp_code in {401, 403}:
+                return True
+        return False
+
     async def chat(
         self,
         system_prompt: str,
@@ -280,6 +294,8 @@ class LLMClient:
             return f"[LLM unavailable] Default response to: {user_message[:50]}..."
 
         try:
+            if self.auth_type == "qwen-oauth":
+                await self._ensure_qwen_oauth()
             if self.provider == "anthropic":
                 return await self._chat_anthropic(system_prompt, user_message, conversation_history, max_tokens, temperature)
             elif self.provider == "google":
@@ -291,6 +307,8 @@ class LLMClient:
 
         except Exception as e:
             logger.error(f"LLM chat error: {e}")
+            if self.auth_type == "qwen-oauth" and self._is_auth_error(e):
+                return "[Qwen OAuth required] Authentication failed. Reconnect in Settings or run: ./mycasa llm qwen-login"
             return f"[Error calling LLM: {str(e)}]"
 
     async def chat_messages(
@@ -389,8 +407,14 @@ class LLMClient:
                         temperature=temperature,
                         messages=messages,
                     )
-
-                response = await asyncio.to_thread(_sync_call)
+                try:
+                    response = await asyncio.to_thread(_sync_call)
+                except Exception as e:
+                    if self.auth_type == "qwen-oauth" and self._is_auth_error(e):
+                        await self._ensure_qwen_oauth()
+                        response = await asyncio.to_thread(_sync_call)
+                    else:
+                        raise
                 text = response.choices[0].message.content if response.choices else ""
                 usage = None
                 if hasattr(response, "usage") and response.usage:
@@ -415,6 +439,13 @@ class LLMClient:
             }
         except Exception as e:
             logger.error(f"LLM chat_messages error: {e}")
+            if self.auth_type == "qwen-oauth" and self._is_auth_error(e):
+                return {
+                    "response": "[Qwen OAuth required] Authentication failed. Reconnect in Settings or run: ./mycasa llm qwen-login",
+                    "usage": None,
+                    "model_used": use_model,
+                    "provider": self.provider,
+                }
             return {
                 "response": f"[Error calling LLM: {str(e)}]",
                 "usage": None,
@@ -520,6 +551,14 @@ class LLMClient:
             return f"[LLM unavailable] Default response to: {user_message[:50]}..."
 
         try:
+            if self.auth_type == "qwen-oauth":
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    asyncio.run(self._ensure_qwen_oauth())
+                else:
+                    loop.create_task(self._ensure_qwen_oauth())
             if self.provider == "anthropic":
                 messages = []
                 if conversation_history:
@@ -558,6 +597,8 @@ class LLMClient:
             return f"[Unknown provider: {self.provider}]"
         except Exception as e:
             logger.error(f"LLM chat error: {e}")
+            if self.auth_type == "qwen-oauth" and self._is_auth_error(e):
+                return "[Qwen OAuth required] Authentication failed. Reconnect in Settings or run: ./mycasa llm qwen-login"
             return f"[Error calling LLM: {str(e)}]"
 
     async def _chat_anthropic(

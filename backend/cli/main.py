@@ -13,6 +13,7 @@ import time
 import webbrowser
 import shutil
 import socket
+import getpass
 from pathlib import Path
 from datetime import date
 
@@ -21,6 +22,27 @@ API_BASE = (
     or os.environ.get("MYCASA_API_BASE_URL")
     or "http://127.0.0.1:6709"
 )
+
+def _read_env_value(repo_dir: Path, key: str) -> str | None:
+    env_path = repo_dir / ".env"
+    if not env_path.exists():
+        return None
+    for line in env_path.read_text().splitlines():
+        if not line or line.strip().startswith("#"):
+            continue
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    return None
+
+def _get_frontend_url() -> str:
+    env_url = os.environ.get("MYCASA_FRONTEND_URL")
+    if env_url:
+        return env_url
+    repo_dir = _repo_root()
+    env_file_url = _read_env_value(repo_dir, "MYCASA_FRONTEND_URL")
+    if env_file_url:
+        return env_file_url
+    return "http://localhost:3000"
 
 
 def api_call(method: str, endpoint: str, data: dict = None) -> dict:
@@ -134,6 +156,61 @@ def _wait_for_health(api_base: str, timeout_seconds: int = 10) -> bool:
         time.sleep(0.5)
     return False
 
+def _configure_personal_mode(repo_dir: Path) -> None:
+    _step("Personal mode")
+    env_path = repo_dir / ".env"
+    enable_personal = click.confirm("Enable Personal Mode (no account required)?", default=True)
+    _set_env_var(env_path, "MYCASA_PERSONAL_MODE", "1" if enable_personal else "0")
+    if not enable_personal:
+        _ok("Personal mode disabled. You can enable it later in .env.")
+        return
+
+    display_name = click.prompt("What should I call you?", default=getpass.getuser())
+    household_name = click.prompt("Household name", default="My Home")
+    timezone = click.prompt("Timezone", default="America/Los_Angeles")
+
+    try:
+        from core.settings_typed import get_settings_store
+        settings = get_settings_store().get()
+        settings.system.household_name = household_name
+        settings.system.timezone = timezone
+        get_settings_store().save(settings)
+    except Exception:
+        _warn("Could not update system settings file (settings.json). You can update later in Settings.")
+
+    try:
+        from database import get_db
+        from auth.personal_mode import ensure_personal_user
+        with get_db() as db:
+            ensure_personal_user(db, display_name=display_name)
+        _ok("Personal profile saved.")
+    except Exception:
+        _warn("Could not update personal user profile. You can update later in Settings.")
+
+def _safe_rmtree(path: Path) -> None:
+    if not path.exists():
+        return
+    if str(path) in {"/", str(Path.home())}:
+        _warn(f"Refusing to delete unsafe path: {path}")
+        return
+    shutil.rmtree(path, ignore_errors=True)
+
+def _resolve_data_dir(repo_dir: Path) -> Path:
+    env_data_dir = os.environ.get("MYCASA_DATA_DIR") or _read_env_value(repo_dir, "MYCASA_DATA_DIR")
+    if env_data_dir:
+        return Path(os.path.expanduser(env_data_dir)).resolve()
+    return (repo_dir / "data").resolve()
+
+def _resolve_db_path(repo_dir: Path) -> Path | None:
+    db_url = os.environ.get("MYCASA_DATABASE_URL") or _read_env_value(repo_dir, "MYCASA_DATABASE_URL")
+    if not db_url:
+        return _resolve_data_dir(repo_dir) / "mycasa.db"
+    if db_url.startswith("sqlite:///"):
+        return Path(db_url.replace("sqlite:///", "/")).resolve()
+    if db_url.startswith("sqlite:////"):
+        return Path(db_url.replace("sqlite:////", "/")).resolve()
+    return None
+
 def _qwen_login_flow(api_base: str, username: str | None, password: str | None, token: str | None, no_browser: bool):
     auth_token = token
     if not auth_token:
@@ -228,7 +305,11 @@ def _qwen_login_direct(no_browser: bool) -> bool:
     from core.settings_typed import get_settings_store
     from core.llm_client import reset_llm_client
 
-    payload = request_device_authorization_sync()
+    try:
+        payload = request_device_authorization_sync()
+    except Exception as exc:
+        _err(f"Qwen device authorization failed: {exc}")
+        return False
     verification_url = payload.get("verification_uri_complete") or payload.get("verification_uri")
     user_code = payload.get("user_code")
     interval = int(payload.get("interval") or 5)
@@ -373,6 +454,45 @@ def ui_stop():
     click.echo("✓ UI stopped")
 
 
+@cli.command("open")
+def open_ui():
+    """Open the MyCasa Pro UI in your browser"""
+    url = _get_frontend_url()
+    click.echo(f"Opening {url}...")
+    try:
+        webbrowser.open(url, new=2)
+        click.echo("✓ Opened browser")
+    except Exception as exc:
+        click.echo(f"✗ Failed to open browser: {exc}")
+
+
+# ============ SYSTEM LIFECYCLE ============
+
+@cli.group()
+def system():
+    """System lifecycle controls"""
+
+
+@system.command("start")
+def system_start():
+    """Start the system (agents + runtime)"""
+    result = api_call("POST", "/system/startup")
+    if result.get("success") or result.get("status") == "success":
+        click.echo("✓ System started")
+        return
+    click.echo(f"✗ Failed to start: {result}")
+
+
+@system.command("stop")
+def system_stop():
+    """Stop the system (agents + runtime)"""
+    result = api_call("POST", "/system/shutdown")
+    if result.get("success") or result.get("status") == "success":
+        click.echo("✓ System stopped")
+        return
+    click.echo(f"✗ Failed to stop: {result}")
+
+
 # ============ INTAKE ============
 
 @cli.command("intake")
@@ -502,6 +622,9 @@ def setup(api_port: int, start_frontend: bool, start_backend: bool):
         subprocess.run([sys.executable, "install.py", "install"], cwd=str(repo_dir))
         _ok("Database initialized")
 
+    # 3b) Personal mode
+    _configure_personal_mode(repo_dir)
+
     # 4) Backend
     _step("Backend")
     if start_backend:
@@ -546,6 +669,82 @@ def setup(api_port: int, start_frontend: bool, start_backend: bool):
         _qwen_login_direct(False)
 
     click.echo("\nSetup complete.")
+
+
+@cli.command("reset")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompts")
+@click.option("--keep-env", is_flag=True, help="Keep .env and frontend/.env.local")
+@click.option("--keep-data", is_flag=True, help="Keep data/backups/logs (only clears caches)")
+def reset(yes: bool, keep_env: bool, keep_data: bool):
+    """Factory reset local MyCasa Pro (clear config, data, caches)."""
+    repo_dir = _repo_root()
+    click.echo("This will stop running services and wipe local MyCasa data/config.")
+    if not yes:
+        if not click.confirm("Continue?", default=False):
+            click.echo("Aborted.")
+            return
+        confirm = click.prompt('Type "RESET" to confirm', default="", show_default=False)
+        if confirm.strip().upper() != "RESET":
+            click.echo("Aborted.")
+            return
+
+    _step("Stopping services")
+    subprocess.run(["pkill", "-f", "uvicorn"], capture_output=True)
+    subprocess.run(["pkill", "-f", "next dev"], capture_output=True)
+    subprocess.run(["pkill", "-f", "wacli sync"], capture_output=True)
+    _ok("Stopped running processes (if any).")
+
+    _step("Reset database (if running)")
+    result = api_call("POST", "/database/reset")
+    if result.get("success") or result.get("status") == "success":
+        _ok("Database reset via API.")
+    elif result.get("error"):
+        _warn(result["error"])
+
+    _step("Clearing local data")
+    if not keep_data:
+        data_dir = _resolve_data_dir(repo_dir)
+        db_path = _resolve_db_path(repo_dir)
+        backup_dir = Path(_read_env_value(repo_dir, "MYCASA_BACKUP_PATH") or (repo_dir / "backups"))
+        logs_dir = repo_dir / "logs"
+
+        _safe_rmtree(data_dir)
+        _safe_rmtree(backup_dir)
+        _safe_rmtree(logs_dir)
+        if db_path and db_path.exists():
+            try:
+                db_path.unlink()
+            except Exception:
+                _warn(f"Could not delete DB file: {db_path}")
+        _ok("Local data cleared.")
+    else:
+        _ok("Data kept (per --keep-data).")
+
+    _step("Clearing config + caches")
+    if not keep_env:
+        env_path = repo_dir / ".env"
+        frontend_env = repo_dir / "frontend" / ".env.local"
+        if env_path.exists():
+            env_path.unlink()
+            _ok("Removed .env")
+        if frontend_env.exists():
+            frontend_env.unlink()
+            _ok("Removed frontend/.env.local")
+    else:
+        _ok("Config kept (per --keep-env).")
+
+    frontend_cache = repo_dir / "frontend" / ".next"
+    _safe_rmtree(frontend_cache)
+    try:
+        Path("/tmp/mycasa-api.log").unlink(missing_ok=True)
+        Path("/tmp/mycasa-frontend.log").unlink(missing_ok=True)
+        Path("/tmp/wacli-sync.log").unlink(missing_ok=True)
+    except Exception:
+        pass
+    _ok("Caches cleared.")
+
+    click.echo("\nReset complete.")
+    click.echo("Next: run ./mycasa setup to reconfigure, then ./start_all.sh to launch.")
 
 
 # ============ TASKS ============

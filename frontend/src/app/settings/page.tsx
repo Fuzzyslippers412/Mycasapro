@@ -2,22 +2,20 @@
 import { Shell } from "@/components/layout/Shell";
 import { Page } from "@/components/layout/Page";
 import { LaunchModal } from "@/components/LaunchModal";
-import { SetupWizard } from "@/components/SetupWizard";
 import { ConnectorMarketplace } from "@/components/ConnectorMarketplace";
 import { WidgetManager } from "@/components/WidgetManager";
-import { apiFetch, uploadUserAvatar, getApiBaseUrl, isNetworkError } from "@/lib/api";
-import { useAuth } from "@/contexts/AuthContext";
+import { apiFetch, getApiBaseUrl, isNetworkError } from "@/lib/api";
 
 import {
   Card, Text, Title, Stack, Tabs, Switch, Group, TextInput, Button,
   Divider, Select, NumberInput, Badge, Paper, Box, ActionIcon, Tooltip,
-  Alert, Code, Textarea, PasswordInput, SimpleGrid, ThemeIcon, Avatar, FileButton,
+  Alert, Code, Textarea, PasswordInput, SimpleGrid, ThemeIcon,
   Accordion, Checkbox, Progress, Transition, rem, Drawer, Table, Loader, ScrollArea, Modal,
   SegmentedControl, CopyButton,
 } from "@mantine/core";
 import { tokens } from "@/theme/tokens";
 import {
-  IconSettings, IconUser, IconBell, IconShield, IconDatabase,
+  IconSettings, IconBell, IconShield, IconDatabase,
   IconRocket, IconBrandWhatsapp, IconMail, IconCpu, IconTool,
   IconCoin, IconUsers, IconFolders, IconAlertCircle, IconCheck,
   IconDownload, IconUpload, IconTrash, IconRefresh, IconKey, IconHome,
@@ -270,18 +268,14 @@ function SaveConfirmation({ visible, onClose }: { visible: boolean; onClose: () 
 }
 
 export default function SettingsPage() {
-  const { user, refreshUser, bumpAvatarVersion, avatarVersion } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const apiBase = getApiBaseUrl();
 
   const [launching, setLaunching] = useState(false);
   const [showLaunchModal, setShowLaunchModal] = useState(false);
-  const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [showSaveConfirmation, setShowSaveConfirmation] = useState(false);
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "general");
-  const [avatarUploading, setAvatarUploading] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   // Backend connectivity
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null);
@@ -356,6 +350,8 @@ export default function SettingsPage() {
     systemCostCap: 1000,
     dailySpendLimit: 350,
     approvalThreshold: 500,
+    householdName: "",
+    timezone: "America/Los_Angeles",
     notifications: {
       inApp: true,
       push: false,
@@ -426,10 +422,6 @@ export default function SettingsPage() {
     [settings, savedSettings]
   );
 
-  const avatarSrc = user?.avatar_url
-    ? `${user.avatar_url.startsWith("http") ? "" : apiBase}${user.avatar_url}?v=${avatarVersion}`
-    : undefined;
-
   useEffect(() => {
     setActiveTab(searchParams.get("tab") || "general");
   }, [searchParams]);
@@ -451,39 +443,6 @@ export default function SettingsPage() {
     router.replace(query ? `/settings?${query}` : "/settings", { scroll: false });
   };
 
-  const handleAvatarSelect = async (file: File | null) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setAvatarError("Please upload a PNG, JPG, or WEBP image.");
-      return;
-    }
-    if (file.size > 4 * 1024 * 1024) {
-      setAvatarError("Max size is 4MB.");
-      return;
-    }
-    setAvatarUploading(true);
-    setAvatarError(null);
-    try {
-      await uploadUserAvatar(file);
-      await refreshUser();
-      bumpAvatarVersion();
-      notifications.show({
-        title: "Avatar updated",
-        message: "Your profile photo has been saved.",
-        color: "green",
-      });
-    } catch (err: any) {
-      setAvatarError(err?.message || "Failed to upload avatar.");
-      notifications.show({
-        title: "Upload failed",
-        message: err?.message || "Failed to upload avatar.",
-        color: "red",
-      });
-    } finally {
-      setAvatarUploading(false);
-    }
-  };
-  
   const refreshSystemStatus = useCallback(async () => {
     try {
       const data = await apiFetch<any>("/api/system/status");
@@ -553,6 +512,8 @@ export default function SettingsPage() {
         systemCostCap: typeof data.monthly_cost_cap === "number" ? data.monthly_cost_cap : 1000,
         dailySpendLimit: typeof data.daily_spend_limit === "number" ? data.daily_spend_limit : 350,
         approvalThreshold: typeof data.approval_threshold === "number" ? data.approval_threshold : 500,
+        householdName: data.household_name ?? "",
+        timezone: data.timezone ?? "America/Los_Angeles",
       };
       setSettings((prev) => ({ ...prev, ...systemPatch }));
       setSavedSettings((prev) => ({ ...prev, ...systemPatch }));
@@ -864,6 +825,8 @@ export default function SettingsPage() {
           monthly_cost_cap: settings.systemCostCap,
           daily_spend_limit: settings.dailySpendLimit,
           approval_threshold: settings.approvalThreshold,
+          household_name: settings.householdName,
+          timezone: settings.timezone,
         }),
       });
 
@@ -1306,24 +1269,6 @@ export default function SettingsPage() {
         onClose={() => setShowLaunchModal(false)}
         onComplete={handleLaunchComplete}
       />
-      <SetupWizard
-        opened={showSetupWizard}
-        onClose={() => setShowSetupWizard(false)}
-        onComplete={(data) => {
-          setShowSetupWizard(false);
-          // Optionally refresh settings from data
-          if (data.monthlyBudget) {
-            setSettings(s => ({ ...s, dailySpendLimit: Math.round(data.monthlyBudget / 30) }));
-          }
-          if (data.systemCostCap) {
-            setSettings(s => ({ ...s, systemCostCap: data.systemCostCap }));
-          }
-          if (data.approvalThreshold) {
-            setSettings(s => ({ ...s, approvalThreshold: data.approvalThreshold }));
-          }
-        }}
-        canSkip={true}
-      />
       <Modal
         opened={backupModalOpen}
         onClose={() => setBackupModalOpen(false)}
@@ -1503,9 +1448,6 @@ export default function SettingsPage() {
 
         <Tabs value={activeTab} onChange={handleTabChange} orientation="vertical" style={{ minHeight: 600 }}>
           <Tabs.List style={{ width: 200 }}>
-            <Tabs.Tab value="profile" leftSection={<IconUser size={16} />}>
-              Profile
-            </Tabs.Tab>
             <Tabs.Tab value="general" leftSection={<IconSettings size={16} />}>
               General
             </Tabs.Tab>
@@ -1529,94 +1471,9 @@ export default function SettingsPage() {
             </Tabs.Tab>
           </Tabs.List>
 
-          {/* PROFILE TAB */}
-          <Tabs.Panel value="profile" pl="md" style={{ flex: 1 }}>
-            <Stack gap="md">
-              {!user && (
-                <Alert icon={<IconAlertCircle size={16} />} color="yellow" variant="light">
-                  Sign in to update your profile details.
-                </Alert>
-              )}
-              <Card withBorder p="lg" radius="md">
-                <Group justify="space-between" align="center" wrap="wrap">
-                  <Group gap="md">
-                    <Avatar
-                      size={72}
-                      radius="xl"
-                      src={avatarSrc}
-                      color="primary"
-                    >
-                      <IconUser size={28} />
-                    </Avatar>
-                    <div>
-                      <Text fw={600} size="lg">
-                        {user?.username || "User"}
-                      </Text>
-                      <Text size="sm" c="dimmed">
-                        {user?.email || "Not signed in"}
-                      </Text>
-                    </div>
-                  </Group>
-                  <Group gap="sm">
-                    <FileButton
-                      onChange={handleAvatarSelect}
-                      accept="image/png,image/jpeg,image/webp"
-                    >
-                      {(props) => (
-                        <Button
-                          {...props}
-                          variant="light"
-                          leftSection={<IconUpload size={16} />}
-                          loading={avatarUploading}
-                          disabled={!user}
-                        >
-                          Upload photo
-                        </Button>
-                      )}
-                    </FileButton>
-                  </Group>
-                </Group>
-                <Text size="xs" c="dimmed" mt="sm">
-                  PNG, JPG, or WEBP. Max 4MB. Stored locally.
-                </Text>
-                {avatarError && (
-                  <Text size="xs" c="red" mt="xs">
-                    {avatarError}
-                  </Text>
-                )}
-              </Card>
-            </Stack>
-          </Tabs.Panel>
-
           {/* GENERAL TAB */}
           <Tabs.Panel value="general" pl="md" style={{ flex: 1 }}>
             <Stack gap="md">
-              {/* Setup Wizard Launch Card */}
-              <Card withBorder p="lg" radius="md" style={{ background: "linear-gradient(135deg, #0D47A1 0%, #1976D2 100%)" }}>
-                <Group justify="space-between" align="center">
-                  <Group gap="md">
-                    <ThemeIcon size={50} radius="xl" variant="white" color="violet">
-                      <IconWand size={26} />
-                    </ThemeIcon>
-                    <div>
-                      <Text fw={600} c="white" size="lg">Setup Wizard</Text>
-                      <Text size="sm" c="white" opacity={0.85}>
-                        Quick guided setup for MyCasa Pro
-                      </Text>
-                    </div>
-                  </Group>
-                  <Button
-                    variant="white"
-                    color="violet"
-                    size="md"
-                    leftSection={<IconRocket size={18} />}
-                    onClick={() => setShowSetupWizard(true)}
-                  >
-                    Launch Wizard
-                  </Button>
-                </Group>
-              </Card>
-
               <Card withBorder p="lg" radius="md">
                 <Text fw={600} mb="md">System Settings</Text>
                 <Stack gap="md">
@@ -1871,7 +1728,12 @@ export default function SettingsPage() {
               <Card withBorder p="lg" radius="md">
                 <Text fw={600} mb="md">Household</Text>
                 <Stack gap="sm">
-                  <TextInput label="Household Name" placeholder="Tenkiang Residence" />
+                  <TextInput
+                    label="Household Name"
+                    placeholder="Tenkiang Residence"
+                    value={settings.householdName}
+                    onChange={(e) => setSettings((prev) => ({ ...prev, householdName: e.currentTarget.value }))}
+                  />
                   <Select 
                     label="Timezone" 
                     placeholder="Select timezone"
@@ -1880,7 +1742,10 @@ export default function SettingsPage() {
                       { value: "America/New_York", label: "Eastern Time (ET)" },
                       { value: "America/Chicago", label: "Central Time (CT)" },
                     ]}
-                    defaultValue="America/Los_Angeles"
+                    value={settings.timezone}
+                    onChange={(value) =>
+                      setSettings((prev) => ({ ...prev, timezone: value || prev.timezone }))
+                    }
                   />
                 </Stack>
               </Card>

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, ReactNode, useEffect } from "react";
-import { apiFetch, getApiBaseUrl, isNetworkError } from "@/lib/api";
+import { apiFetch, isNetworkError } from "@/lib/api";
 
 interface User {
   id: number;
@@ -21,7 +21,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<User | null>;
   bumpAvatarVersion: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
@@ -49,7 +49,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
-  const validateToken = async (token?: string | null) => {
+  const validateToken = async (token?: string | null): Promise<User | null> => {
     try {
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
       const userData = await apiFetch<User>("/api/auth/me", headers ? { headers } : {});
@@ -58,90 +58,74 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (typeof window !== "undefined" && token) {
         localStorage.setItem("token", token);
       }
+      return userData;
     } catch (error) {
       if (typeof window !== "undefined") {
         localStorage.removeItem("token");
       }
       setToken(null);
       setUser(null);
+      return null;
     }
   };
 
   const login = async (username: string, password: string) => {
-    const apiBase = getApiBaseUrl();
-    let response: Response;
     try {
-      response = await fetch(`${apiBase}/api/auth/login`, {
+      const data = await apiFetch<{ token: string; user: User }>("/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ username, password }),
       });
+      const { token, user } = data;
+
+      setToken(token);
+      setUser(user);
+      if (typeof window !== "undefined" && token) {
+        localStorage.setItem("token", token);
+      }
+      try {
+        await apiFetch("/api/clawdbot/sessions/cleanup", {
+          method: "POST",
+          body: JSON.stringify({ prefix: "mycasa_" }),
+        });
+      } catch {
+        // Ignore cleanup errors
+      }
     } catch (error: any) {
       if (isNetworkError(error)) {
-        throw new Error(`Unable to reach backend at ${apiBase}. Start the server and try again.`);
+        throw new Error(error?.message || "Unable to reach backend. Start the server and try again.");
       }
-      throw error;
-    }
-
-    if (!response.ok) {
-      throw new Error("Invalid credentials");
-    }
-
-    const data = await response.json();
-    const { token, user } = data;
-
-    setToken(token);
-    setUser(user);
-    if (typeof window !== "undefined" && token) {
-      localStorage.setItem("token", token);
-    }
-    try {
-      await apiFetch("/api/clawdbot/sessions/cleanup", {
-        method: "POST",
-        body: JSON.stringify({ prefix: "mycasa_" }),
-      });
-    } catch {
-      // Ignore cleanup errors
+      if (error?.status === 401) {
+        throw new Error("Invalid credentials");
+      }
+      throw new Error(error?.detail || error?.message || "Login failed");
     }
   };
 
   const register = async (username: string, email: string, password: string) => {
-    const apiBase = getApiBaseUrl();
-    let response: Response;
     try {
-      response = await fetch(`${apiBase}/api/auth/register`, {
+      const data = await apiFetch<{ token: string; user: User }>("/api/auth/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ username, email, password }),
       });
+      const { token, user } = data;
+      setToken(token);
+      setUser(user);
+      if (typeof window !== "undefined" && token) {
+        localStorage.setItem("token", token);
+      }
+      try {
+        await apiFetch("/api/clawdbot/sessions/cleanup", {
+          method: "POST",
+          body: JSON.stringify({ prefix: "mycasa_" }),
+        });
+      } catch {
+        // Ignore cleanup errors
+      }
     } catch (error: any) {
       if (isNetworkError(error)) {
-        throw new Error(`Unable to reach backend at ${apiBase}. Start the server and try again.`);
+        throw new Error(error?.message || "Unable to reach backend. Start the server and try again.");
       }
-      throw error;
-    }
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error?.detail || "Registration failed");
-    }
-
-    const data = await response.json();
-    const { token, user } = data;
-    setToken(token);
-    setUser(user);
-    if (typeof window !== "undefined" && token) {
-      localStorage.setItem("token", token);
-    }
-    try {
-      await apiFetch("/api/clawdbot/sessions/cleanup", {
-        method: "POST",
-        body: JSON.stringify({ prefix: "mycasa_" }),
-      });
-    } catch {
-      // Ignore cleanup errors
+      throw new Error(error?.detail || error?.message || "Registration failed");
     }
   };
 
@@ -187,7 +171,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const refreshUser = async () => {
-    await validateToken(null);
+    return await validateToken(null);
   };
 
   const bumpAvatarVersion = () => {

@@ -181,10 +181,47 @@ def _get_cached_agent(agent_id: str):
 async def get_agent_response(agent_id: str, message: str, context: Optional[str] = None) -> Dict[str, Any]:
     """
     Get a response from the actual agent using the configured LLM (Kimi K2.5, Claude, etc.)
+    Ensures task/reminder actions are executed before replying.
     """
     agent = _get_cached_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found or not loaded")
+
+    # Action-first: attempt real task creation for maintenance-style intents
+    try:
+        if hasattr(agent, "create_task_from_message"):
+            task_result = agent.create_task_from_message(message)
+            if task_result:
+                if not task_result.get("success", True):
+                    return {
+                        "agent_id": agent_id,
+                        "response": f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')}",
+                        "timestamp": datetime.now().isoformat(),
+                        "grounded_in": 0,
+                        "error": task_result.get("error"),
+                        "task_created": task_result,
+                    }
+                due = task_result.get("due_date")
+                response_text = (
+                    f"Got it. I added the task \"{task_result.get('title', 'Task')}\" due {due}."
+                    if due
+                    else f"Got it. I added the task \"{task_result.get('title', 'Task')}\"."
+                )
+                return {
+                    "agent_id": agent_id,
+                    "response": response_text,
+                    "timestamp": datetime.now().isoformat(),
+                    "grounded_in": 0,
+                    "task_created": task_result,
+                }
+    except Exception as exc:
+        return {
+            "agent_id": agent_id,
+            "response": f"Sorry — I couldn’t create that task. {str(exc)}",
+            "timestamp": datetime.now().isoformat(),
+            "grounded_in": 0,
+            "error": str(exc),
+        }
 
     response_text = await agent.chat(message)
 
@@ -192,7 +229,7 @@ async def get_agent_response(agent_id: str, message: str, context: Optional[str]
         "agent_id": agent_id,
         "response": response_text,
         "timestamp": datetime.now().isoformat(),
-        "grounded_in": 0
+        "grounded_in": 0,
     }
     
     response_text = responses.get(agent_id, f"[{agent_id}] Message received: {message[:100]}")

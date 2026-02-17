@@ -400,30 +400,41 @@ function RightRail() {
                   {system.data.running ? "Running" : "Stopped"}
                 </Badge>
               </Group>
-              <Group justify="space-between">
+              {system.data.last_startup && (
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Last startup
+                  </Text>
+                  <Text size="sm" fw={500}>
+                    {new Date(system.data.last_startup).toLocaleString()}
+                  </Text>
+                </Group>
+              )}
+              {system.data.last_backup && (
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Last backup
+                  </Text>
+                  <Text size="sm" fw={500}>
+                    {new Date(system.data.last_backup).toLocaleString()}
+                  </Text>
+                </Group>
+              )}
+              {system.data.last_shutdown && (
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Last shutdown
+                  </Text>
+                  <Text size="sm" fw={500}>
+                    {new Date(system.data.last_shutdown).toLocaleString()}
+                  </Text>
+                </Group>
+              )}
+              {!system.data.last_startup && !system.data.last_backup && !system.data.last_shutdown && (
                 <Text size="sm" c="dimmed">
-                  Last startup
+                  No lifecycle events recorded yet.
                 </Text>
-                <Text size="sm" fw={500}>
-                  {system.data.last_startup ? new Date(system.data.last_startup).toLocaleString() : "—"}
-                </Text>
-              </Group>
-              <Group justify="space-between">
-                <Text size="sm" c="dimmed">
-                  Last backup
-                </Text>
-                <Text size="sm" fw={500}>
-                  {system.data.last_backup ? new Date(system.data.last_backup).toLocaleString() : "—"}
-                </Text>
-              </Group>
-              <Group justify="space-between">
-                <Text size="sm" c="dimmed">
-                  Last shutdown
-                </Text>
-                <Text size="sm" fw={500}>
-                  {system.data.last_shutdown ? new Date(system.data.last_shutdown).toLocaleString() : "—"}
-                </Text>
-              </Group>
+              )}
             </Stack>
           )}
           {!system.loading && !system.error && !system.data && (

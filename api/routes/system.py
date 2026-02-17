@@ -13,6 +13,7 @@ from api.schemas.common import (
     BackupListResponse, BackupCreateResponse, BackupRestoreResponse,
 )
 from core.lifecycle import get_lifecycle_manager
+from core.config import get_config
 from core.events_v2 import get_event_bus
 from core.settings_typed import get_settings_store
 from config.settings import DATABASE_URL
@@ -49,7 +50,11 @@ router = APIRouter(prefix="/system", tags=["System"])
 async def get_system_status():
     """Get current system status"""
     lifecycle = get_lifecycle_manager()
-    return lifecycle.get_status()
+    status = lifecycle.get_status()
+    personal_mode = get_config().PERSONAL_MODE
+    status["personal_mode"] = personal_mode
+    status["auth_mode"] = "personal" if personal_mode else "account"
+    return status
 
 
 @router.get("/monitor")

@@ -177,9 +177,18 @@ export function LiveSystemDashboard() {
 
   if (!status) return null;
 
-  const agentStats = status.agents.stats;
-  const sbStats = status.secondbrain.stats;
-  const connectorStats = status.connectors.stats;
+  const agentStats = status?.agents?.stats ?? { total: 0, active: 0, available: 0 };
+  const agentMap = status?.agents?.agents ?? {};
+  const sbStats = status?.secondbrain?.stats ?? { total_notes: 0, folders: {} as Record<string, number> };
+  const sbStatus = status?.secondbrain?.status ?? "unavailable";
+  const sbRecent = status?.secondbrain?.recent_notes ?? [];
+  const connectorStats = status?.connectors?.stats ?? { total: 0, healthy: 0 };
+  const connectorMap = status?.connectors?.connectors ?? {};
+  const chatStats = status?.chat ?? { total_messages: 0, active_sessions: 0 };
+  const sharedContext = status?.shared_context ?? { status: "unavailable", sources: {} as Record<string, any> };
+  const sharedSources = sharedContext.sources || {};
+  const memory = status?.memory ?? { core_files: {} as Record<string, boolean>, daily_memory: { total_files: 0, today_exists: false, today_chars: 0 } };
+  const scheduled = status?.scheduled_jobs ?? { active_jobs: 0, jobs: [] as Array<any> };
 
   return (
     <Stack gap="md">
@@ -228,10 +237,10 @@ export function LiveSystemDashboard() {
         />
         <StatCard
           title="Chat Messages"
-          value={status.chat.total_messages}
+          value={chatStats.total_messages}
           icon={IconMessage}
           color="cyan"
-          subtitle={`${status.chat.active_sessions} sessions`}
+          subtitle={`${chatStats.active_sessions} sessions`}
         />
       </SimpleGrid>
 
@@ -249,7 +258,7 @@ export function LiveSystemDashboard() {
             </Badge>
           </Group>
           <Stack gap="xs">
-            {Object.entries(status.agents.agents).map(([name, agent]) => (
+            {Object.entries(agentMap).map(([name, agent]) => (
               <Group key={name} justify="space-between">
                 <Group gap="xs">
                   <Text size="sm" fw={500} tt="capitalize">{name}</Text>
@@ -272,7 +281,7 @@ export function LiveSystemDashboard() {
               <IconBrain size={20} />
               <Title order={5}>SecondBrain Vault</Title>
             </Group>
-            <StatusBadge status={status.secondbrain.status} />
+            <StatusBadge status={sbStatus} />
           </Group>
           
           <SimpleGrid cols={3} mb="md">
@@ -286,7 +295,7 @@ export function LiveSystemDashboard() {
           
           <Text size="xs" c="dimmed" mb="xs">Recent Notes:</Text>
           <Stack gap={4}>
-            {status.secondbrain.recent_notes.slice(0, 3).map((note) => (
+            {sbRecent.slice(0, 3).map((note) => (
               <Group key={note.id} justify="space-between">
                 <Text size="xs" ff="monospace">{note.id}</Text>
                 <Text size="xs" c="dimmed">{note.folder}</Text>
@@ -304,7 +313,7 @@ export function LiveSystemDashboard() {
             </Group>
           </Group>
           <Stack gap="sm">
-            {Object.entries(status.connectors.connectors).map(([name, conn]) => (
+            {Object.entries(connectorMap).map(([name, conn]) => (
               <Group key={name} justify="space-between">
                 <Group gap="xs">
                   {name === "whatsapp" && <IconBrandWhatsapp size={16} color="green" />}
@@ -332,34 +341,34 @@ export function LiveSystemDashboard() {
               <IconDatabase size={20} />
               <Title order={5}>Shared Context</Title>
             </Group>
-            <StatusBadge status={status.shared_context.status} />
+            <StatusBadge status={sharedContext.status} />
           </Group>
           
           <Stack gap="xs">
-            {status.shared_context.sources && (
+            {sharedSources && (
               <>
                 <Group justify="space-between">
                   <Text size="sm">User Profile</Text>
-                  <Badge size="xs" color={status.shared_context.sources.user_profile ? "green" : "gray"}>
-                    {status.shared_context.sources.user_profile_chars || 0} chars
+                  <Badge size="xs" color={sharedSources.user_profile ? "green" : "gray"}>
+                    {sharedSources.user_profile_chars || 0} chars
                   </Badge>
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm">Long-term Memory</Text>
-                  <Badge size="xs" color={status.shared_context.sources.long_term_memory ? "green" : "gray"}>
-                    {status.shared_context.sources.memory_chars || 0} chars
+                  <Badge size="xs" color={sharedSources.long_term_memory ? "green" : "gray"}>
+                    {sharedSources.memory_chars || 0} chars
                   </Badge>
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm">Contacts</Text>
                   <Badge size="xs" color="blue">
-                    {status.shared_context.sources.contacts || 0}
+                    {sharedSources.contacts || 0}
                   </Badge>
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm">Recent Memory</Text>
                   <Badge size="xs" color="violet">
-                    {status.shared_context.sources.recent_memory_days || 0} days
+                    {sharedSources.recent_memory_days || 0} days
                   </Badge>
                 </Group>
               </>
@@ -377,7 +386,7 @@ export function LiveSystemDashboard() {
           </Group>
           
           <Stack gap="xs">
-            {Object.entries(status.memory.core_files).map(([file, exists]) => (
+            {Object.entries(memory.core_files).map(([file, exists]) => (
               <Group key={file} justify="space-between">
                 <Text size="sm" ff="monospace">{file}</Text>
                 <ThemeIcon size="sm" variant="light" color={exists ? "green" : "red"}>
@@ -388,12 +397,12 @@ export function LiveSystemDashboard() {
             <Divider my="xs" />
             <Group justify="space-between">
               <Text size="sm">Daily Memory Files</Text>
-              <Badge size="xs">{status.memory.daily_memory.total_files}</Badge>
+              <Badge size="xs">{memory.daily_memory.total_files}</Badge>
             </Group>
             <Group justify="space-between">
               <Text size="sm">Today's Memory</Text>
-              <Badge size="xs" color={status.memory.daily_memory.today_exists ? "green" : "gray"}>
-                {status.memory.daily_memory.today_chars} chars
+              <Badge size="xs" color={memory.daily_memory.today_exists ? "green" : "gray"}>
+                {memory.daily_memory.today_chars} chars
               </Badge>
             </Group>
           </Stack>
@@ -407,13 +416,13 @@ export function LiveSystemDashboard() {
               <Title order={5}>Scheduled Jobs</Title>
             </Group>
             <Badge color="blue" variant="light">
-              {status.scheduled_jobs.active_jobs} active
+              {scheduled.active_jobs} active
             </Badge>
           </Group>
           
-          {status.scheduled_jobs.jobs.length > 0 ? (
+          {scheduled.jobs.length > 0 ? (
             <Stack gap="xs">
-              {status.scheduled_jobs.jobs.slice(0, 5).map((job) => (
+              {scheduled.jobs.slice(0, 5).map((job) => (
                 <Group key={job.id} justify="space-between">
                   <Text size="sm">{job.name}</Text>
                   <Text size="xs" c="dimmed" ff="monospace">{job.schedule}</Text>

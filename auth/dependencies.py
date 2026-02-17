@@ -13,6 +13,8 @@ from database.connection import get_db
 from database.models import User
 from auth.sessions import get_session_from_request
 from auth.permissions import get_user_permissions
+from core.config import get_config
+from auth.personal_mode import ensure_personal_user
 
 
 def _get_bearer_token(request: Request) -> Optional[str]:
@@ -67,8 +69,13 @@ async def get_current_user(
     token_payload = getattr(request.state, "token_payload", None)
     if token_payload is None:
         auth_error = getattr(request.state, "auth_error", None)
-        if auth_error:
+        if auth_error and not get_config().PERSONAL_MODE:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=auth_error)
+        if get_config().PERSONAL_MODE:
+            user = ensure_personal_user(db)
+            user_dict = _serialize_user(user)
+            request.state.user = user_dict
+            return user_dict
         return None
     if token_payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token")

@@ -233,6 +233,13 @@ async def lifespan(app: FastAPI):
     lifecycle = get_lifecycle_manager()
     startup_result = lifecycle.startup()
     print(f"[API] Lifecycle started: {startup_result.get('agents_started', [])}")
+
+    # Record lifecycle start in persistent state for UI visibility
+    try:
+        state_mgr = get_state_manager()
+        state_mgr.startup()
+    except Exception:
+        pass
     
     await event_broker.emit("system", {"status": "api_started"})
     
@@ -458,6 +465,9 @@ async def manager_chat(
             try:
                 maintenance = manager.maintenance or manager.get_agent_by_id("maintenance")
                 if maintenance and hasattr(maintenance, "create_task_from_message"):
+                    msg_lower = (request.message or "").lower()
+                    intent_keywords = ["remind", "reminder", "add a task", "add task", "schedule", "task reminder"]
+                    is_task_intent = any(k in msg_lower for k in intent_keywords)
                     task_result = maintenance.create_task_from_message(request.message)
                     if task_result:
                         if not task_result.get("success", True):
@@ -477,6 +487,25 @@ async def manager_chat(
                                 },
                                 "error": task_result.get("error"),
                             }
+                        # Verify task exists before claiming success
+                        task_id = task_result.get("task_id")
+                        if task_id and hasattr(maintenance, "get_task"):
+                            try:
+                                verified = maintenance.get_task(int(task_id))
+                                if not verified:
+                                    response = "I couldn't verify the task in the system. Please try again. — Galidima 🏠"
+                                    add_message(db, conversation, "assistant", response)
+                                    return {
+                                        "response": response,
+                                        "timestamp": datetime.now().isoformat(),
+                                        "agent": "manager",
+                                        "agent_name": "Galidima",
+                                        "conversation_id": conversation_id,
+                                        "error": "task_verification_failed",
+                                    }
+                            except Exception:
+                                pass
+
                         response = (
                             f"Task \"{task_result['title']}\" scheduled for {task_result.get('due_date')}. — Galidima 🏠"
                             if task_result.get("due_date")
@@ -496,6 +525,17 @@ async def manager_chat(
                             "agent_name": "Galidima",
                             "conversation_id": conversation_id,
                             "task_created": task_result,
+                        }
+                    if is_task_intent and not task_result:
+                        response = "I couldn’t parse that into a task. Try: “Add a task to clean the garage by Friday.” — Galidima 🏠"
+                        add_message(db, conversation, "assistant", response)
+                        return {
+                            "response": response,
+                            "timestamp": datetime.now().isoformat(),
+                            "agent": "manager",
+                            "agent_name": "Galidima",
+                            "conversation_id": conversation_id,
+                            "error": "task_parse_failed",
                         }
             except Exception as exc:
                 response = f"Sorry — I couldn’t create that task. {str(exc)} — Galidima 🏠"

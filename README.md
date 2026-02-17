@@ -106,6 +106,31 @@ Open:
 - UI: http://127.0.0.1:3000
 - API: http://127.0.0.1:6709
 
+## Quick CLI Commands
+```bash
+# Open the UI in your browser
+./mycasa open
+
+# Start/stop the system runtime (agents + lifecycle)
+./mycasa system start
+./mycasa system stop
+```
+
+## Factory Reset (start over clean)
+```bash
+./mycasa reset
+```
+This stops services, wipes local data/config, and clears caches. After reset:
+```bash
+./mycasa setup
+./start_all.sh
+```
+If the UI still points to a wrong port, clear the browser override:
+```js
+// in browser console
+localStorage.removeItem("mycasa_api_base_override")
+```
+
 ## Qwen OAuth (Terminal)
 Authenticate Qwen from the terminal (device flow):
 ```bash

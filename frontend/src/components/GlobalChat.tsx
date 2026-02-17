@@ -241,6 +241,9 @@ export function GlobalChat() {
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "error">("idle");
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [personalMode, setPersonalMode] = useState(false);
+  const [personalModeChecked, setPersonalModeChecked] = useState(false);
+  const [personalModeError, setPersonalModeError] = useState<string | null>(null);
   const agentTheme = (() => {
     const key = selectedAgent || "manager";
     switch (key) {
@@ -267,8 +270,11 @@ export function GlobalChat() {
         return { label: "Command", accent: tokens.colors.primary[500], color: "blue" as const };
     }
   })();
-  const lipTitle = !isAuthenticated
-    ? "Sign in to chat"
+  const chatAllowed = isAuthenticated || personalMode;
+  const lipTitle = !chatAllowed
+    ? personalModeError
+      ? "Backend unavailable"
+      : "Sign in to chat"
     : expanded
       ? "Close chat"
       : `Ask ${agentTheme.label}`;
@@ -290,6 +296,30 @@ export function GlobalChat() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    const checkPersonalMode = async () => {
+      try {
+        const data = await apiFetch<any>("/api/system/status");
+        if (active) {
+          setPersonalMode(Boolean(data.personal_mode));
+          setPersonalModeError(null);
+        }
+      } catch {
+        if (active) {
+          setPersonalMode(false);
+          setPersonalModeError("Backend unavailable. Start the API to chat.");
+        }
+      } finally {
+        if (active) setPersonalModeChecked(true);
+      }
+    };
+    checkPersonalMode();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const cached = loadHistory(selectedAgent, user?.id);
     if (cached.length > 0) {
@@ -300,7 +330,7 @@ export function GlobalChat() {
       messageIdRef.current = 1;
     }
 
-    if (!isAuthenticated) {
+    if (!chatAllowed) {
       setHistoryStatus("idle");
       setHistoryError(null);
       return;
@@ -332,12 +362,12 @@ export function GlobalChat() {
         if (isNetworkError(err)) {
           setHistoryError(`Unable to reach backend at ${API_URL}.`);
         } else if (err?.status === 401) {
-          setHistoryError("Sign in required to load history.");
+          setHistoryError(personalMode ? "Session unavailable. Retry shortly." : "Sign in required to load history.");
         } else {
           setHistoryError(err?.detail || "Unable to load history.");
         }
       });
-  }, [selectedAgent, isAuthenticated, user?.id]);
+  }, [selectedAgent, chatAllowed, personalMode, isAuthenticated, user?.id]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -422,9 +452,13 @@ export function GlobalChat() {
   useEffect(() => {
     let active = true;
     const fetchLlmStatus = async () => {
-      if (!isAuthenticated) {
+      if (!chatAllowed) {
         if (active) {
-          setLlmStatus((prev) => ({ ...prev, loading: false, error: "Not signed in" }));
+          setLlmStatus((prev) => ({
+            ...prev,
+            loading: false,
+            error: personalMode ? "Personal mode active" : "Not signed in",
+          }));
         }
         return;
       }
@@ -460,7 +494,7 @@ export function GlobalChat() {
       active = false;
       window.removeEventListener("mycasa-llm-status", handler as EventListener);
     };
-  }, [isAuthenticated]);
+  }, [chatAllowed, personalMode, isAuthenticated]);
 
   useEffect(() => {
     if (expanded) {
@@ -629,8 +663,8 @@ export function GlobalChat() {
           continue;
         }
         if (status === 401) {
-          addLocalResponse("Session expired. Please sign in again.", "System");
-          router.push("/login");
+          addLocalResponse(personalMode ? "Session unavailable. Retry shortly." : "Session expired. Please sign in again.", "System");
+          if (!personalMode) router.push("/login");
         } else if (detail) {
           if (String(detail).toLowerCase().includes("api key")) {
             addLocalResponse(
@@ -674,16 +708,16 @@ export function GlobalChat() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading) return;
-    if (!isAuthenticated) {
+    if (!chatAllowed) {
       const localMessage: Message = {
         id: nextMessageId(),
         role: "assistant",
-        content: "Please sign in to chat with Galidima.",
+        content: "Sign in is required on this server. Enable Personal Mode to chat without login.",
         timestamp: new Date().toISOString(),
         agent: "System",
       };
       setMessages((prev) => [...prev, localMessage]);
-      router.push("/login");
+      if (!personalMode) router.push("/login");
       return;
     }
 
@@ -1138,12 +1172,17 @@ export function GlobalChat() {
           {/* Messages */}
           <ScrollArea style={{ flex: 1 }} p="sm" type="auto" className="global-chat-messages">
             <Stack gap="sm">
-              {!isAuthenticated && (
+              {!chatAllowed && personalModeChecked && !personalModeError && (
                 <Alert color="yellow" title="Sign in required">
                   Sign in to send messages and sync your conversation history.
                 </Alert>
               )}
-              {isAuthenticated && historyStatus === "error" && historyError && (
+              {!chatAllowed && personalModeChecked && personalModeError && (
+                <Alert color="red" title="Backend unavailable">
+                  {personalModeError}
+                </Alert>
+              )}
+              {chatAllowed && historyStatus === "error" && historyError && (
                 <Alert color="red" title="History unavailable">
                   {historyError}
                 </Alert>
@@ -1270,7 +1309,7 @@ export function GlobalChat() {
               <Group gap="sm">
                 <TextInput
                   placeholder={
-                    isAuthenticated
+                    chatAllowed
                       ? `Message ${agentTheme.label}... (@agent or /help)`
                       : "Sign in to chat with Galidima"
                   }
@@ -1293,7 +1332,7 @@ export function GlobalChat() {
                   radius="md"
                   variant="filled"
                   color={agentTheme.color}
-                  disabled={!inputValue.trim() || isLoading}
+                  disabled={!inputValue.trim() || isLoading || !chatAllowed}
                 >
                   <IconSend size={16} />
                 </ActionIcon>

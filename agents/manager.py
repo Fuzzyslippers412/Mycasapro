@@ -209,7 +209,12 @@ class ManagerAgent(BaseAgent):
                 self._galidima_available = False
         return self._galidima_available
 
-    async def chat(self, message: str, context: Optional[Dict[str, Any]] = None) -> str:
+    async def chat(
+        self,
+        message: str,
+        context: Optional[Dict[str, Any]] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
         """
         Manager chat entrypoint.
         Fast-path task/reminder requests to Maintenance (real DB), then fallback to LLM.
@@ -257,7 +262,7 @@ class ManagerAgent(BaseAgent):
                 self.log_action("reminder_check_failed", str(exc), status="error")
 
         # Fallback to LLM
-        return await super().chat(message, context)
+        return await super().chat(message, context, conversation_history=conversation_history)
     
     # ============ SYSTEM REPORTING MODES ============
     
