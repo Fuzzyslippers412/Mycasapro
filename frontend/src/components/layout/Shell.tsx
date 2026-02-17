@@ -683,6 +683,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const unreadCount = useUnreadCount();
   const pendingTasks = useTasks({ status: 'pending', limit: 200 });
+  const headerSystem = useSystemStatus(30000);
+  const headerSystemIndicator: "healthy" | "warning" | "error" = headerSystem.error
+    ? "error"
+    : headerSystem.data
+      ? "healthy"
+      : "warning";
 
   // Hot keys
   useHotkeys([
@@ -819,7 +825,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
             {/* Right side */}
             <Group gap="xs">
-              <SystemStatus status={systemIndicator} />
+              <SystemStatus status={headerSystemIndicator} />
               <Divider orientation="vertical" h={24} my="auto" />
               <QuickActions />
               <NotificationBell />
