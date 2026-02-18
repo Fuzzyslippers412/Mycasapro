@@ -74,7 +74,6 @@ interface LlmStatus {
 }
 
 const API_URL = getApiBaseUrl();
-const HISTORY_KEY_PREFIX = "mycasa_global_chat_history_v1";
 const CONVERSATION_KEY_PREFIX = "mycasa_conversation";
 const CLEAR_KEY_PREFIX = "mycasa_chat_cleared_v1";
 
@@ -163,11 +162,6 @@ function resolveAgentId(token: string): string | null {
   return null;
 }
 
-function historyKey(agentId: string, userId?: number | null): string {
-  const userScope = userId ? `user_${userId}` : "anon";
-  return `${HISTORY_KEY_PREFIX}_${userScope}_${agentId}`;
-}
-
 function conversationKey(agentId: string, userId?: number | null): string {
   const userScope = userId ? `user_${userId}` : "anon";
   return `${CONVERSATION_KEY_PREFIX}_${userScope}_${agentId}`;
@@ -181,26 +175,6 @@ function clearedKey(agentId: string, userId?: number | null): string {
 function isHistoryCleared(agentId: string, userId?: number | null): boolean {
   if (typeof window === "undefined") return false;
   return Boolean(window.localStorage.getItem(clearedKey(agentId, userId)));
-}
-
-function loadHistory(agentId: string, userId?: number | null): Message[] {
-  if (typeof window === "undefined") return [];
-  if (isHistoryCleared(agentId, userId)) return [];
-  try {
-    const raw = window.localStorage.getItem(historyKey(agentId, userId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-  } catch {}
-  return [];
-}
-
-function saveHistory(agentId: string, userId: number | null, messages: Message[]): void {
-  if (typeof window === "undefined") return;
-  if (isHistoryCleared(agentId, userId)) return;
-  try {
-    window.localStorage.setItem(historyKey(agentId, userId), JSON.stringify(messages.slice(-100)));
-  } catch {}
 }
 
 function extractMentionedAgents(text: string): { agents: string[]; cleaned: string } {
@@ -382,14 +356,8 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const cached = loadHistory(selectedAgent, user?.id);
-    if (cached.length > 0) {
-      setMessages(cached);
-      messageIdRef.current = Math.max(1, cached.length + 1);
-    } else {
-      setMessages([]);
-      messageIdRef.current = 1;
-    }
+    setMessages([]);
+    messageIdRef.current = 1;
 
     if (isHistoryCleared(selectedAgent, user?.id)) {
       setHistoryStatus("idle");
@@ -435,11 +403,6 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         }
       });
   }, [selectedAgent, chatAllowed, personalMode, isAuthenticated, user?.id]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    saveHistory(selectedAgent, user?.id ?? null, messages);
-  }, [messages, mounted, selectedAgent, user?.id]);
 
   // Fetch real agent status from system live endpoint (single source of truth)
   const fetchAgents = useCallback(async () => {
@@ -769,6 +732,18 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       setMessages((prev) => [...prev, assistantMessage]);
       setPendingRoute(null);
       if (data?.task_created && typeof window !== "undefined") {
+        const title = data?.task_created?.title || "Task created";
+        const due = data?.task_created?.due_date || data?.task_created?.scheduled_date;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextMessageId(),
+            role: "assistant",
+            content: `✅ ${title}${due ? ` • Due ${due}` : ""}. Open Maintenance to review.`,
+            timestamp: new Date().toISOString(),
+            agent: "System",
+          },
+        ]);
         const routed = data?.routed_to || "maintenance";
         setSelectedAgent(routed);
         window.dispatchEvent(new CustomEvent("mycasa-system-sync"));
@@ -1022,7 +997,6 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       });
       if (typeof window !== "undefined") {
         localStorage.removeItem(convKey);
-        localStorage.removeItem(historyKey(selectedAgent, user?.id ?? null));
       }
       setMessages([]);
       setHistoryStatus("idle");
@@ -1407,7 +1381,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                     >
                       <Group gap="xs">
                         <Badge size="xs" variant="light" color="blue">
-                          Routing
+                          Coordinating
                         </Badge>
                         <Text size="sm" fw={600}>
                           {AGENT_NAMES[pendingRoute] || pendingRoute}
@@ -1415,7 +1389,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                         <Loader size="xs" />
                       </Group>
                       <Text size="xs" c="dimmed" mt={4}>
-                        Galidima is handing this off for execution.
+                        Creating the task and syncing the Maintenance queue.
                       </Text>
                     </Paper>
                   </Group>
@@ -1430,36 +1404,9 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                       radius="lg"
                       style={{ backgroundColor: "var(--chat-message-bg)" }}
                     >
-                      <Group gap={4}>
-                        <Box
-                          className="animate-pulse"
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: "50%",
-                            backgroundColor: tokens.colors.primary[500],
-                          }}
-                        />
-                        <Box
-                          className="animate-pulse"
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: "50%",
-                            backgroundColor: tokens.colors.primary[500],
-                            animationDelay: "0.2s",
-                          }}
-                        />
-                        <Box
-                          className="animate-pulse"
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: "50%",
-                            backgroundColor: tokens.colors.primary[500],
-                            animationDelay: "0.4s",
-                          }}
-                        />
+                      <Group gap="xs">
+                        <Loader size="xs" />
+                        <Text size="sm" c="dimmed">Working on it…</Text>
                       </Group>
                     </Paper>
                   </Group>

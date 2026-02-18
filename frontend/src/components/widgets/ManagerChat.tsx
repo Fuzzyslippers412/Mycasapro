@@ -94,35 +94,15 @@ const AGENT_COMMANDS: AgentCommand[] = [
 
 // ============ CONSTANTS ============
 const API_URL = getApiBaseUrl();
-const STORAGE_KEY = "mycasa_chat_history_v3";
 const CONVERSATION_KEY = "mycasa_manager_conversation_id";
 
-const storageKey = (userId?: number | null) => `${STORAGE_KEY}:${userId ?? "anon"}`;
 const conversationKey = (userId?: number | null) => `${CONVERSATION_KEY}:${userId ?? "anon"}`;
 
-// ============ STORAGE HELPERS ============
-function saveToStorage(key: string, messages: Message[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(messages.slice(-100)));
-  } catch (e) {
-    console.error("[Chat] Save failed:", e);
-  }
-}
-
-function loadFromStorage(key: string): Message[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.error("[Chat] Load failed:", e);
-  }
-  return [];
-}
+const isMaintenanceIntent = (text: string) => {
+  const msg = text.toLowerCase();
+  const keywords = ["task", "remind", "reminder", "clean", "repair", "fix", "schedule", "maintenance"];
+  return keywords.some((k) => msg.includes(k));
+};
 
 // ============ ATTACHMENT TYPE ============
 interface PendingAttachment {
@@ -146,7 +126,6 @@ export function ManagerChat() {
   const [expanded, setExpanded] = useState(false);
   const [unread, setUnread] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const [routingStatus, setRoutingStatus] = useState<string | null>(null);
   const [showCommands, setShowCommands] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
@@ -186,12 +165,9 @@ export function ManagerChat() {
     ).slice(0, 6);
   }, [input]);
 
-  // Load/save persistence
+  // Load session history from backend
   useEffect(() => {
-    const key = storageKey(user?.id ?? null);
-    const stored = loadFromStorage(key);
-    setMessages(stored);
-    setMounted(true);
+    setMessages([]);
 
     const convoKey = conversationKey(user?.id ?? null);
     const storedConversation = typeof window !== "undefined"
@@ -239,12 +215,6 @@ export function ManagerChat() {
         }
       });
   }, [chatAllowed, isAuthenticated, personalMode, user?.id]);
-
-  useEffect(() => {
-    if (mounted && messages.length > 0) {
-      saveToStorage(storageKey(user?.id ?? null), messages);
-    }
-  }, [messages, mounted, user?.id]);
 
   // Auto-scroll
   useEffect(() => {
@@ -324,10 +294,13 @@ export function ManagerChat() {
       isCommand,
     };
 
+    const coordinationHint = isMaintenanceIntent(userMessage)
+      ? "Coordinating with Maintenance…"
+      : "Working on it…";
     const placeholderMsg: Message = {
       id: `resp_${Date.now()}`,
       role: "manager",
-      text: "",
+      text: coordinationHint,
       timestamp: new Date().toISOString(),
       isStreaming: true,
       isCommand,
@@ -337,7 +310,7 @@ export function ManagerChat() {
     setInput("");
     setShowCommands(false);
     setIsLoading(true);
-    setRoutingStatus("Routing...");
+    setRoutingStatus(isMaintenanceIntent(userMessage) ? "Routing → Maintenance" : "Routing...");
 
     try {
       const data = await sendManagerChat(userMessage, conversationId || undefined);
@@ -392,6 +365,17 @@ export function ManagerChat() {
         return updated;
       });
       if (data?.task_created) {
+        const title = data?.task_created?.title || "Task created";
+        const due = data?.task_created?.due_date || data?.task_created?.scheduled_date;
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `status_${Date.now()}`,
+            role: "system",
+            text: `✅ ${title}${due ? ` • Due ${due}` : ""}. Open Maintenance to review.`,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
         window.dispatchEvent(new CustomEvent("mycasa-system-sync"));
         if (data?.routed_to === "maintenance") {
           try {
@@ -532,11 +516,19 @@ export function ManagerChat() {
   };
 
   const handleClear = () => {
+    const convoKey = conversationKey(user?.id ?? null);
+    const storedConversation = typeof window !== "undefined"
+      ? window.localStorage.getItem(convoKey)
+      : null;
     setMessages([]);
+    if (storedConversation) {
+      apiFetch(`/api/agents/manager/history?conversation_id=${storedConversation}`, { method: "DELETE" })
+        .catch(() => null);
+    }
     if (typeof window !== "undefined") {
-      window.localStorage.removeItem(storageKey(user?.id ?? null));
       window.localStorage.removeItem(conversationKey(user?.id ?? null));
     }
+    setConversationId(null);
   };
 
   const formatTime = (ts: string) => {
@@ -688,7 +680,7 @@ export function ManagerChat() {
                         {msg.isStreaming ? (
                           <Group gap="xs">
                             <Loader size={12} color="gray" />
-                            <Text size="sm" c="dimmed">Thinking...</Text>
+                            <Text size="sm" c="dimmed">{msg.text || "Working on it…"}</Text>
                           </Group>
                         ) : msg.role === "user" ? (
                           <Text
