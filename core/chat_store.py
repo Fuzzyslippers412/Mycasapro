@@ -5,6 +5,8 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime
 from sqlalchemy import desc
+from sqlalchemy.exc import OperationalError
+import time
 
 from database.models import ChatConversation, ChatMessage
 
@@ -37,19 +39,31 @@ def add_message(
     role: str,
     content: str,
 ) -> ChatMessage:
-    message = ChatMessage(conversation_id=conversation.id, role=role, content=content)
-    db.add(message)
-    conversation.updated_at = datetime.utcnow()
-    if conversation.archived_at is not None:
-        conversation.archived_at = None
-    if role == "user" and not conversation.title:
-        title = (content or "").strip().replace("\n", " ")
-        if title:
-            conversation.title = (title[:80] + "…") if len(title) > 80 else title
-    db.add(conversation)
-    db.commit()
-    db.refresh(message)
-    return message
+    last_error: Optional[OperationalError] = None
+    for attempt in range(3):
+        try:
+            message = ChatMessage(conversation_id=conversation.id, role=role, content=content)
+            db.add(message)
+            conversation.updated_at = datetime.utcnow()
+            if conversation.archived_at is not None:
+                conversation.archived_at = None
+            if role == "user" and not conversation.title:
+                title = (content or "").strip().replace("\n", " ")
+                if title:
+                    conversation.title = (title[:80] + "…") if len(title) > 80 else title
+            db.add(conversation)
+            db.commit()
+            db.refresh(message)
+            return message
+        except OperationalError as exc:
+            db.rollback()
+            last_error = exc
+            if "locked" not in str(exc).lower():
+                raise
+            time.sleep(0.2 * (attempt + 1))
+    if last_error is not None:
+        raise last_error
+    raise OperationalError("DB error", None, None)
 
 
 def get_history(

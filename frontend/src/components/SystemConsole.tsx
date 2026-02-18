@@ -141,8 +141,15 @@ const AGENT_COMMANDS: AgentCommand[] = [
 
 // ============ CONSTANTS ============
 const API_URL = getApiBaseUrl();
-const conversationKey = (agentId: string, userId?: number | null) =>
-  `mycasa_console_conversation_${agentId}:${userId ?? "anon"}`;
+const conversationKey = (agentId: string, userId?: number | null) => {
+  const userScope = userId ? `user_${userId}` : "anon";
+  return `mycasa_conversation_${userScope}_${agentId}`;
+};
+
+const cleanError = (message?: string | null) => {
+  if (!message) return "";
+  return message.replace(/^LLM_ERROR:\s*/i, "").trim();
+};
 
 // Avatar images for agents
 const AVATAR_IMAGES: Record<string, string> = {
@@ -408,9 +415,10 @@ export function SystemConsole() {
           const updated = [...prev];
           const lastIdx = updated.length - 1;
           if (updated[lastIdx]?.isLoading) {
+            const responseText = data?.response?.trim();
             updated[lastIdx] = {
               ...updated[lastIdx],
-              text: data.response || "(no response)",
+              text: responseText || "No response received from agent.",
               isLoading: false,
               exitCode: data.exit_code ?? undefined,
               agentName: data.agent_name,
@@ -421,7 +429,7 @@ export function SystemConsole() {
           return updated;
         });
     } catch (e: any) {
-      const message = e?.detail || e?.message || "Connection error";
+      const message = cleanError(e?.detail || e?.message || "") || "Connection error";
       setMessages(prev => {
         const updated = [...prev];
         const lastIdx = updated.length - 1;
@@ -558,9 +566,10 @@ export function SystemConsole() {
           const updated = [...prev];
           const lastIdx = updated.length - 1;
           if (updated[lastIdx]?.isLoading) {
+            const responseText = data?.response?.trim();
             updated[lastIdx] = {
               ...updated[lastIdx],
-              text: data.response || "(no response)",
+              text: responseText || "No response received from agent.",
               isLoading: false,
               exitCode: data.exit_code ?? undefined,
               agentName: data.agent_name,
@@ -571,7 +580,7 @@ export function SystemConsole() {
           return updated;
         });
     } catch (e: any) {
-      const message = e?.detail || e?.message || "Connection error";
+      const message = cleanError(e?.detail || e?.message || "") || "Connection error";
       setMessages(prev => {
         const updated = [...prev];
         const lastIdx = updated.length - 1;

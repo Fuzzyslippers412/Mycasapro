@@ -255,7 +255,8 @@ class ManagerAgent(BaseAgent):
 
             if any(k in msg_lower for k in status_keywords):
                 try:
-                    action_results["status_snapshot"] = self.quick_status()
+                    from core.system_facts import get_system_facts
+                    action_results["system_facts"] = get_system_facts()
                 except Exception as exc:
                     self.log_action("status_check_failed", str(exc), status="error")
                     action_results["status_error"] = str(exc)

@@ -155,7 +155,8 @@ async function saveWorkspaceFile(agentId: string, filename: string, content: str
 
 async function sendMessageToAgent(agentId: string, message: string, userId?: number | null): Promise<string> {
   try {
-    const key = `mycasa_agent_manager_conversation_${agentId}:${userId ?? "anon"}`;
+    const userScope = userId ? `user_${userId}` : "anon";
+    const key = `mycasa_conversation_${userScope}_${agentId}`;
     const storedConversation = typeof window !== "undefined" ? localStorage.getItem(key) || undefined : undefined;
     const data = agentId === "manager"
       ? await sendManagerChat(message, storedConversation)
@@ -163,11 +164,16 @@ async function sendMessageToAgent(agentId: string, message: string, userId?: num
     if (data?.conversation_id && typeof window !== "undefined") {
       localStorage.setItem(key, data.conversation_id);
     }
-    return data.response || "No response.";
+    if (data?.error) {
+      const cleaned = String(data.error).replace(/^LLM_ERROR:\s*/i, "").trim();
+      return cleaned || String(data.error);
+    }
+    const responseText = data?.response?.trim();
+    return responseText || "Agent returned no response.";
   } catch (e) {
     console.error("Failed to send message:", e);
   }
-  return "Error: Could not reach agent.";
+  return "Could not reach agent.";
 }
 
 async function startAgent(agentId: string): Promise<boolean> {

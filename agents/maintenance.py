@@ -340,6 +340,9 @@ class MaintenanceAgent(BaseAgent):
             "scheduled_date": task.get("scheduled_date"),
             "conversation_id": conversation_id,
             "assigned_to": task.get("assigned_to"),
+            "status": task.get("status"),
+            "created_at": task.get("created_at"),
+            "updated_at": task.get("updated_at"),
         }
     
     def _create_next_occurrence(self, db, task: MaintenanceTask):

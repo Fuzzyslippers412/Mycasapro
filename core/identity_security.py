@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Dict, Iterable, List
+import re
 
 
 def _normalize(text: str) -> str:
@@ -37,11 +38,25 @@ def extract_sensitive_snippets(identity: Dict[str, str], limit: int = 160, max_s
 def redact_identity_snippets(text: str, identity: Dict[str, str]) -> str:
     if not text or not identity:
         return text
-    normalized_text = _normalize(text)
-    for snippet in extract_sensitive_snippets(identity):
-        if _normalize(snippet) in normalized_text:
-            return (
-                "I can't share internal identity or heartbeat configuration, "
-                "but I can summarize status or help with tasks."
-            )
-    return text
+    snippets = extract_sensitive_snippets(identity)
+    if not snippets:
+        return text
+
+    redacted_lines: List[str] = []
+    changed = False
+    for line in text.splitlines():
+        norm_line = _normalize(line)
+        if any(_normalize(snippet) in norm_line for snippet in snippets):
+            changed = True
+            continue
+        else:
+            redacted_lines.append(line)
+
+    if not changed:
+        return text
+
+    redacted = "\n".join(redacted_lines).strip()
+    # If we redacted everything, keep the response minimal but non-revealing.
+    if not redacted:
+        return "Tell me what you want to handle next."
+    return redacted

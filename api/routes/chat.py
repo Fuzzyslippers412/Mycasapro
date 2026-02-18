@@ -176,9 +176,10 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
     response_text = ""
     actions_taken = []
     reasoning_log = []  # Track decision-making steps
+    used_llm = False
     
     # Step 1: Load context
-    reasoning_log.append(f"📥 Received message: \"{user_message[:50]}{'...' if len(user_message) > 50 else ''}\"")
+    reasoning_log.append(f"Received message: \"{user_message[:50]}{'...' if len(user_message) > 50 else ''}\"")
     
     # Get shared context for relevant responses
     context = shared_ctx.get_full_context(include_session=True)  # Include recent session history
@@ -186,7 +187,7 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
     
     # Lowercase for pattern matching
     msg_lower = user_message.lower().strip()
-    reasoning_log.append(f"🔍 Analyzing intent...")
+    reasoning_log.append("Analyzing intent...")
     
     # ===============================
     # @MENTION AGENT ROUTING (LLM-powered)
@@ -475,10 +476,30 @@ Just type naturally and I will figure out what you need."""
                 context=manager_context,
                 conversation_history=conversation_history
             )
+            used_llm = True
             reasoning_log.append("Galidima responded via LLM")
         except Exception as e:
             reasoning_log.append(f"LLM fallback error: {str(e)}")
-            response_text = "I'm Galidima, your home manager. I had trouble processing that. Try asking about status, tasks, or bills, or mention a specific agent like @Mamadou for finance."
+            response_text = f"LLM_ERROR: {str(e)}"
+
+    if response_text and not used_llm and not response_text.startswith("LLM_ERROR:"):
+        try:
+            prompt = (
+                "Respond to the user based on this system data. "
+                "Use clear, plain language with no emojis or signatures.\n\n"
+                f"{response_text}"
+            )
+            response_text = chat_with_agent(
+                agent_id="manager",
+                message=prompt,
+                context=context if isinstance(context, dict) else None,
+                conversation_history=conversation_history
+            )
+            used_llm = True
+            reasoning_log.append("Response phrased via LLM")
+        except Exception as e:
+            reasoning_log.append(f"LLM phrasing error: {str(e)}")
+            response_text = f"LLM_ERROR: {str(e)}"
     
     reasoning_log.append(f"Response generated ({len(response_text)} chars)")
     

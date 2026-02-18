@@ -238,6 +238,14 @@ export function LiveSystemDashboard() {
     disk_usage: null,
     uptime: null,
   };
+  const cpuMeta = indicatorLookup("system.monitor.cpu");
+  const memoryMeta = indicatorLookup("system.monitor.memory");
+  const diskMeta = indicatorLookup("system.monitor.disk");
+  const uptimeMeta = indicatorLookup("system.monitor.uptime");
+  const cpuValue = typeof cpuMeta?.value === "number" ? cpuMeta.value : monitorMetrics.cpu_usage;
+  const memoryValue = typeof memoryMeta?.value === "number" ? memoryMeta.value : monitorMetrics.memory_usage;
+  const diskValue = typeof diskMeta?.value === "number" ? diskMeta.value : monitorMetrics.disk_usage;
+  const uptimeValue = typeof uptimeMeta?.value === "number" ? uptimeMeta.value : monitorMetrics.uptime;
 
   const runHeartbeatNow = async () => {
     setHeartbeatRunning(true);
@@ -345,14 +353,14 @@ export function LiveSystemDashboard() {
               <IconActivity size={20} />
               <Title order={5}>System Monitor</Title>
             </Group>
-            <StatusBadge status={monitorMetrics.cpu_usage || monitorMetrics.memory_usage ? "healthy" : "idle"} />
+            <StatusBadge status={cpuValue || memoryValue ? "healthy" : "idle"} />
           </Group>
           <Stack gap="xs">
             {wrapIndicator(
               <Group justify="space-between">
                 <Text size="sm">CPU usage</Text>
-                <Badge size="xs" color={typeof monitorMetrics.cpu_usage === "number" ? "green" : "gray"}>
-                  {typeof monitorMetrics.cpu_usage === "number" ? `${Math.round(monitorMetrics.cpu_usage)}%` : "—"}
+                <Badge size="xs" color={typeof cpuValue === "number" ? "green" : "gray"}>
+                  {typeof cpuValue === "number" ? `${Math.round(cpuValue)}%` : "—"}
                 </Badge>
               </Group>,
               indicatorLookup("system.monitor.cpu")
@@ -360,8 +368,8 @@ export function LiveSystemDashboard() {
             {wrapIndicator(
               <Group justify="space-between">
                 <Text size="sm">Memory usage</Text>
-                <Badge size="xs" color={typeof monitorMetrics.memory_usage === "number" ? "green" : "gray"}>
-                  {typeof monitorMetrics.memory_usage === "number" ? `${Math.round(monitorMetrics.memory_usage)}%` : "—"}
+                <Badge size="xs" color={typeof memoryValue === "number" ? "green" : "gray"}>
+                  {typeof memoryValue === "number" ? `${Math.round(memoryValue)}%` : "—"}
                 </Badge>
               </Group>,
               indicatorLookup("system.monitor.memory")
@@ -369,8 +377,8 @@ export function LiveSystemDashboard() {
             {wrapIndicator(
               <Group justify="space-between">
                 <Text size="sm">Disk usage</Text>
-                <Badge size="xs" color={typeof monitorMetrics.disk_usage === "number" ? "green" : "gray"}>
-                  {typeof monitorMetrics.disk_usage === "number" ? `${Math.round(monitorMetrics.disk_usage)}%` : "—"}
+                <Badge size="xs" color={typeof diskValue === "number" ? "green" : "gray"}>
+                  {typeof diskValue === "number" ? `${Math.round(diskValue)}%` : "—"}
                 </Badge>
               </Group>,
               indicatorLookup("system.monitor.disk")
@@ -378,8 +386,8 @@ export function LiveSystemDashboard() {
             {wrapIndicator(
               <Group justify="space-between">
                 <Text size="sm">Uptime</Text>
-                <Badge size="xs" color={typeof monitorMetrics.uptime === "number" ? "blue" : "gray"}>
-                  {typeof monitorMetrics.uptime === "number" ? `${Math.round(monitorMetrics.uptime / 3600)}h` : "—"}
+                <Badge size="xs" color={typeof uptimeValue === "number" ? "blue" : "gray"}>
+                  {typeof uptimeValue === "number" ? `${Math.round(uptimeValue / 3600)}h` : "—"}
                 </Badge>
               </Group>,
               indicatorLookup("system.monitor.uptime")

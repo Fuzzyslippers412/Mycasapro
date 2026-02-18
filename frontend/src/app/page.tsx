@@ -42,7 +42,7 @@ import {
 } from "@tabler/icons-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch, getApiBaseUrl, isNetworkError, IndicatorDiagnostic } from "@/lib/api";
-import { useDashboardData, useIndicatorDiagnostics, useJanitorWizardHistory, useSystemStatus } from "@/lib/hooks";
+import { useDashboardData, useIndicatorDiagnostics, useJanitorWizardHistory, useSystemStatus, useSystemFacts } from "@/lib/hooks";
 import { tokens } from "@/theme/tokens";
 
 // Types from API
@@ -667,6 +667,7 @@ export default function HomePage() {
   const janitorLoading = janitorHistory.loading;
   const janitorError = Boolean(janitorHistory.error);
   const systemStatus = useSystemStatus(30000);
+  const systemFacts = useSystemFacts(30000);
   const indicatorDiagnostics = useIndicatorDiagnostics(60000);
   const indicatorIndex = useMemo(() => {
     const map = new Map<string, IndicatorDiagnostic>();
@@ -790,9 +791,13 @@ export default function HomePage() {
 
   const activities: Activity[] = [];
 
+  const factsFallback = systemFacts.data || null;
   const statusData = statusError ? null : status;
-  if (statusData?.facts?.recent_changes) {
-    statusData.facts.recent_changes.slice(0, 5).forEach((change, index) => {
+  const statusFacts = statusData?.facts || (factsFallback?.status?.facts ?? null);
+  const heartbeatFacts = factsFallback?.heartbeat || statusData?.facts?.heartbeat || null;
+  const identityFacts = factsFallback?.identity || statusData?.facts?.identity || null;
+  if (statusFacts?.recent_changes) {
+    statusFacts.recent_changes.slice(0, 5).forEach((change: any, index: number) => {
       const timeAgo = formatTimeAgo(change.time);
       activities.push({
         id: index + 1,
@@ -978,8 +983,8 @@ export default function HomePage() {
                 pendingTasks={pendingTaskCount}
                 unreadMessages={unreadMessageCount}
                 portfolioChange={indicatorOk("dashboard.portfolio.change_pct") ? portfolioChange : null}
-                heartbeat={statusData?.facts?.heartbeat || null}
-                identity={statusData?.facts?.identity || null}
+                heartbeat={heartbeatFacts}
+                identity={identityFacts}
                 loading={loading || portfolioLoading}
                 isOnline={isOnline}
                 janitorRun={janitorRun}

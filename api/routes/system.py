@@ -91,6 +91,13 @@ async def get_system_status():
     return status
 
 
+@router.get("/facts")
+async def get_system_facts():
+    """Get cached system facts for grounded responses."""
+    from core.system_facts import get_system_facts as _get_facts
+    return _get_facts()
+
+
 @router.get("/monitor")
 async def get_system_monitor():
     """Get system monitoring data for dashboard"""

@@ -68,6 +68,9 @@ interface Message {
     due_date?: string | null;
     scheduled_date?: string | null;
     assigned_to?: string | null;
+    status?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
   };
   janitorReport?: {
     okCount: number;
@@ -156,6 +159,38 @@ const normalizeAgentToken = (value: string) =>
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+
+const cleanError = (message?: string | null) => {
+  if (!message) return "";
+  return message.replace(/^LLM_ERROR:\s*/i, "").trim();
+};
+
+const agentThemeFor = (key?: string | null) => {
+  const id = key || "manager";
+  switch (id) {
+    case "finance":
+      return { label: "Finance", accent: tokens.colors.success[500], color: "green" as const };
+    case "maintenance":
+      return { label: "Maintenance", accent: tokens.colors.warn[500], color: "yellow" as const };
+    case "contractors":
+      return { label: "Contractors", accent: tokens.colors.primary[500], color: "blue" as const };
+    case "projects":
+      return { label: "Projects", accent: tokens.colors.primary[600], color: "indigo" as const };
+    case "security":
+    case "security-manager":
+      return { label: "Security", accent: tokens.colors.error[500], color: "red" as const };
+    case "janitor":
+      return { label: "Janitor", accent: tokens.colors.neutral[700], color: "dark" as const };
+    case "mail":
+    case "mail-skill":
+      return { label: "Mail", accent: tokens.colors.primary[400], color: "blue" as const };
+    case "backup":
+    case "backup-recovery":
+      return { label: "Backup", accent: tokens.colors.neutral[500], color: "gray" as const };
+    default:
+      return { label: "Command", accent: tokens.colors.primary[500], color: "blue" as const };
+  }
+};
 
 const isTaskIntent = (text: string) => {
   const msg = text.toLowerCase();
@@ -341,6 +376,8 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   const [selectedAgent, setSelectedAgent] = useState("manager");
   const [pendingRoute, setPendingRoute] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesViewportRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
   const rootRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   const messageIdRef = useRef(1);
@@ -350,7 +387,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [showArchivedSessions, setShowArchivedSessions] = useState(false);
-  const [showSessionsPanel, setShowSessionsPanel] = useState(true);
+  const [showSessionsPanel, setShowSessionsPanel] = useState(!isEmbedded);
   const [launching, setLaunching] = useState(false);
   const [personalMode, setPersonalMode] = useState(false);
   const [personalModeChecked, setPersonalModeChecked] = useState(false);
@@ -363,32 +400,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   const [delegateError, setDelegateError] = useState<string | null>(null);
   const [delegateConversationId, setDelegateConversationId] = useState<string | null>(null);
   const delegateCloseTimeout = useRef<number | null>(null);
-  const agentTheme = (() => {
-    const key = selectedAgent || "manager";
-    switch (key) {
-      case "finance":
-        return { label: "Finance", accent: tokens.colors.success[500], color: "green" as const };
-      case "maintenance":
-        return { label: "Maintenance", accent: tokens.colors.warn[500], color: "yellow" as const };
-      case "contractors":
-        return { label: "Contractors", accent: tokens.colors.primary[500], color: "blue" as const };
-      case "projects":
-        return { label: "Projects", accent: tokens.colors.primary[600], color: "indigo" as const };
-      case "security":
-      case "security-manager":
-        return { label: "Security", accent: tokens.colors.error[500], color: "red" as const };
-      case "janitor":
-        return { label: "Janitor", accent: tokens.colors.neutral[700], color: "dark" as const };
-      case "mail":
-      case "mail-skill":
-        return { label: "Mail", accent: tokens.colors.primary[400], color: "blue" as const };
-      case "backup":
-      case "backup-recovery":
-        return { label: "Backup", accent: tokens.colors.neutral[500], color: "gray" as const };
-      default:
-        return { label: "Command", accent: tokens.colors.primary[500], color: "blue" as const };
-    }
-  })();
+  const agentTheme = agentThemeFor(selectedAgent);
   const selectedAgentMeta = agents.find((a) => a.id === selectedAgent);
   const selectedSkills = selectedAgentMeta?.skills || [];
   const activeAgents = agents
@@ -490,7 +502,15 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
           window.localStorage.setItem(conversationKey(agentId, user?.id), convoId);
         }
         const response = await sendAgentChat(agentId, prompt, convoId || undefined);
-        const responseText = response?.response || "Task completed.";
+        if (response?.error) {
+          setDelegateError(cleanError(response.error) || response.error);
+          return;
+        }
+        const responseText = response?.response?.trim();
+        if (!responseText) {
+          setDelegateError("No response received from agent.");
+          return;
+        }
         setDelegateMessages((prev) => [
           ...prev,
           {
@@ -510,20 +530,76 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
             agent: AGENT_NAMES[agentId] || agentId,
           },
         ]);
+        const targetRoute = handoffRouteFor(agentId);
         delegateCloseTimeout.current = window.setTimeout(() => {
           closeDelegatePanel();
-        }, 2500);
+          if (targetRoute) {
+            try {
+              router.push(targetRoute);
+            } catch {
+              // ignore navigation errors
+            }
+          }
+        }, 2400);
       } catch (e: any) {
+        const detail = cleanError(e?.detail || e?.message || "");
         setDelegateError(
           isNetworkError(e)
             ? `Unable to reach backend at ${API_URL}.`
-            : e?.detail || e?.message || "Delegation failed."
+            : detail || "Delegation failed."
         );
       } finally {
         setDelegateLoading(false);
       }
     },
-    [closeDelegatePanel, nextMessageId]
+    [closeDelegatePanel, nextMessageId, router]
+  );
+
+  const showDelegationSummary = useCallback(
+    (agentId: string, prompt: string, taskCreated?: Message["taskCreated"]) => {
+      if (!agentId) return;
+      if (delegateCloseTimeout.current) {
+        window.clearTimeout(delegateCloseTimeout.current);
+        delegateCloseTimeout.current = null;
+      }
+      const title = taskCreated?.title || "Task queued";
+      const due = taskCreated?.due_date || taskCreated?.scheduled_date;
+      const taskId = taskCreated?.task_id ? ` (#${taskCreated.task_id})` : "";
+      const summary = `${title}${taskId}${due ? ` • Due ${due}` : ""}.`;
+
+      setDelegateOpen(true);
+      setDelegateAgent(agentId);
+      setDelegateConversationId(taskCreated?.conversation_id || null);
+      setDelegateMessages([
+        {
+          id: nextMessageId(),
+          role: "user",
+          content: prompt,
+          timestamp: new Date().toISOString(),
+        },
+        {
+          id: nextMessageId(),
+          role: "assistant",
+          content: summary,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      setDelegateLoading(false);
+      setDelegateError(null);
+
+      delegateCloseTimeout.current = window.setTimeout(() => {
+        closeDelegatePanel();
+        const target = handoffRouteFor(agentId);
+        if (target) {
+          try {
+            router.push(target);
+          } catch {
+            // ignore navigation errors
+          }
+        }
+      }, 2200);
+    },
+    [closeDelegatePanel, nextMessageId, router]
   );
 
   useEffect(() => {
@@ -817,6 +893,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     const contentChanged = lastMessageContent !== snapshot.lastContent;
     const countChanged = currentCount !== snapshot.count;
     if (!countChanged && !contentChanged && !isLoading) return;
+    if (!shouldAutoScrollRef.current) return;
     prevMessageSnapshot.current = { count: currentCount, lastContent: lastMessageContent };
     messagesEndRef.current?.scrollIntoView({
       behavior: isEmbedded ? "auto" : "smooth",
@@ -934,24 +1011,30 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
           },
         ]);
       } else {
+        let detail = "Failed to launch agents.";
+        try {
+          const data = await res.json();
+          detail = data?.detail || data?.error || detail;
+        } catch {}
         setMessages((prev) => [
           ...prev,
           {
             id: nextMessageId(),
             role: "assistant",
-            content: "Failed to launch agents.",
+            content: detail,
             timestamp: new Date().toISOString(),
             agent: "System",
           },
         ]);
       }
     } catch (e) {
+      const detail = (e as any)?.message || "Failed to launch agents.";
       setMessages((prev) => [
         ...prev,
         {
           id: nextMessageId(),
           role: "assistant",
-          content: "Failed to launch agents.",
+          content: detail,
           timestamp: new Date().toISOString(),
           agent: "System",
         },
@@ -1136,14 +1219,24 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       const agent = agents.find((a) => a.id === agentId);
 
       if (data?.error) {
-        addLocalResponse(`Warning: ${data.error}`, "System");
+        const cleaned = cleanError(data.error);
+        addLocalResponse(`Warning: ${cleaned || data.error}`, "System");
+        continue;
+      }
+
+      const responseText = data?.response?.trim();
+      if (!responseText) {
+        addLocalResponse(
+          `No response received from ${data?.agent_name || agent?.name || AGENT_NAMES[agentId] || agentId}.`,
+          "System"
+        );
         continue;
       }
 
       const assistantMessage: Message = {
         id: nextMessageId(),
         role: "assistant",
-        content: data.response || "I received your message.",
+        content: responseText,
         timestamp: new Date().toISOString(),
         agent: data.agent_name || agent?.name || AGENT_NAMES[agentId] || agentId,
         routedTo: data.routed_to || undefined,
@@ -1165,13 +1258,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         const routed = data?.routed_to || "maintenance";
         setSelectedAgent(routed);
         window.dispatchEvent(new CustomEvent("mycasa-system-sync"));
-        try {
-          if (routed === "maintenance") {
-            router.push("/maintenance");
-          }
-        } catch {
-          // ignore navigation errors
-        }
+        showDelegationSummary(routed, userMessage.content, data.task_created);
       }
     }
   };
@@ -1199,6 +1286,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       timestamp: new Date().toISOString(),
     };
 
+    shouldAutoScrollRef.current = true;
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setIsLoading(true);
@@ -1369,9 +1457,9 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       window.localStorage.setItem(clearedKey(selectedAgent, user?.id ?? null), String(Date.now()));
     }
     try {
-      await apiFetch(`/api/agents/${selectedAgent}/history${conversationId ? `?conversation_id=${conversationId}` : ""}`, {
-        method: "DELETE",
-      });
+      if (conversationId) {
+        await deleteAgentConversation(selectedAgent, conversationId);
+      }
       if (typeof window !== "undefined") {
         localStorage.removeItem(convKey);
       }
@@ -1399,6 +1487,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       const created = await createAgentConversation(selectedAgent);
       if (created?.conversation_id && typeof window !== "undefined") {
         localStorage.setItem(conversationKey(selectedAgent, user?.id), created.conversation_id);
+        localStorage.removeItem(clearedKey(selectedAgent, user?.id ?? null));
       }
       setMessages([]);
       setHistoryStatus("idle");
@@ -1412,6 +1501,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     if (!sessionId) return;
     if (typeof window !== "undefined") {
       localStorage.setItem(conversationKey(selectedAgent, user?.id), sessionId);
+      localStorage.removeItem(clearedKey(selectedAgent, user?.id ?? null));
     }
     await loadConversation(selectedAgent, sessionId);
   };
@@ -1419,12 +1509,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   const handleDeleteSession = async (sessionId: string) => {
     if (!sessionId) return;
     try {
-      try {
-        await deleteAgentConversation(selectedAgent, sessionId);
-      } catch {
-        // Fallback for older backend route
-        await apiFetch(`/api/agents/${selectedAgent}/history?conversation_id=${sessionId}`, { method: "DELETE" });
-      }
+      await deleteAgentConversation(selectedAgent, sessionId);
       await refreshSessions(selectedAgent);
       const currentId = typeof window !== "undefined" ? localStorage.getItem(conversationKey(selectedAgent, user?.id)) : null;
       if (currentId === sessionId) {
@@ -1486,7 +1571,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        minHeight: 420,
+        minHeight: 520,
       }
     : {
         marginBottom: -1,
@@ -1611,9 +1696,13 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
             </Group>
           </Group>
 
-          <Box className="global-chat-body">
+          <Box
+            className={`global-chat-body${
+              isEmbedded && showSessionsPanel ? " global-chat-body--overlay" : ""
+            }`}
+          >
             {showSessionsPanel && (
-              <Box className="global-chat-sessions">
+              <Box className={`global-chat-sessions${isEmbedded ? " global-chat-sessions--overlay" : ""}`}>
                 <Box px="md" pb="sm" className="global-chat-sessions-inner">
                   <Group justify="space-between" align="center" mb="xs">
                     <Text size="xs" fw={600} c="dimmed">
@@ -1944,13 +2033,25 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
           </Box>
 
           {/* Messages */}
-          <ScrollArea style={{ flex: 1, minHeight: 0 }} p="sm" type="auto" className="global-chat-messages">
+          <ScrollArea
+            style={{ flex: 1, minHeight: 0 }}
+            p="sm"
+            type="auto"
+            className="global-chat-messages"
+            viewportRef={messagesViewportRef}
+            onScrollPositionChange={({ y }) => {
+              const viewport = messagesViewportRef.current;
+              if (!viewport) return;
+              const distance = viewport.scrollHeight - viewport.clientHeight - y;
+              shouldAutoScrollRef.current = distance < 120;
+            }}
+          >
             <Box
               style={{
                 minHeight: "100%",
                 display: "flex",
                 flexDirection: "column",
-                justifyContent: "flex-end",
+                justifyContent: "flex-start",
               }}
             >
             <Stack gap="sm">
@@ -2004,7 +2105,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                     radius="lg"
                     className={message.role === "user" ? "chat-bubble chat-bubble-user" : "chat-bubble"}
                     style={{
-                      maxWidth: "78%",
+                      maxWidth: isEmbedded ? "92%" : "78%",
                       background: message.role === "user" ? undefined : "var(--chat-message-bg)",
                       color: message.role === "user" ? "white" : undefined,
                     }}
@@ -2026,6 +2127,8 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                           const taskId = message.taskCreated?.task_id;
                           const assignedTo = message.taskCreated?.assigned_to;
                           const assignedLabel = assignedTo ? (AGENT_NAMES[assignedTo] || assignedTo) : null;
+                          const status = message.taskCreated?.status;
+                          const createdAt = message.taskCreated?.created_at;
                           const actionState = taskId ? taskActionState[String(taskId)] : undefined;
                           const routedMeta = agents.find((agent) => agent.id === target);
                           return (
@@ -2097,15 +2200,30 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                                           Created
                                         </Badge>
                                         <Text size="xs" fw={600} lineClamp={1}>
-                                          {title}
+                                          {title}{taskId ? ` • #${taskId}` : ""}
                                         </Text>
                                       </Group>
+                                      {!taskId && (
+                                        <Text size="xs" c="dimmed">
+                                          ID unavailable
+                                        </Text>
+                                      )}
                                       <Text size="xs" c="dimmed" mt={4}>
                                         {due ? `Due ${due}` : "No due date set"}
                                       </Text>
                                       {assignedLabel && (
                                         <Text size="xs" c="dimmed">
                                           Assigned to {assignedLabel}
+                                        </Text>
+                                      )}
+                                      {status && (
+                                        <Text size="xs" c="dimmed">
+                                          Status: {status}
+                                        </Text>
+                                      )}
+                                      {createdAt && (
+                                        <Text size="xs" c="dimmed">
+                                          Created {new Date(createdAt).toLocaleString()}
                                         </Text>
                                       )}
                                     </Box>
@@ -2353,7 +2471,9 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                     >
                       <Group gap="xs">
                         <Loader size="xs" />
-                        <Text size="sm" c="dimmed">Working on it…</Text>
+                        <Text size="sm" c="dimmed">
+                          {pendingRoute ? `Routing to ${AGENT_NAMES[pendingRoute] || pendingRoute}` : "Processing"}
+                        </Text>
                       </Group>
                     </Paper>
                   </Group>
@@ -2370,6 +2490,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
 
   const delegateMeta = delegateAgent ? agents.find((a) => a.id === delegateAgent) : null;
   const delegateLabel = delegateAgent ? (AGENT_NAMES[delegateAgent] || delegateAgent) : "Agent";
+  const delegateTheme = agentThemeFor(delegateAgent);
   const delegateRoute = delegateAgent ? handoffRouteFor(delegateAgent) : null;
   const delegateStateLabel = delegateLoading
     ? "Working"
@@ -2389,7 +2510,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         <Stack gap="sm">
           <Group justify="space-between" align="center">
             <Group gap="sm">
-              <Avatar size="sm" radius="xl" color="primary">
+              <Avatar size="sm" radius="xl" color={delegateTheme.color}>
                 <IconRobot size={14} />
               </Avatar>
               <Stack gap={2}>
@@ -2401,7 +2522,11 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                 </Text>
               </Stack>
             </Group>
-            <Badge size="xs" variant="light" color={delegateError ? "red" : delegateLoading ? "yellow" : "green"}>
+            <Badge
+              size="xs"
+              variant="light"
+              color={delegateError ? "red" : delegateLoading ? "yellow" : delegateTheme.color}
+            >
               {delegateStateLabel}
             </Badge>
             {delegateConversationId && (
@@ -2409,6 +2534,29 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                 Session {delegateConversationId.slice(0, 8)}
               </Text>
             )}
+          </Group>
+
+          <Group gap="sm" wrap="wrap">
+            {[
+              { label: "Routed", done: true },
+              { label: "Agent working", done: delegateLoading },
+              { label: "Completed", done: !delegateLoading && !delegateError },
+            ].map((step) => (
+              <Group key={step.label} gap={6}>
+                <Box
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 999,
+                    backgroundColor: step.done ? delegateTheme.accent : "var(--mantine-color-gray-3)",
+                    boxShadow: step.done ? `0 0 6px ${delegateTheme.accent}` : "none",
+                  }}
+                />
+                <Text size="xs" c={step.done ? "dark" : "dimmed"}>
+                  {step.label}
+                </Text>
+              </Group>
+            ))}
           </Group>
 
           <Divider />
@@ -2478,13 +2626,14 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
           right: "auto",
           transform: isEmbedded ? "none" : "translateX(-50%)",
           zIndex: 200,
-        width: isEmbedded ? "100%" : "min(560px, calc(100vw - 32px))",
-        minWidth: isEmbedded ? "100%" : undefined,
-        maxWidth: isEmbedded ? "100%" : undefined,
-        height: isEmbedded ? "100%" : undefined,
-        maxHeight: isEmbedded ? "100%" : undefined,
-        alignSelf: isEmbedded ? "stretch" : undefined,
-      }}
+          width: isEmbedded ? "100%" : "min(560px, calc(100vw - 32px))",
+          minWidth: isEmbedded ? "100%" : undefined,
+          maxWidth: isEmbedded ? "100%" : undefined,
+          height: isEmbedded ? "calc(100vh - 220px)" : undefined,
+          maxHeight: isEmbedded ? "calc(100vh - 220px)" : undefined,
+          minHeight: isEmbedded ? 520 : undefined,
+          alignSelf: isEmbedded ? "stretch" : undefined,
+        }}
       >
         {/* Chat panel */}
         {isEmbedded ? panel : <Collapse in={showPanel}>{panel}</Collapse>}

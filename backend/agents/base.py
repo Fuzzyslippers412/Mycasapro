@@ -562,10 +562,9 @@ Handle all tasks related to: {self.agent_id}
 
         if any(re.search(pattern, text, re.IGNORECASE) for pattern in leak_patterns):
             self.log_action("chat_identity_leak", "LLM leaked model/provider identity", status="warning")
-            return (
-                f"Hey! I'm {self.name}, handling {self.description.lower()}. "
-                f"How can I help? — {self.name} {self.emoji}"
-            )
+            lines = [line for line in text.splitlines() if not any(re.search(p, line, re.IGNORECASE) for p in leak_patterns)]
+            cleaned = " ".join([l.strip() for l in lines if l.strip()]).strip()
+            return cleaned
 
         return text
 
@@ -599,40 +598,26 @@ Handle all tasks related to: {self.agent_id}
         logs_text = "\n".join([f"- {log['action']}: {log['details']}" for log in recent_logs])
 
         # Clear, explicit identity prompt
-        system_prompt = f"""You are {self.name} ({self.emoji}), NOT Galidima.
+        system_prompt = f"""You are {self.name}, NOT Galidima.
 
-CRITICAL RESPONSE FORMAT:
-⚠️ NEVER use "Thought:", "Action:", "Observation:", or "Final Answer:" in your responses
-⚠️ Respond DIRECTLY and CONVERSATIONALLY - NO structured labels
-⚠️ Speak naturally as if talking to a friend
+Response rules (critical):
+- Do not use "Thought:", "Action:", "Observation:", or "Final Answer:" labels.
+- Plain conversational text. No signatures or emojis.
+- Never mention models, providers, or infrastructure.
+- If asked about your underlying AI, say you're the {self.name} agent for MyCasa Pro and focus on your domain.
 
-IDENTITY (critical):
-- Your name is {self.name}
-- Your emoji is {self.emoji}
-- Your role: {self.description}
-- You are a specialized agent, NOT the manager
+Identity:
+- Name: {self.name}
+- Role: {self.description}
+- You are a specialized agent, NOT the manager.
 
 {soul}
 
-LONG-TERM MEMORY:
+Long-term memory:
 {memory}
 
-Recent Activity:
-{logs_text if logs_text else "No recent activity"}
-
-        Response Rules:
-        1. NEVER say you are Galidima or the home manager
-        2. ALWAYS respond as {self.name} ({self.emoji})
-        3. Be helpful and specific to your domain: {self.agent_id}
-        4. Be concise but thorough
-        5. End with "— {self.name} {self.emoji}"
-        6. Respond in plain conversational text - NO labels or structured formats
-        7. Remember and reference previous conversation when relevant
-        8. NEVER mention models, providers, or infrastructure (no "Qwen", "Venice", "OpenAI", "Anthropic", "LLM")
-        9. If asked about your underlying AI, say you're the {self.name} agent for MyCasa Pro
-
-GOOD: "Hey! I can help you with that. Let me check your portfolio... — {self.name} {self.emoji}"
-BAD: "Thought: The user wants help. Action: Check portfolio. Observation:..." (NEVER do this!)"""
+Recent activity:
+{logs_text if logs_text else "No recent activity"}"""
 
         self.log_action("chat_received", f"Message: {message[:50]}...")
 
@@ -663,11 +648,16 @@ BAD: "Thought: The user wants help. Action: Check portfolio. Observation:..." (N
             if response:
                 response = self._strip_cot_format(response)
                 response = self._sanitize_identity_leak(response)
+                try:
+                    from core.response_formatting import normalize_agent_response
+                    response = normalize_agent_response(self.agent_id, response)
+                except Exception:
+                    pass
 
             # If empty or very short response, provide a proper fallback
             if not response or len(response.strip()) < 10:
                 self.log_action("chat_empty_response", "LLM returned empty", status="warning")
-                return f"Hey! I'm {self.name}, handling {self.description.lower()}. How can I help you today? {self.emoji}"
+                return "LLM_ERROR: No response from the model. Please try again."
 
             self.log_action("chat_responded", f"Responded to user")
             return response

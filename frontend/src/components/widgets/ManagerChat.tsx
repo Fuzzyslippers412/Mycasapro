@@ -47,7 +47,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import ReactMarkdown from "react-markdown";
-import { sendManagerChat, getAgentChatHistory, getAgentConversations, createAgentConversation } from "@/lib/api";
+import { sendManagerChat, getAgentChatHistory, getAgentConversations, createAgentConversation, deleteAgentConversation } from "@/lib/api";
 
 // ============ TYPES ============
 interface Message {
@@ -70,6 +70,9 @@ interface Message {
     title?: string;
     due_date?: string | null;
     scheduled_date?: string | null;
+    status?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
   };
 }
 
@@ -115,14 +118,22 @@ const AGENT_COMMANDS: AgentCommand[] = [
 
 // ============ CONSTANTS ============
 const API_URL = getApiBaseUrl();
-const CONVERSATION_KEY = "mycasa_manager_conversation_id";
+const CONVERSATION_KEY_PREFIX = "mycasa_conversation";
 
-const conversationKey = (userId?: number | null) => `${CONVERSATION_KEY}:${userId ?? "anon"}`;
+const conversationKey = (userId?: number | null) => {
+  const userScope = userId ? `user_${userId}` : "anon";
+  return `${CONVERSATION_KEY_PREFIX}_${userScope}_manager`;
+};
 
 const isMaintenanceIntent = (text: string) => {
   const msg = text.toLowerCase();
   const keywords = ["task", "remind", "reminder", "clean", "repair", "fix", "schedule", "maintenance"];
   return keywords.some((k) => msg.includes(k));
+};
+
+const cleanError = (message?: string | null) => {
+  if (!message) return "";
+  return message.replace(/^LLM_ERROR:\s*/i, "").trim();
 };
 
 // ============ ATTACHMENT TYPE ============
@@ -353,13 +364,10 @@ export function ManagerChat() {
       isCommand,
     };
 
-    const coordinationHint = isMaintenanceIntent(userMessage)
-      ? "Coordinating with Maintenance…"
-      : "Working on it…";
     const placeholderMsg: Message = {
       id: `resp_${Date.now()}`,
       role: "manager",
-      text: coordinationHint,
+      text: "",
       timestamp: new Date().toISOString(),
       isStreaming: true,
       isCommand,
@@ -379,7 +387,7 @@ export function ManagerChat() {
       }
 
       if (data?.error) {
-        const message = data.error;
+        const message = cleanError(data.error) || data.error;
         setMessages(prev => {
           const updated = [...prev];
           const lastIdx = updated.length - 1;
@@ -410,9 +418,10 @@ export function ManagerChat() {
         const updated = [...prev];
         const lastIdx = updated.length - 1;
         if (updated[lastIdx]?.isStreaming) {
+          const responseText = data?.response?.trim();
           updated[lastIdx] = {
             ...updated[lastIdx],
-            text: data.response || "(no response)",
+            text: responseText || "No response received from Manager.",
             isStreaming: false,
             exitCode: data.exit_code,
             agentName: data.agent_name,
@@ -430,12 +439,15 @@ export function ManagerChat() {
       if (data?.task_created) {
         const title = data?.task_created?.title || "Task created";
         const due = data?.task_created?.due_date || data?.task_created?.scheduled_date;
+        const createdAt = data?.task_created?.created_at;
+        const taskId = data?.task_created?.task_id;
+        const idLabel = taskId ? ` • #${taskId}` : " • ID unavailable";
         setMessages(prev => [
           ...prev,
           {
             id: `status_${Date.now()}`,
             role: "system",
-            text: `Task created: ${title}${due ? ` • Due ${due}` : ""}. Open Maintenance to review.`,
+            text: `Task created: ${title}${idLabel}${due ? ` • Due ${due}` : ""}${createdAt ? ` • Created ${new Date(createdAt).toLocaleString()}` : ""}. Open Maintenance to review.`,
             timestamp: new Date().toISOString(),
           },
         ]);
@@ -586,8 +598,12 @@ export function ManagerChat() {
       : null;
     setMessages([]);
     if (storedConversation) {
-      apiFetch(`/api/agents/manager/history?conversation_id=${storedConversation}`, { method: "DELETE" })
-        .catch(() => null);
+      try {
+        await deleteAgentConversation("manager", storedConversation);
+      } catch {
+        setHistoryStatus("error");
+        setHistoryError("Unable to clear this session right now.");
+      }
     }
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(conversationKey(user?.id ?? null));
@@ -639,7 +655,7 @@ export function ManagerChat() {
   const handleDeleteSession = async (sessionId: string) => {
     if (!sessionId) return;
     try {
-      await apiFetch(`/api/agents/manager/history?conversation_id=${sessionId}`, { method: "DELETE" });
+      await deleteAgentConversation("manager", sessionId);
       await refreshSessions();
       if (conversationId === sessionId) {
         setConversationId(null);
@@ -897,7 +913,7 @@ export function ManagerChat() {
                         {msg.isStreaming ? (
                           <Group gap="xs">
                             <Loader size={12} color="gray" />
-                            <Text size="sm" c="dimmed">{msg.text || "Working on it…"}</Text>
+                            <Text size="sm" c="dimmed">{msg.text || routingStatus || "Processing"}</Text>
                           </Group>
                         ) : msg.role === "user" ? (
                           <Text
@@ -1021,6 +1037,7 @@ export function ManagerChat() {
                             const route = handoffRouteFor(target);
                             const label = handoffLabelFor(target);
                             const title = msg.taskCreated?.title || "Task queued";
+                            const taskId = msg.taskCreated?.task_id;
                             return (
                               <UnstyledButton
                                 onClick={() => route && router.push(route)}
@@ -1050,7 +1067,9 @@ export function ManagerChat() {
                                     </Box>
                                     <Box>
                                       <Text size="xs" fw={600}>{label} handoff</Text>
-                                      <Text size="xs" c="dimmed" lineClamp={1}>{title}</Text>
+                                      <Text size="xs" c="dimmed" lineClamp={1}>
+                                        {title}{taskId ? ` • #${taskId}` : ""}
+                                      </Text>
                                     </Box>
                                   </Group>
                                   {route && (

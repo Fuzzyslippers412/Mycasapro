@@ -64,6 +64,19 @@ export function useQuickStatus(refreshInterval?: number) {
   return result;
 }
 
+export function useSystemFacts(refreshInterval?: number) {
+  const result = useFetch(() => api.getSystemFacts(), []);
+
+  useEffect(() => {
+    if (refreshInterval) {
+      const interval = setInterval(() => result.refetch(), refreshInterval);
+      return () => clearInterval(interval);
+    }
+  }, [refreshInterval, result.refetch]);
+
+  return result;
+}
+
 export function useFullStatus() {
   return useFetch(() => api.getFullStatus(), []);
 }

@@ -32,7 +32,9 @@ import {
   Progress,
   Skeleton,
   Grid,
-  Loader
+  Loader,
+  Tooltip,
+  Box
 } from "@mantine/core";
 import { 
   IconBrain, 
@@ -190,6 +192,58 @@ export default function SystemPage() {
   const dbStatus = dbInfo?.status;
   const dbStatusLabel = dbStatus === "ok" ? "Connected" : dbStatus === "error" ? "Error" : "Unknown";
   const dbStatusColor = dbStatus === "ok" ? "green" : dbStatus === "error" ? "red" : "gray";
+
+  const cpuMeta = indicatorLookup("system.monitor.cpu");
+  const memMeta = indicatorLookup("system.monitor.memory");
+  const diskMeta = indicatorLookup("system.monitor.disk");
+  const uptimeMeta = indicatorLookup("system.monitor.uptime");
+
+  const formatPercent = (value: any) =>
+    typeof value === "number" ? `${value.toFixed(0)}%` : "—";
+  const formatUptime = (value: any) => {
+    if (typeof value !== "number" || Number.isNaN(value)) return "—";
+    const totalSeconds = Math.max(0, Math.floor(value));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      return `${days}d ${hours % 24}h`;
+    }
+    return `${hours}h ${minutes}m`;
+  };
+
+  const perfMetrics = [
+    { label: "CPU", value: formatPercent(cpuMeta?.value), meta: cpuMeta },
+    { label: "Memory", value: formatPercent(memMeta?.value), meta: memMeta },
+    { label: "Disk", value: formatPercent(diskMeta?.value), meta: diskMeta },
+    { label: "Uptime", value: formatUptime(uptimeMeta?.value), meta: uptimeMeta },
+  ];
+
+  const perfStatuses = perfMetrics.map((metric) => metric.meta?.status || "missing");
+  const perfStatus =
+    perfStatuses.includes("error")
+      ? "error"
+      : perfStatuses.includes("stale")
+        ? "stale"
+        : perfStatuses.includes("ok")
+          ? "ok"
+          : "missing";
+  const perfBadgeColor =
+    perfStatus === "ok"
+      ? "green"
+      : perfStatus === "stale"
+        ? "yellow"
+        : perfStatus === "error"
+          ? "red"
+          : "gray";
+  const perfBadgeLabel =
+    perfStatus === "ok"
+      ? "Live"
+      : perfStatus === "stale"
+        ? "Stale"
+        : perfStatus === "error"
+          ? "Error"
+          : "Unavailable";
 
   // Asset type options for dropdowns
   const assetTypeOptions = [
@@ -777,9 +831,25 @@ export default function SystemPage() {
                   <Paper withBorder p="md" radius="md">
                     <Group justify="space-between">
                       <Text size="sm">Performance</Text>
-                      <Badge color="gray" variant="light">Unknown</Badge>
+                      <Badge color={perfBadgeColor} variant="light">
+                        {perfBadgeLabel}
+                      </Badge>
                     </Group>
-                    <Text size="xs" c="dimmed" mt="xs">Performance telemetry not configured</Text>
+                    <SimpleGrid cols={2} spacing="xs" mt="xs">
+                      {perfMetrics.map((metric) =>
+                        wrapIndicator(
+                          <Box key={metric.label}>
+                            <Text size="xs" c="dimmed">
+                              {metric.label}
+                            </Text>
+                            <Text size="sm" fw={600}>
+                              {metric.value}
+                            </Text>
+                          </Box>,
+                          metric.meta
+                        )
+                      )}
+                    </SimpleGrid>
                   </Paper>
                 </Grid.Col>
               </Grid>

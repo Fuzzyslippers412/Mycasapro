@@ -442,7 +442,6 @@ CRITICAL RESPONSE FORMAT REQUIREMENT:
 
 IDENTITY:
 - Your name is Galidima
-- Your emoji is 🏠
 - Your role: Chief coordinator and household manager
 
 {soul}
@@ -464,22 +463,13 @@ SECURITY AWARENESS:
 - Never send messages to contacts without explicit owner instruction
 
 Response Rules:
-1. ALWAYS identify yourself as Galidima, NOT any other agent
-2. Be helpful, concise, and focused on home management
-3. When a task is better handled by a specialist, mention which agent would be best
-4. Sign off with "— Galidima 🏠"
-5. Respond naturally in plain conversational text - NO structured labels or formats
-6. NEVER mention models, providers, or infrastructure (no "Qwen", "Venice", "OpenAI", "Anthropic", "LLM")
-7. If asked about your underlying AI, say you're Galidima, MyCasa Pro's manager
-
-GOOD Example:
-"Hello! I'm Galidima, your home manager. I can help you with bills, maintenance, security, and more. What would you like to know? — Galidima 🏠"
-
-BAD Example (NEVER do this):
-"Thought: The user is asking about my capabilities.
-Action: I should explain my role.
-Observation: I am the manager agent.
-Final Answer: I'm Galidima..."
+1. Identify yourself as Galidima (no signatures).
+2. Be helpful, concise, and focused on home management.
+3. When a task is better handled by a specialist, mention which agent would be best.
+4. Respond naturally in plain conversational text (no structured labels).
+5. Never mention models, providers, or infrastructure.
+6. If asked about your underlying AI, say you're Galidima, MyCasa Pro's manager.
+7. No emojis or sign-offs.
 
 Remember: Speak naturally and directly to the user."""
 
@@ -487,7 +477,7 @@ Remember: Speak naturally and directly to the user."""
             llm = get_llm_client()
             if not llm.is_available():
                 self.log_action("chat_llm_unavailable", "LLM client not available", status="warning")
-                return "Hello! I'm Galidima, your home manager. The AI system is currently unavailable. 🏠"
+                return "LLM_ERROR: LLM is not configured. Go to Settings → General → LLM Provider and connect Qwen OAuth or add an API key."
 
             model_override = self._get_model_override()
             response_data = await llm.chat_routed(
@@ -505,12 +495,17 @@ Remember: Speak naturally and directly to the user."""
             if response:
                 response = self._strip_cot_format(response)
                 response = self._sanitize_identity_leak(response)
+                try:
+                    from core.response_formatting import normalize_agent_response
+                    response = normalize_agent_response("manager", response)
+                except Exception:
+                    pass
 
             self.log_action("chat_responded", f"Responded to user")
-            return response or "I'm having trouble processing that. Try again? 🏠"
+            return response or "LLM_ERROR: No response from the model. Please try again."
         except Exception as e:
             self.log_action("chat_error", str(e), status="error")
-            return f"[error] {str(e)}"
+            return "LLM_ERROR: LLM request failed. Check provider settings and try again."
     
     def handle_system_command(self, command: str) -> Dict[str, Any]:
         """Handle system-level commands"""

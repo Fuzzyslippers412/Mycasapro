@@ -494,6 +494,38 @@ class BaseAgent(ABC):
                     system_prompt = f"{system_prompt}\n\n## Runtime\n{runtime_note}"
                 except Exception:
                     pass
+            def _approx_tokens(value: str) -> int:
+                if not value:
+                    return 0
+                return max(1, (len(value) + 3) // 4)
+            try:
+                from core.context_packs import get_context_pack, format_context_pack_for_prompt
+                pack = get_context_pack(self.name)
+                if pack:
+                    pack_block = f"\n\n## Role Box\n{format_context_pack_for_prompt(pack)}"
+                    if _approx_tokens(system_prompt + pack_block) <= 2800:
+                        system_prompt = f"{system_prompt}{pack_block}"
+            except Exception:
+                pass
+            try:
+                from core.system_facts import (
+                    get_system_facts,
+                    format_system_facts_for_prompt,
+                    SYSTEM_FACTS_RULES,
+                    SYSTEM_GLOSSARY,
+                )
+                facts = get_system_facts()
+                if facts:
+                    facts_block = (
+                        "\n\n## System Facts (source of truth)\n"
+                        f"{format_system_facts_for_prompt(facts)}"
+                        f"\n\n## System Facts Policy\n{SYSTEM_FACTS_RULES}"
+                        f"\n\n## System Glossary\n{SYSTEM_GLOSSARY}"
+                    )
+                    if _approx_tokens(system_prompt + facts_block) <= 3200:
+                        system_prompt = f"{system_prompt}{facts_block}"
+            except Exception:
+                pass
             developer_prompt = IDENTITY_GUARD.strip()
 
             # Recall relevant context from SecondBrain - with timeout
@@ -561,7 +593,7 @@ class BaseAgent(ABC):
                     error=run_result.get("error") or "Request blocked",
                 )
                 return (
-                    f"⚠️ Request blocked: {run_result.get('error')}. "
+                    f"Request blocked: {run_result.get('error')}. "
                     "Adjust the agent context budgets or shorten the request."
                 )
 
@@ -741,8 +773,21 @@ class BaseAgent(ABC):
                 db.add(log)
                 try:
                     db.flush()
+                except OperationalError as exc:
+                    # Avoid poisoning the outer transaction with a locked log insert.
+                    try:
+                        db.expunge(log)
+                    except Exception:
+                        pass
+                    if "database is locked" in str(exc).lower():
+                        self.logger.warning(f"[{self.name}] log_action skipped (db locked)")
+                        return
+                    raise
                 except Exception:
-                    pass
+                    try:
+                        db.expunge(log)
+                    except Exception:
+                        pass
             else:
                 with get_db() as session:
                     session.add(log)

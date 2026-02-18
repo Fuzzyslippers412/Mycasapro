@@ -184,7 +184,6 @@ def _get_agent_class(agent_id: str):
     from backend.agents.contractors import ContractorsAgent
     from backend.agents.projects import ProjectsAgent
     from backend.agents.janitor import JanitorAgent
-    from backend.agents.manager import ManagerAgent
     from agents.mail_skill import MailSkillAgent
     from agents.backup_recovery import BackupRecoveryAgent
 
@@ -195,7 +194,6 @@ def _get_agent_class(agent_id: str):
         "contractors": ContractorsAgent,
         "projects": ProjectsAgent,
         "janitor": JanitorAgent,
-        "manager": ManagerAgent,
         "mail-skill": MailSkillAgent,
         "backup-recovery": BackupRecoveryAgent,
     }
@@ -351,15 +349,6 @@ async def get_agent_response(
         "routed_to": routed_to,
         "delegation_note": delegation_note,
         "error": action_error,
-    }
-    
-    response_text = responses.get(agent_id, f"[{agent_id}] Message received: {message[:100]}")
-    
-    return {
-        "response": response_text,
-        "thinking": thinking_trace,
-        "grounded_in": len(memories),
-        "agent_prompt_version": "cot_react_v1"
     }
 
 
@@ -597,7 +586,7 @@ async def chat_with_agent(
         
         error_message = _extract_llm_error(response_text)
         if error_message:
-            response_text = f"Warning: {error_message}"
+            response_text = ""
         else:
             try:
                 from core.response_formatting import normalize_agent_response
@@ -606,12 +595,14 @@ async def chat_with_agent(
                 pass
 
         # Add agent response to history (include thinking for auditability)
-        assistant_msg = add_message(db, conversation, "assistant", response_text)
+        assistant_msg = None
+        if response_text:
+            assistant_msg = add_message(db, conversation, "assistant", response_text)
         
         return AgentResponse(
             agent_id=agent_id,
             response=response_text,
-            timestamp=assistant_msg.created_at.isoformat(),
+            timestamp=assistant_msg.created_at.isoformat() if assistant_msg else datetime.now().isoformat(),
             thinking=thinking_trace,  # Include thinking trace in response
             conversation_id=conversation.id,
             error=error_message or action_error,

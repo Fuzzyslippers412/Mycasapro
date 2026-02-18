@@ -852,6 +852,7 @@ html, body {
   box-shadow: var(--shadow-2);
   backdrop-filter: none;
   isolation: isolate;
+  height: 100%;
 }
 
 .global-chat--embedded {
@@ -864,6 +865,20 @@ html, body {
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+.global-chat-body--overlay {
+  position: relative;
+}
+
+.global-chat-sessions--overlay {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(280px, 80vw);
+  max-width: 80vw;
+  border-right: 1px solid var(--mantine-color-default-border);
+  box-shadow: var(--shadow-2);
+  z-index: 3;
 }
 
 .global-chat-sessions {
@@ -888,6 +903,8 @@ html, body {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
 }
 
 .dashboard-chat-slot .global-chat {
@@ -953,6 +970,9 @@ html, body {
 
 .global-chat-input--top {
   border-bottom: 1px solid var(--mantine-color-default-border);
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 @media (max-width: 1000px) {
@@ -1172,6 +1192,7 @@ html, body {
   min-height: 0;
   height: 100%;
   align-self: stretch;
+  min-height: clamp(520px, 70vh, 900px);
 }
 
 .dashboard-chat-slot .global-chat {

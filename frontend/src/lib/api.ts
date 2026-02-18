@@ -207,6 +207,10 @@ export interface ChatResponse {
     due_date?: string | null;
     scheduled_date?: string | null;
     conversation_id?: string | null;
+    status?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    assigned_to?: string | null;
   };
 }
 
@@ -478,6 +482,10 @@ export async function getSecurityStatus() {
 // System APIs
 export async function getSystemStatus() {
   return apiFetch<SystemStatus>("/system/status");
+}
+
+export async function getSystemFacts() {
+  return apiFetch<any>("/api/system/facts");
 }
 
 export async function getQuickStatus() {

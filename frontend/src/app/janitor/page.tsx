@@ -11,7 +11,9 @@ import {
   renameAgentConversation,
   archiveAgentConversation,
   restoreAgentConversation,
+  deleteAgentConversation,
   apiFetch,
+  isNetworkError,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Page } from "@/components/layout/Page";
@@ -72,6 +74,11 @@ import {
 import { notifications } from "@mantine/notifications";
 
 const API_URL = getApiBaseUrl();
+
+const cleanError = (message?: string | null) => {
+  if (!message) return "";
+  return message.replace(/^LLM_ERROR:\s*/i, "").trim();
+};
 
 interface AuditResult {
   timestamp: string;
@@ -689,12 +696,36 @@ export default function JanitorPage() {
         }
         await refreshChatSessions(chatShowArchived);
       }
+      if (data?.error) {
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "error", content: cleanError(data.error) || data.error },
+        ]);
+        return;
+      }
+      const responseText = data?.response?.trim();
+      if (responseText) {
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "assistant", content: responseText, timestamp: data?.timestamp },
+        ]);
+      } else {
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "error", content: "No response received from Janitor." },
+        ]);
+      }
+    } catch (err: any) {
+      const detail = err?.detail || err?.message;
       setChatHistory((prev) => [
         ...prev,
-        { role: "assistant", content: data?.response || "(no response)", timestamp: data?.timestamp },
+        {
+          role: "error",
+          content: isNetworkError(err)
+            ? `Backend unavailable at ${API_URL}. Start the API and retry.`
+            : detail || "Failed to reach Janitor.",
+        },
       ]);
-    } catch {
-      setChatHistory((prev) => [...prev, { role: "error", content: "Failed to get response" }]);
     } finally {
       setChatLoading(false);
     }
@@ -730,7 +761,7 @@ export default function JanitorPage() {
   const handleDeleteChatSession = async (sessionId: string) => {
     if (!sessionId) return;
     try {
-      await apiFetch(`/api/agents/janitor/history?conversation_id=${sessionId}`, { method: "DELETE" });
+      await deleteAgentConversation("janitor", sessionId);
       await refreshChatSessions(chatShowArchived);
       if (chatConversationId === sessionId) {
         setChatConversationId(null);

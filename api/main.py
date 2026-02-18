@@ -750,10 +750,12 @@ async def manager_chat(
                     else:
                         tool_results.append({"id": key, "content": str(payload)})
             try:
-                status_snapshot = manager.quick_status()
-                tasks = status_snapshot.get("facts", {}).get("tasks", {}) if isinstance(status_snapshot, dict) else {}
-                pending = tasks.get("pending", 0)
-                upcoming = tasks.get("upcoming", [])[:3] if isinstance(tasks, dict) else []
+                from core.system_facts import get_system_facts
+                facts = get_system_facts()
+                status_snapshot = facts.get("status", {}) if isinstance(facts, dict) else {}
+                task_block = status_snapshot.get("facts", {}).get("tasks", {}) if isinstance(status_snapshot, dict) else {}
+                pending = task_block.get("pending", 0)
+                upcoming = task_block.get("upcoming", [])[:3] if isinstance(task_block, dict) else []
                 upcoming_text = ", ".join(
                     f"{t.get('title')} ({t.get('date')})" for t in upcoming if isinstance(t, dict)
                 )
@@ -772,14 +774,15 @@ async def manager_chat(
             response = _strip_cot_format(response)
             error_message = _extract_llm_error(response)
             if error_message:
-                response = f"Warning: {error_message}"
+                response = ""
             else:
                 try:
                     from core.response_formatting import normalize_agent_response
                     response = normalize_agent_response("manager", response)
                 except Exception:
                     pass
-            add_message(db, conversation, "assistant", response)
+            if response:
+                add_message(db, conversation, "assistant", response)
         
         return {
             "response": response,
@@ -797,7 +800,7 @@ async def manager_chat(
         }
     except Exception as e:
         return {
-            "response": f"I encountered an issue: {str(e)}. Please try again.",
+            "response": "",
             "error": str(e),
             "timestamp": datetime.now().isoformat(),
         }
@@ -956,7 +959,7 @@ async def complete_task(task_id: int, evidence: Optional[str] = None, background
             with get_db() as db:
                 conversation = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
                 if conversation:
-                    add_message(db, conversation, "assistant", f"✅ {title} marked complete.")
+                    add_message(db, conversation, "assistant", f"{title} marked complete.")
     except Exception:
         pass
     
@@ -988,7 +991,7 @@ async def delete_task(task_id: int, background_tasks: BackgroundTasks = None):
             with get_db() as db:
                 conversation = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
                 if conversation:
-                    add_message(db, conversation, "assistant", f"🗑️ {title} removed.")
+                    add_message(db, conversation, "assistant", f"{title} removed.")
     except Exception:
         pass
     

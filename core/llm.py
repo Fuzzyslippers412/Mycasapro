@@ -246,6 +246,36 @@ async def chat_with_agent_async(
         return f"Unknown agent: {agent_id}"
 
     system = persona["system_prompt"]
+    def _approx_tokens(value: str) -> int:
+        if not value:
+            return 0
+        return max(1, (len(value) + 3) // 4)
+    try:
+        from core.context_packs import get_context_pack, format_context_pack_for_prompt
+        pack = get_context_pack(agent_id)
+        if pack:
+            block = f"\n\n## Role Box\n{format_context_pack_for_prompt(pack)}"
+            if _approx_tokens(system + block) <= 2800:
+                system += block
+    except Exception:
+        pass
+    try:
+        from core.system_facts import (
+            get_system_facts,
+            format_system_facts_for_prompt,
+            SYSTEM_FACTS_RULES,
+            SYSTEM_GLOSSARY,
+        )
+        facts = get_system_facts()
+        if facts:
+            block = "\n\n## System Facts (source of truth)\n"
+            block += format_system_facts_for_prompt(facts)
+            block += f"\n\n## System Facts Policy\n{SYSTEM_FACTS_RULES}"
+            block += f"\n\n## System Glossary\n{SYSTEM_GLOSSARY}"
+            if _approx_tokens(system + block) <= 3200:
+                system += block
+    except Exception:
+        pass
     if context:
         system += f"\n\n--- CURRENT CONTEXT ---\n{_format_context(context)}"
 
@@ -269,7 +299,8 @@ async def chat_with_agent_async(
         )
 
     if run_result["status"] in {"blocked", "error"}:
-        return "I'm having trouble responding right now. Please try again."
+        err = run_result.get("error") or run_result.get("message") or "LLM request failed"
+        return f"LLM_ERROR: {err}"
 
     response = run_result.get("response") or ""
     response = _sanitize_identity_leak(response, persona)
@@ -278,6 +309,8 @@ async def chat_with_agent_async(
         response = normalize_agent_response(agent_id, response)
     except Exception:
         pass
+    if not response:
+        return "LLM_ERROR: Response withheld for safety. Please try again."
     return response
 
 
@@ -307,10 +340,10 @@ def _sanitize_identity_leak(text: str, persona: Dict[str, Any]) -> str:
     ]
 
     if any(re.search(pattern, text, re.IGNORECASE) for pattern in leak_patterns):
-        # Remove any lines/sentences containing sensitive disclosures.
+        # Remove any lines/sentences containing sensitive disclosures, keep the rest.
         lines = [line for line in text.splitlines() if not any(re.search(p, line, re.IGNORECASE) for p in leak_patterns)]
         cleaned = " ".join([l.strip() for l in lines if l.strip()]).strip()
-        return cleaned if cleaned else "I can help with home tasks and updates. Tell me what you want to handle next."
+        return cleaned
 
     return text
 
@@ -339,5 +372,5 @@ def get_agent_greeting(agent_id: str) -> str:
     """Get a simple greeting from an agent"""
     persona = AGENT_PERSONAS.get(agent_id)
     if not persona:
-        return "Hello!"
-    return f"{persona['emoji']} **{persona['name']}** ({persona['role']})"
+        return "Agent"
+    return f"{persona['name']} ({persona['role']})"
