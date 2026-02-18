@@ -44,12 +44,13 @@ async def indicator_diagnostics() -> Dict[str, Any]:
     with get_db() as db:
         task_count = db.query(MaintenanceTask).filter(MaintenanceTask.status == "pending").count()
         task_last = db.query(func.max(MaintenanceTask.updated_at)).scalar()
+    task_status = "ok" if task_last is None else _status_from_last_updated(task_last, 86400)
     results.append({
         "id": "dashboard.tasks.pending_count",
         "label": "Tasks pending",
         "value": task_count,
         "last_updated": task_last.isoformat() if task_last else None,
-        "status": _status_from_last_updated(task_last, 86400),
+        "status": task_status,
         "source": "maintenance_tasks",
     })
 
@@ -58,12 +59,13 @@ async def indicator_diagnostics() -> Dict[str, Any]:
         bills = db.query(Bill).filter(Bill.is_paid == False).all()  # noqa: E712
         bill_last = db.query(func.max(Bill.updated_at)).scalar()
     total_bills = sum(b.amount or 0 for b in bills)
+    bill_status = "ok" if bill_last is None else _status_from_last_updated(bill_last, 86400)
     results.append({
         "id": "dashboard.bills.upcoming_total",
         "label": "Upcoming bills total",
         "value": round(total_bills, 2),
         "last_updated": bill_last.isoformat() if bill_last else None,
-        "status": _status_from_last_updated(bill_last, 86400),
+        "status": bill_status,
         "source": "bills",
     })
 
@@ -71,12 +73,13 @@ async def indicator_diagnostics() -> Dict[str, Any]:
     with get_db() as db:
         unread_count = db.query(InboxMessage).filter(InboxMessage.is_read == False).count()  # noqa: E712
         msg_last = db.query(func.max(InboxMessage.updated_at)).scalar()
+    msg_status = "ok" if msg_last is None else _status_from_last_updated(msg_last, 3600)
     results.append({
         "id": "dashboard.messages.unread_total",
         "label": "Messages unread",
         "value": unread_count,
         "last_updated": msg_last.isoformat() if msg_last else None,
-        "status": _status_from_last_updated(msg_last, 3600),
+        "status": msg_status,
         "source": "inbox_messages",
     })
     results.append({
@@ -84,18 +87,19 @@ async def indicator_diagnostics() -> Dict[str, Any]:
         "label": "Unread count",
         "value": unread_count,
         "last_updated": msg_last.isoformat() if msg_last else None,
-        "status": _status_from_last_updated(msg_last, 3600),
+        "status": msg_status,
         "source": "inbox_messages",
     })
     with get_db() as db:
         inbox_total = db.query(InboxMessage).count()
         inbox_last = db.query(func.max(InboxMessage.updated_at)).scalar()
+    inbox_status = "ok" if inbox_last is None else _status_from_last_updated(inbox_last, 300)
     results.append({
         "id": "inbox.messages.list",
         "label": "Inbox messages list",
         "value": inbox_total,
         "last_updated": inbox_last.isoformat() if inbox_last else None,
-        "status": _status_from_last_updated(inbox_last, 300),
+        "status": inbox_status,
         "source": "inbox_messages",
     })
 
@@ -104,12 +108,13 @@ async def indicator_diagnostics() -> Dict[str, Any]:
         task_total = db.query(MaintenanceTask).count()
         task_completed = db.query(MaintenanceTask).filter(MaintenanceTask.status == "completed").count()
         task_last_any = db.query(func.max(MaintenanceTask.updated_at)).scalar()
+    task_list_status = "ok" if task_last_any is None else _status_from_last_updated(task_last_any, 300)
     results.append({
         "id": "maintenance.tasks.list",
         "label": "Maintenance tasks list",
         "value": task_total,
         "last_updated": task_last_any.isoformat() if task_last_any else None,
-        "status": _status_from_last_updated(task_last_any, 300),
+        "status": task_list_status,
         "source": "maintenance_tasks",
     })
     results.append({
@@ -117,7 +122,7 @@ async def indicator_diagnostics() -> Dict[str, Any]:
         "label": "Maintenance tasks completed",
         "value": task_completed,
         "last_updated": task_last_any.isoformat() if task_last_any else None,
-        "status": _status_from_last_updated(task_last_any, 300),
+        "status": task_list_status,
         "source": "maintenance_tasks",
     })
 

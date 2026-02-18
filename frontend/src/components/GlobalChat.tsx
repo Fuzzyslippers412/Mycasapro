@@ -707,17 +707,21 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     };
   }, [chatAllowed, personalMode, isAuthenticated]);
 
-  const prevMessageCount = useRef(0);
+  const prevMessageSnapshot = useRef({ count: 0, lastContent: "" });
+  const lastMessageContent = messages.length ? messages[messages.length - 1].content : "";
   useEffect(() => {
     if (!expanded && !isEmbedded) return;
+    const snapshot = prevMessageSnapshot.current;
     const currentCount = messages.length;
-    if (currentCount <= prevMessageCount.current) {
-      prevMessageCount.current = currentCount;
-      return;
-    }
-    prevMessageCount.current = currentCount;
-    messagesEndRef.current?.scrollIntoView({ behavior: isEmbedded ? "auto" : "smooth" });
-  }, [messages.length, expanded, isEmbedded]);
+    const contentChanged = lastMessageContent !== snapshot.lastContent;
+    const countChanged = currentCount !== snapshot.count;
+    if (!countChanged && !contentChanged && !isLoading) return;
+    prevMessageSnapshot.current = { count: currentCount, lastContent: lastMessageContent };
+    messagesEndRef.current?.scrollIntoView({
+      behavior: isEmbedded ? "auto" : "smooth",
+      block: "end",
+    });
+  }, [messages.length, lastMessageContent, isLoading, expanded, isEmbedded]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

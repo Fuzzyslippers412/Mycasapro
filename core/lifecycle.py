@@ -3,6 +3,7 @@ MyCasa Pro - System Lifecycle Manager
 Single source of truth for system state with idempotent operations.
 """
 import json
+import os
 import shutil
 import threading
 from datetime import datetime
@@ -317,6 +318,49 @@ class LifecycleManager:
                 pass
 
             status_dict = self._status.to_dict()
+
+            # System metrics (best-effort)
+            cpu_usage = None
+            memory_usage = None
+            disk_usage = None
+            try:
+                import psutil  # type: ignore
+                cpu_usage = psutil.cpu_percent(interval=0.1)
+                memory_usage = psutil.virtual_memory().percent
+                disk_usage = psutil.disk_usage(str(self.data_dir)).percent
+            except Exception:
+                # Fallbacks without psutil
+                try:
+                    load = os.getloadavg()[0]
+                    cpu_count = os.cpu_count() or 1
+                    cpu_usage = min(100.0, (load / cpu_count) * 100.0)
+                except Exception:
+                    cpu_usage = None
+                try:
+                    if hasattr(os, "sysconf"):
+                        page = os.sysconf("SC_PAGE_SIZE")
+                        total = page * os.sysconf("SC_PHYS_PAGES")
+                        avail = page * os.sysconf("SC_AVPHYS_PAGES")
+                        if total:
+                            memory_usage = max(0.0, min(100.0, (1 - (avail / total)) * 100.0))
+                except Exception:
+                    memory_usage = None
+                try:
+                    disk = shutil.disk_usage(str(self.data_dir))
+                    if disk.total:
+                        disk_usage = (disk.used / disk.total) * 100.0
+                except Exception:
+                    disk_usage = None
+
+            uptime = None
+            if self._status.started_at:
+                uptime = (datetime.now() - self._status.started_at).total_seconds()
+            status_dict.update({
+                "cpu_usage": cpu_usage,
+                "memory_usage": memory_usage,
+                "disk_usage": disk_usage,
+                "uptime": uptime,
+            })
             
             # Add enabled agent counts
             enabled = [a for a in self._status.agents.values() if a.enabled]

@@ -34,6 +34,8 @@ class EventType(str, Enum):
     TASK_COMPLETED = "task.completed"
     TASK_DELETED = "task.deleted"
     TASK_FAILED = "task.failed"
+    TASK_VIEWED = "task.viewed"
+    TASK_LIST_VIEWED = "task.list_viewed"
     
     # Finance events
     BILL_DUE = "finance.bill_due"

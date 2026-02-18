@@ -1050,6 +1050,23 @@ async def list_bills(include_paid: bool = False):
     
     return {"bills": finance.get_bills(include_paid=include_paid)}
 
+@app.get("/bills/upcoming", tags=["Finance"])
+async def list_upcoming_bills(days: int = 30):
+    """List bills due in the next N days (legacy compatibility)"""
+    manager = get_manager()
+    finance = manager.finance
+
+    if not finance:
+        raise HTTPException(status_code=503, detail="Finance agent not available")
+
+    # Finance agent currently returns all unpaid bills; attach requested horizon for UI.
+    return {"bills": finance.get_bills(include_paid=False), "days_ahead": days}
+
+@app.get("/api/bills/upcoming", tags=["Finance"])
+async def api_list_upcoming_bills(days: int = 30):
+    """API-compatible upcoming bills endpoint (frontend expects /api/bills/upcoming)."""
+    return await list_upcoming_bills(days=days)
+
 
 @app.patch("/bills/{bill_id}/pay", tags=["Finance"])
 async def pay_bill(bill_id: int, background_tasks: BackgroundTasks):

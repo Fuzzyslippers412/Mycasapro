@@ -645,7 +645,7 @@ export default function HomePage() {
   const indicatorLookup = (id: string) => indicatorIndex.get(id);
   const indicatorOk = (id: string) => {
     const meta = indicatorLookup(id);
-    return meta ? meta.status === "ok" : true;
+    return meta ? meta.status === "ok" || meta.status === "stale" : true;
   };
   const [portfolioChange, setPortfolioChange] = useState<number | null>(null);
   const [portfolioLoading, setPortfolioLoading] = useState(true);

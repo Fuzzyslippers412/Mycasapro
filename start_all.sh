@@ -105,11 +105,11 @@ if [ -z "$MYCASA_DATA_DIR" ]; then
 fi
 
 # Install backend deps if needed
-if ! "$PYTHON_BIN" -c "import fastapi" 2>/dev/null; then
+if ! "$PYTHON_BIN" -c "import fastapi, psutil" 2>/dev/null; then
     echo -e "${BLUE}Installing backend dependencies...${NC}"
     "$PYTHON_BIN" -m pip install -r requirements.txt
 fi
-if ! "$PYTHON_BIN" -c "import fastapi, uvicorn" 2>/dev/null; then
+if ! "$PYTHON_BIN" -c "import fastapi, uvicorn, psutil" 2>/dev/null; then
     echo "❌ Backend dependencies failed to install. Fix Python/pip and retry."
     exit 1
 fi

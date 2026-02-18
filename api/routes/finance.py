@@ -539,6 +539,11 @@ async def legacy_list_bills(include_paid: bool = False):
     """Legacy bills endpoint"""
     return await list_bills(include_paid=include_paid)
 
+@legacy_router.get("/bills/upcoming")
+async def legacy_upcoming_bills(days: int = 30):
+    """Legacy upcoming bills endpoint"""
+    return await get_upcoming_bills(days=days)
+
 @legacy_router.patch("/bills/{bill_id}/pay")
 async def legacy_pay_bill(bill_id: int, background_tasks: BackgroundTasks = None):
     """Legacy pay bill endpoint"""
