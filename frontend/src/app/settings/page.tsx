@@ -387,7 +387,7 @@ export default function SettingsPage() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const defaultLlmState = {
     provider: "openai-compatible",
-    baseUrl: "https://api.venice.ai/api/v1",
+    baseUrl: "https://portal.qwen.ai/v1",
     model: "qwen3-coder-plus",
     apiKey: "",
     apiKeySet: false,
@@ -423,9 +423,15 @@ export default function SettingsPage() {
     }
     return { baseUrl: "https://portal.qwen.ai/v1", model: "qwen3-coder-plus" };
   };
+  const QWEN_OAUTH_MODELS = [
+    "qwen3-coder-plus",
+    "qwen3-coder-flash",
+    "qwen-plus",
+  ];
   const qwenDefaults = () => {
     const currentModel = llmConfig.model || "";
-    const model = currentModel.toLowerCase().startsWith("qwen") ? currentModel : "qwen3-coder-plus";
+    const normalized = currentModel.toLowerCase().startsWith("qwen") ? currentModel : "";
+    const model = QWEN_OAUTH_MODELS.includes(normalized) ? normalized : "qwen3-coder-plus";
     return {
       baseUrl: llmConfig.oauthResourceUrl || llmActive.oauthResourceUrl || "https://portal.qwen.ai/v1",
       model,
@@ -537,18 +543,25 @@ export default function SettingsPage() {
   const fetchSystemSettings = useCallback(async () => {
     try {
       const data = await apiFetch<any>("/api/settings/system");
-      const merge = (prev: typeof llmConfig) => ({
-        ...prev,
-        provider: data.llm_provider ?? prev.provider,
-        baseUrl: data.llm_base_url ?? prev.baseUrl,
-        model: data.llm_model ?? prev.model,
-        apiKeySet: Boolean(data.llm_api_key_set),
-        authType: data.llm_auth_type ?? prev.authType,
-        oauthConnected: Boolean(data.llm_oauth_connected),
-        oauthExpiresAt: data.llm_oauth_expires_at ?? null,
-        oauthResourceUrl: data.llm_oauth_resource_url ?? null,
-        apiKey: "",
-      });
+      const merge = (prev: typeof llmConfig) => {
+        const authType = data.llm_auth_type ?? prev.authType;
+        const rawModel = data.llm_model ?? prev.model;
+        const model = authType === "qwen-oauth" && !QWEN_OAUTH_MODELS.includes(rawModel)
+          ? "qwen3-coder-plus"
+          : rawModel;
+        return {
+          ...prev,
+          provider: data.llm_provider ?? prev.provider,
+          baseUrl: data.llm_base_url ?? prev.baseUrl,
+          model,
+          apiKeySet: Boolean(data.llm_api_key_set),
+          authType,
+          oauthConnected: Boolean(data.llm_oauth_connected),
+          oauthExpiresAt: data.llm_oauth_expires_at ?? null,
+          oauthResourceUrl: data.llm_oauth_resource_url ?? null,
+          apiKey: "",
+        };
+      };
       setLlmRuntime({
         ready: Boolean(data.llm_runtime_ready),
         provider: data.llm_runtime_provider || "",
@@ -1956,7 +1969,7 @@ export default function SettingsPage() {
                   <Select
                     label="Provider"
                     data={[
-                      { value: "openai-compatible", label: "OpenAI-compatible (Qwen/DashScope/Venice)" },
+                      { value: "openai-compatible", label: "OpenAI-compatible (Qwen/DashScope)" },
                       { value: "openai", label: "OpenAI" },
                       { value: "anthropic", label: "Anthropic" },
                     ]}
@@ -1991,12 +2004,23 @@ export default function SettingsPage() {
                       ? "Qwen OAuth sets the base URL automatically after connection."
                       : `Recommended: ${providerDefaults(llmConfig.provider).baseUrl}`}
                   </Text>
-                  <TextInput
-                    label="Model"
-                    placeholder={providerDefaults(llmConfig.provider).model}
-                    value={llmConfig.model}
-                    onChange={(e) => setLlmConfig((s) => ({ ...s, model: readInputValue(e) }))}
-                  />
+                  {llmConfig.authType === "qwen-oauth" ? (
+                    <Select
+                      label="Model"
+                      data={QWEN_OAUTH_MODELS.map((model) => ({ value: model, label: model }))}
+                      value={QWEN_OAUTH_MODELS.includes(llmConfig.model) ? llmConfig.model : qwenDefaults().model}
+                      onChange={(value) =>
+                        value && setLlmConfig((s) => ({ ...s, model: value }))
+                      }
+                    />
+                  ) : (
+                    <TextInput
+                      label="Model"
+                      placeholder={providerDefaults(llmConfig.provider).model}
+                      value={llmConfig.model}
+                      onChange={(e) => setLlmConfig((s) => ({ ...s, model: readInputValue(e) }))}
+                    />
+                  )}
                   {llmConfig.authType === "api_key" && (
                     <PasswordInput
                       label="API Key"

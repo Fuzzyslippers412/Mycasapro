@@ -79,6 +79,47 @@ async def indicator_diagnostics() -> Dict[str, Any]:
         "status": _status_from_last_updated(msg_last, 3600),
         "source": "inbox_messages",
     })
+    results.append({
+        "id": "inbox.unread.count",
+        "label": "Unread count",
+        "value": unread_count,
+        "last_updated": msg_last.isoformat() if msg_last else None,
+        "status": _status_from_last_updated(msg_last, 3600),
+        "source": "inbox_messages",
+    })
+    with get_db() as db:
+        inbox_total = db.query(InboxMessage).count()
+        inbox_last = db.query(func.max(InboxMessage.updated_at)).scalar()
+    results.append({
+        "id": "inbox.messages.list",
+        "label": "Inbox messages list",
+        "value": inbox_total,
+        "last_updated": inbox_last.isoformat() if inbox_last else None,
+        "status": _status_from_last_updated(inbox_last, 300),
+        "source": "inbox_messages",
+    })
+
+    # Maintenance tasks list + completed count
+    with get_db() as db:
+        task_total = db.query(MaintenanceTask).count()
+        task_completed = db.query(MaintenanceTask).filter(MaintenanceTask.status == "completed").count()
+        task_last_any = db.query(func.max(MaintenanceTask.updated_at)).scalar()
+    results.append({
+        "id": "maintenance.tasks.list",
+        "label": "Maintenance tasks list",
+        "value": task_total,
+        "last_updated": task_last_any.isoformat() if task_last_any else None,
+        "status": _status_from_last_updated(task_last_any, 300),
+        "source": "maintenance_tasks",
+    })
+    results.append({
+        "id": "maintenance.tasks.completed",
+        "label": "Maintenance tasks completed",
+        "value": task_completed,
+        "last_updated": task_last_any.isoformat() if task_last_any else None,
+        "status": _status_from_last_updated(task_last_any, 300),
+        "source": "maintenance_tasks",
+    })
 
     # Dashboard: Janitor last run
     with get_db() as db:
@@ -87,14 +128,22 @@ async def indicator_diagnostics() -> Dict[str, Any]:
             .order_by(JanitorWizardRun.timestamp.desc())
             .first()
         )
-    results.append({
-        "id": "dashboard.janitor.last_run",
-        "label": "Janitor last run",
-        "value": latest_run.timestamp.isoformat() if latest_run else None,
-        "last_updated": latest_run.timestamp.isoformat() if latest_run else None,
-        "status": "ok" if latest_run else "missing",
-        "source": "janitor_wizard_runs",
-    })
+        results.append({
+            "id": "dashboard.janitor.last_run",
+            "label": "Janitor last run",
+            "value": latest_run.timestamp.isoformat() if latest_run else None,
+            "last_updated": latest_run.timestamp.isoformat() if latest_run else None,
+            "status": "ok" if latest_run else "missing",
+            "source": "janitor_wizard_runs",
+        })
+        results.append({
+            "id": "system.janitor.last_run",
+            "label": "Janitor last run",
+            "value": latest_run.timestamp.isoformat() if latest_run else None,
+            "last_updated": latest_run.timestamp.isoformat() if latest_run else None,
+            "status": "ok" if latest_run else "missing",
+            "source": "janitor_wizard_runs",
+        })
 
     # Quick status derived indicators
     try:
@@ -235,12 +284,54 @@ async def indicator_diagnostics() -> Dict[str, Any]:
             "disk_usage": status.get("disk_usage"),
             "uptime": status.get("uptime"),
         }
+        def _metric_status(value: Optional[float]) -> str:
+            return "ok" if isinstance(value, (int, float)) else "missing"
         results.append({
             "id": "dashboard.system.health.metrics",
             "label": "System health metrics",
             "value": metrics,
             "last_updated": now.isoformat(),
             "status": "ok" if any(v is not None for v in metrics.values()) else "missing",
+            "source": "/system/status",
+        })
+        results.append({
+            "id": "agents.system.monitor",
+            "label": "System monitor metrics",
+            "value": metrics,
+            "last_updated": now.isoformat(),
+            "status": "ok" if any(v is not None for v in metrics.values()) else "missing",
+            "source": "/system/status",
+        })
+        results.append({
+            "id": "system.monitor.cpu",
+            "label": "CPU usage",
+            "value": metrics.get("cpu_usage"),
+            "last_updated": now.isoformat(),
+            "status": _metric_status(metrics.get("cpu_usage")),
+            "source": "/system/status",
+        })
+        results.append({
+            "id": "system.monitor.memory",
+            "label": "Memory usage",
+            "value": metrics.get("memory_usage"),
+            "last_updated": now.isoformat(),
+            "status": _metric_status(metrics.get("memory_usage")),
+            "source": "/system/status",
+        })
+        results.append({
+            "id": "system.monitor.disk",
+            "label": "Disk usage",
+            "value": metrics.get("disk_usage"),
+            "last_updated": now.isoformat(),
+            "status": _metric_status(metrics.get("disk_usage")),
+            "source": "/system/status",
+        })
+        results.append({
+            "id": "system.monitor.uptime",
+            "label": "Uptime",
+            "value": metrics.get("uptime"),
+            "last_updated": now.isoformat(),
+            "status": _metric_status(metrics.get("uptime")),
             "source": "/system/status",
         })
     except Exception as exc:

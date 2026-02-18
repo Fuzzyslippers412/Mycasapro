@@ -24,15 +24,6 @@ def get_or_create_conversation(
         if convo:
             return convo
 
-    convo = (
-        db.query(ChatConversation)
-        .filter(ChatConversation.user_id == user_id, ChatConversation.agent_name == agent_name)
-        .order_by(desc(ChatConversation.updated_at))
-        .first()
-    )
-    if convo:
-        return convo
-
     convo = ChatConversation(user_id=user_id, agent_name=agent_name)
     db.add(convo)
     db.commit()
@@ -49,6 +40,12 @@ def add_message(
     message = ChatMessage(conversation_id=conversation.id, role=role, content=content)
     db.add(message)
     conversation.updated_at = datetime.utcnow()
+    if conversation.archived_at is not None:
+        conversation.archived_at = None
+    if role == "user" and not conversation.title:
+        title = (content or "").strip().replace("\n", " ")
+        if title:
+            conversation.title = (title[:80] + "…") if len(title) > 80 else title
     db.add(conversation)
     db.commit()
     db.refresh(message)

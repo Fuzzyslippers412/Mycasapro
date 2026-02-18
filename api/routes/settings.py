@@ -109,6 +109,27 @@ async def update_system_settings(update: SystemSettingsUpdate):
         update_dict["llm_api_key"] = None
         if hasattr(settings.system, "llm_api_key"):
             settings.system.llm_api_key = None
+        try:
+            from core.qwen_oauth import DEFAULT_QWEN_RESOURCE_URL, _normalize_resource_url
+            from core.llm_client import QWEN_OAUTH_DEFAULT_MODEL, QWEN_OAUTH_FALLBACK_MODELS
+            oauth = getattr(settings.system, "llm_oauth", None) or {}
+            resource_url = (
+                oauth.get("resource_url")
+                or update_dict.get("llm_base_url")
+                or settings.system.llm_base_url
+                or DEFAULT_QWEN_RESOURCE_URL
+            )
+            normalized_url = _normalize_resource_url(resource_url)
+            settings.system.llm_provider = "openai-compatible"
+            settings.system.llm_base_url = normalized_url
+            update_dict["llm_provider"] = "openai-compatible"
+            update_dict["llm_base_url"] = normalized_url
+            current_model = update_dict.get("llm_model") or settings.system.llm_model or ""
+            if current_model not in QWEN_OAUTH_FALLBACK_MODELS:
+                settings.system.llm_model = QWEN_OAUTH_DEFAULT_MODEL
+                update_dict["llm_model"] = QWEN_OAUTH_DEFAULT_MODEL
+        except Exception:
+            pass
     
     store.save(settings)
 

@@ -328,12 +328,19 @@ class LLMClient:
                 await self._ensure_qwen_oauth()
             if self.provider == "anthropic":
                 return await self._chat_anthropic(system_prompt, user_message, conversation_history, max_tokens, temperature)
-            elif self.provider == "google":
+            if self.provider == "google":
                 return await self._chat_google(system_prompt, user_message, conversation_history, max_tokens, temperature)
-            elif self.provider in ["openai", "openai-compatible"]:
-                return await self._chat_openai(system_prompt, user_message, conversation_history, max_tokens, temperature)
-            else:
-                return f"[Unknown provider: {self.provider}]"
+            if self.provider in ["openai", "openai-compatible"]:
+                try:
+                    return await self._chat_openai(system_prompt, user_message, conversation_history, max_tokens, temperature)
+                except Exception as e:
+                    if self.auth_type == "qwen-oauth" and self._is_auth_error(e):
+                        await self._ensure_qwen_oauth()
+                        return await self._chat_openai(system_prompt, user_message, conversation_history, max_tokens, temperature)
+                    if self._maybe_switch_qwen_model(e):
+                        return await self._chat_openai(system_prompt, user_message, conversation_history, max_tokens, temperature)
+                    raise
+            return f"[Unknown provider: {self.provider}]"
 
         except Exception as e:
             logger.error(f"LLM chat error: {e}")

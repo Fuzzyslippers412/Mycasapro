@@ -64,6 +64,7 @@ Diagnostics: `GET /api/diagnostics/indicators`.
 - **System monitor metrics** (`system.monitor.*`)
   - Source: system monitor
   - Unavailable means: lifecycle monitor not reporting
+  - Includes: cpu, memory, disk, uptime
 
 - **Janitor last run** (`system.janitor.last_run`)
   - Source: janitor wizard history

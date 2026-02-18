@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getApiBaseUrl } from "@/lib/api";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
+import { getApiBaseUrl, IndicatorDiagnostic } from "@/lib/api";
+import { useIndicatorDiagnostics } from "@/lib/hooks";
 import {
   Card,
   Button,
@@ -112,17 +113,17 @@ function StatCard({
   subtitle?: string;
 }) {
   return (
-    <Card withBorder p="md" radius="md">
+    <Card withBorder p="md" radius="md" className="live-stat-card">
       <Group justify="space-between">
         <div>
-          <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+          <Text size="xs" c="dimmed" tt="uppercase" fw={600} className="live-stat-title">
             {title}
           </Text>
-          <Text size="xl" fw={700}>
+          <Text size="xl" fw={700} className="live-stat-value">
             {value}
           </Text>
           {subtitle && (
-            <Text size="xs" c="dimmed">{subtitle}</Text>
+            <Text size="xs" c="dimmed" className="live-stat-subtitle">{subtitle}</Text>
           )}
         </div>
         <ThemeIcon size="xl" variant="light" color={color}>
@@ -139,6 +140,27 @@ export function LiveSystemDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [heartbeatRunning, setHeartbeatRunning] = useState(false);
+  const indicatorDiagnostics = useIndicatorDiagnostics(60000);
+  const indicatorIndex = useMemo(() => {
+    const map = new Map<string, IndicatorDiagnostic>();
+    indicatorDiagnostics.data?.results?.forEach((item) => {
+      map.set(item.id, item);
+    });
+    return map;
+  }, [indicatorDiagnostics.data]);
+  const indicatorLookup = (id: string) => indicatorIndex.get(id);
+  const indicatorTooltip = (meta?: IndicatorDiagnostic) =>
+    meta
+      ? `${meta.label} • ${meta.status.toUpperCase()}${meta.last_updated ? ` • Updated ${new Date(meta.last_updated).toLocaleString()}` : ""}${meta.source ? ` • Source: ${meta.source}` : ""}`
+      : "";
+  const wrapIndicator = (node: ReactNode, meta?: IndicatorDiagnostic) =>
+    meta ? (
+      <Tooltip label={indicatorTooltip(meta)} withArrow>
+        <Box>{node}</Box>
+      </Tooltip>
+    ) : (
+      <>{node}</>
+    );
 
   const fetchStatus = async () => {
     try {
@@ -210,6 +232,12 @@ export function LiveSystemDashboard() {
         : heartbeat.last_run
           ? "healthy"
           : "idle";
+  const monitorMetrics = status?.system_monitor ?? {
+    cpu_usage: null,
+    memory_usage: null,
+    disk_usage: null,
+    uptime: null,
+  };
 
   const runHeartbeatNow = async () => {
     setHeartbeatRunning(true);
@@ -246,7 +274,7 @@ export function LiveSystemDashboard() {
       </Group>
 
       {/* Quick Stats */}
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
+      <SimpleGrid cols={{ base: 2, sm: 4 }} className="live-stat-grid">
         <StatCard
           title="Agents"
           value={`${agentStats.active}/${agentStats.total}`}
@@ -254,13 +282,16 @@ export function LiveSystemDashboard() {
           color="blue"
           subtitle={`${agentStats.available} available`}
         />
-        <StatCard
-          title="SecondBrain"
-          value={sbStats.total_notes}
-          icon={IconBrain}
-          color="violet"
-          subtitle="notes in vault"
-        />
+        {wrapIndicator(
+          <StatCard
+            title="SecondBrain"
+            value={sbStats.total_notes}
+            icon={IconBrain}
+            color="violet"
+            subtitle="notes in vault"
+          />,
+          indicatorLookup("dashboard.identity.ready")
+        )}
         <StatCard
           title="Connectors"
           value={`${connectorStats.healthy}/${connectorStats.total}`}
@@ -304,6 +335,55 @@ export function LiveSystemDashboard() {
                 </Group>
               </Group>
             ))}
+          </Stack>
+        </Card>
+
+        {/* System Monitor */}
+        <Card withBorder p="md" radius="md">
+          <Group justify="space-between" mb="md">
+            <Group gap="xs">
+              <IconActivity size={20} />
+              <Title order={5}>System Monitor</Title>
+            </Group>
+            <StatusBadge status={monitorMetrics.cpu_usage || monitorMetrics.memory_usage ? "healthy" : "idle"} />
+          </Group>
+          <Stack gap="xs">
+            {wrapIndicator(
+              <Group justify="space-between">
+                <Text size="sm">CPU usage</Text>
+                <Badge size="xs" color={typeof monitorMetrics.cpu_usage === "number" ? "green" : "gray"}>
+                  {typeof monitorMetrics.cpu_usage === "number" ? `${Math.round(monitorMetrics.cpu_usage)}%` : "—"}
+                </Badge>
+              </Group>,
+              indicatorLookup("system.monitor.cpu")
+            )}
+            {wrapIndicator(
+              <Group justify="space-between">
+                <Text size="sm">Memory usage</Text>
+                <Badge size="xs" color={typeof monitorMetrics.memory_usage === "number" ? "green" : "gray"}>
+                  {typeof monitorMetrics.memory_usage === "number" ? `${Math.round(monitorMetrics.memory_usage)}%` : "—"}
+                </Badge>
+              </Group>,
+              indicatorLookup("system.monitor.memory")
+            )}
+            {wrapIndicator(
+              <Group justify="space-between">
+                <Text size="sm">Disk usage</Text>
+                <Badge size="xs" color={typeof monitorMetrics.disk_usage === "number" ? "green" : "gray"}>
+                  {typeof monitorMetrics.disk_usage === "number" ? `${Math.round(monitorMetrics.disk_usage)}%` : "—"}
+                </Badge>
+              </Group>,
+              indicatorLookup("system.monitor.disk")
+            )}
+            {wrapIndicator(
+              <Group justify="space-between">
+                <Text size="sm">Uptime</Text>
+                <Badge size="xs" color={typeof monitorMetrics.uptime === "number" ? "blue" : "gray"}>
+                  {typeof monitorMetrics.uptime === "number" ? `${Math.round(monitorMetrics.uptime / 3600)}h` : "—"}
+                </Badge>
+              </Group>,
+              indicatorLookup("system.monitor.uptime")
+            )}
           </Stack>
         </Card>
 

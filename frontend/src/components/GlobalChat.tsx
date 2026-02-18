@@ -44,9 +44,11 @@ import {
   IconArrowRight,
   IconHistory,
   IconPlus,
+  IconArchive,
+  IconEdit,
 } from "@tabler/icons-react";
 import { tokens } from "@/theme/tokens";
-import { sendAgentChat, sendManagerChat, getAgentChatHistory, getAgentConversations, createAgentConversation, getApiBaseUrl, isNetworkError, apiFetch } from "@/lib/api";
+import { sendAgentChat, sendManagerChat, getAgentChatHistory, getAgentConversations, createAgentConversation, renameAgentConversation, archiveAgentConversation, restoreAgentConversation, getApiBaseUrl, isNetworkError, apiFetch } from "@/lib/api";
 
 interface Message {
   id: number;
@@ -83,6 +85,7 @@ interface ConversationSummary {
   title?: string | null;
   updated_at?: string | null;
   created_at?: string | null;
+  archived_at?: string | null;
   message_count?: number;
   last_message?: string | null;
 }
@@ -338,6 +341,8 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   const [sessions, setSessions] = useState<ConversationSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [showArchivedSessions, setShowArchivedSessions] = useState(false);
+  const [showSessionsPanel, setShowSessionsPanel] = useState(true);
   const [launching, setLaunching] = useState(false);
   const [personalMode, setPersonalMode] = useState(false);
   const [personalModeChecked, setPersonalModeChecked] = useState(false);
@@ -461,7 +466,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     setSessionsLoading(true);
     setSessionsError(null);
     try {
-      const data = await getAgentConversations(agentId, 12);
+      const data = await getAgentConversations(agentId, 12, showArchivedSessions);
       setSessions(data?.conversations || []);
     } catch (err: any) {
       if (isNetworkError(err)) {
@@ -481,7 +486,27 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     setMessages([]);
     messageIdRef.current = 1;
     try {
-      const data = await getAgentChatHistory(agentId, targetId, 50);
+      let conversationId = targetId;
+      if (!conversationId) {
+        try {
+          const latest = await getAgentConversations(agentId, 1, false);
+          const recent = latest?.conversations?.[0]?.id;
+          if (recent) {
+            conversationId = recent;
+          }
+        } catch {
+          // ignore and fall through
+        }
+      }
+      if (!conversationId) {
+        try {
+          const created = await createAgentConversation(agentId);
+          conversationId = created?.conversation_id;
+        } catch {
+          conversationId = undefined;
+        }
+      }
+      const data = await getAgentChatHistory(agentId, conversationId, 50);
       if (data?.messages?.length) {
         const mapped: Message[] = data.messages.map((msg: any, idx: number) => ({
           id: idx + 1,
@@ -542,7 +567,18 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     const storedConversation = window.localStorage.getItem(conversationKey(selectedAgent, user?.id)) || undefined;
     refreshSessions(selectedAgent);
     loadConversation(selectedAgent, storedConversation);
-  }, [selectedAgent, chatAllowed, personalMode, isAuthenticated, user?.id]);
+  }, [selectedAgent, chatAllowed, personalMode, isAuthenticated, user?.id, showArchivedSessions]);
+
+  useEffect(() => {
+    if (sessionsLoading) return;
+    if (showArchivedSessions) return;
+    if (typeof window === "undefined") return;
+    const currentId = localStorage.getItem(conversationKey(selectedAgent, user?.id));
+    if (!currentId) return;
+    if (!sessions.find((session) => session.id === currentId)) {
+      handleNewSession();
+    }
+  }, [sessions, sessionsLoading, showArchivedSessions, selectedAgent, user?.id]);
 
   // Fetch real agent status from system live endpoint (single source of truth)
   const fetchAgents = useCallback(async () => {
@@ -1294,19 +1330,54 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     }
   };
 
+  const handleArchiveSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      await archiveAgentConversation(selectedAgent, sessionId);
+      await refreshSessions(selectedAgent);
+      const currentId = typeof window !== "undefined" ? localStorage.getItem(conversationKey(selectedAgent, user?.id)) : null;
+      if (currentId === sessionId) {
+        await handleNewSession();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleRestoreSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      await restoreAgentConversation(selectedAgent, sessionId);
+      await refreshSessions(selectedAgent);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleRenameSession = async (sessionId: string, currentTitle?: string | null) => {
+    const nextTitle = prompt("Rename session", currentTitle || "");
+    if (nextTitle === null) return;
+    try {
+      await renameAgentConversation(selectedAgent, sessionId, nextTitle.trim() || null);
+      await refreshSessions(selectedAgent);
+    } catch {
+      // ignore
+    }
+  };
+
   const panelStyle = isEmbedded
     ? {
         marginBottom: -1,
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        minHeight: 520,
+        minHeight: 640,
       }
     : {
         marginBottom: -1,
         display: "flex",
         flexDirection: "column",
-        height: "min(520px, calc(100vh - 160px))",
+        height: "min(680px, calc(100vh - 140px))",
       };
 
   const panel = (
@@ -1377,49 +1448,16 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                   {llmBadgeLabel}
                 </Badge>
               </Tooltip>
-              <Menu position="bottom-end" withArrow>
-                <Menu.Target>
-                  <ActionIcon variant="subtle" color="gray" size="sm">
-                    <IconHistory size={14} />
-                  </ActionIcon>
-                </Menu.Target>
-                <Menu.Dropdown>
-                  <Menu.Item leftSection={<IconPlus size={14} />} onClick={handleNewSession}>
-                    New session
-                  </Menu.Item>
-                  <Menu.Divider />
-                  {sessionsLoading && <Menu.Item disabled>Loading sessions…</Menu.Item>}
-                  {!sessionsLoading && sessions.length === 0 && <Menu.Item disabled>No sessions yet</Menu.Item>}
-                  {sessions.map((session) => {
-                    const label = session.title
-                      || session.last_message?.slice(0, 48)
-                      || (session.updated_at ? `Session ${new Date(session.updated_at).toLocaleDateString()}` : "Session");
-                    return (
-                      <Menu.Item
-                        key={session.id}
-                        onClick={() => handleSelectSession(session.id)}
-                        rightSection={session.id === (typeof window !== "undefined" ? localStorage.getItem(conversationKey(selectedAgent, user?.id)) : null) ? <Badge size="xs">Active</Badge> : null}
-                      >
-                        <Group justify="space-between" gap="xs" wrap="nowrap">
-                          <Text size="xs" lineClamp={1}>{label}</Text>
-                          <ActionIcon
-                            size="xs"
-                            variant="subtle"
-                            color="red"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteSession(session.id);
-                            }}
-                          >
-                            <IconTrash size={12} />
-                          </ActionIcon>
-                        </Group>
-                      </Menu.Item>
-                    );
-                  })}
-                  {sessionsError && <Menu.Item disabled>{sessionsError}</Menu.Item>}
-                </Menu.Dropdown>
-              </Menu>
+              <Tooltip label={showSessionsPanel ? "Hide sessions" : "Show sessions"}>
+                <ActionIcon
+                  variant={showSessionsPanel ? "light" : "subtle"}
+                  color="gray"
+                  size="sm"
+                  onClick={() => setShowSessionsPanel((current) => !current)}
+                >
+                  <IconHistory size={14} />
+                </ActionIcon>
+              </Tooltip>
               <Tooltip label="Clear chat history">
                 <ActionIcon
                   variant="subtle"
@@ -1458,72 +1496,202 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
             </Group>
           </Group>
 
-          <Box px="md" pb="sm">
-            <Group gap="sm" align="center" wrap="wrap">
-              <Select
-                data={agentOptions.length ? agentOptions : [{ value: "manager", label: "Galidima" }]}
-                value={selectedAgent}
-                onChange={(value) => value && setSelectedAgent(value)}
-                placeholder="Select agent"
-                size="sm"
-                w={220}
-              />
-              <Group gap={6} wrap="nowrap">
-                {agents
-                  .filter((a) => a.enabled)
-                  .slice(0, 4)
-                  .map((agent) => (
-                    <Tooltip
-                      key={agent.id}
-                      label={`${agent.name} • ${getStatusLabel(agent.state, agent.enabled)}`}
-                    >
-                      <Paper
-                        withBorder
-                        py={4}
-                        px={8}
-                        radius="xl"
-                        className="chat-agent-chip"
-                        style={{
-                          cursor: "pointer",
-                          borderColor:
-                            selectedAgent === agent.id
-                              ? tokens.colors.primary[500]
-                              : undefined,
-                          backgroundColor:
-                            selectedAgent === agent.id
-                              ? "var(--agent-chip-selected-bg)"
-                              : undefined,
-                          flexShrink: 0,
-                        }}
-                        onClick={() => setSelectedAgent(agent.id)}
+          <Box className="global-chat-body">
+            {showSessionsPanel && (
+              <Box className="global-chat-sessions">
+                <Box px="md" pb="sm" className="global-chat-sessions-inner">
+                  <Group justify="space-between" align="center" mb="xs">
+                    <Text size="xs" fw={600} c="dimmed">
+                      Sessions
+                    </Text>
+                    <Group gap="xs">
+                      <Button
+                        size="xs"
+                        variant="light"
+                        leftSection={<IconPlus size={12} />}
+                        onClick={handleNewSession}
                       >
-                        <Group gap={4}>
-                          <Box
+                        New
+                      </Button>
+                      <Group gap={6}>
+                        <Text size="xs" c="dimmed">Archived</Text>
+                        <Switch
+                          size="sm"
+                          checked={showArchivedSessions}
+                          onChange={(e) => setShowArchivedSessions(e.currentTarget.checked)}
+                        />
+                      </Group>
+                    </Group>
+                  </Group>
+                  <ScrollArea style={{ flex: 1 }}>
+                    <Stack gap="xs">
+                      {sessionsLoading && (
+                        <Text size="xs" c="dimmed">Loading sessions…</Text>
+                      )}
+                      {!sessionsLoading && sessions.length === 0 && (
+                        <Text size="xs" c="dimmed">No sessions yet</Text>
+                      )}
+                      {sessions.map((session) => {
+                        const label = session.title
+                          || session.last_message?.slice(0, 48)
+                          || (session.updated_at ? `Session ${new Date(session.updated_at).toLocaleDateString()}` : "Session");
+                        const isActive = session.id === (typeof window !== "undefined" ? localStorage.getItem(conversationKey(selectedAgent, user?.id)) : null);
+                        const isArchived = Boolean(session.archived_at);
+                        return (
+                          <Paper
+                            key={session.id}
+                            withBorder
+                            p="xs"
+                            radius="md"
+                            onClick={() => handleSelectSession(session.id)}
                             style={{
-                              width: 6,
-                              height: 6,
-                              borderRadius: "50%",
-                              backgroundColor: getStatusColor(agent.state, agent.enabled),
+                              cursor: "pointer",
+                              borderColor: isActive ? "var(--mantine-color-blue-3)" : "var(--mantine-color-default-border)",
+                              background: isActive ? "var(--mantine-color-blue-light)" : undefined,
                             }}
-                          />
-                          <Text size="xs" fw={selectedAgent === agent.id ? 600 : 400}>
-                            {agent.name.split(" ")[0]}
-                          </Text>
-                        </Group>
-                      </Paper>
-                    </Tooltip>
-                  ))}
-              </Group>
-              <ActionIcon
-                variant={showAgentSettings ? "filled" : "subtle"}
-                color="gray"
-                size="sm"
-                onClick={() => setShowAgentSettings(!showAgentSettings)}
-              >
-                <IconSettings size={14} />
-              </ActionIcon>
-            </Group>
-          </Box>
+                          >
+                            <Group justify="space-between" align="center" wrap="nowrap">
+                              <Stack gap={2} style={{ minWidth: 0 }}>
+                                <Text size="xs" fw={600} lineClamp={1}>
+                                  {label}
+                                </Text>
+                                <Text size="xs" c="dimmed">
+                                  {session.updated_at ? new Date(session.updated_at).toLocaleString() : "No activity yet"}
+                                </Text>
+                              </Stack>
+                              <Group gap="xs">
+                                {isActive && <Badge size="xs">Active</Badge>}
+                                {isArchived && <Badge size="xs" color="gray">Archived</Badge>}
+                                <ActionIcon
+                                  size="xs"
+                                  variant="subtle"
+                                  color="blue"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRenameSession(session.id, session.title);
+                                  }}
+                                >
+                                  <IconEdit size={12} />
+                                </ActionIcon>
+                                {isArchived ? (
+                                  <ActionIcon
+                                    size="xs"
+                                    variant="subtle"
+                                    color="green"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRestoreSession(session.id);
+                                    }}
+                                  >
+                                    <IconRefresh size={12} />
+                                  </ActionIcon>
+                                ) : (
+                                  <ActionIcon
+                                    size="xs"
+                                    variant="subtle"
+                                    color="yellow"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleArchiveSession(session.id);
+                                    }}
+                                  >
+                                    <IconArchive size={12} />
+                                  </ActionIcon>
+                                )}
+                                <ActionIcon
+                                  size="xs"
+                                  variant="subtle"
+                                  color="red"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteSession(session.id);
+                                  }}
+                                >
+                                  <IconTrash size={12} />
+                                </ActionIcon>
+                              </Group>
+                            </Group>
+                          </Paper>
+                        );
+                      })}
+                    </Stack>
+                  </ScrollArea>
+                  {sessionsError && (
+                    <Text size="xs" c="red" mt="xs">
+                      {sessionsError}
+                    </Text>
+                  )}
+                </Box>
+              </Box>
+            )}
+
+            <Box className="global-chat-main">
+              <Box px="md" pb="sm">
+                <Group gap="sm" align="center" wrap="wrap">
+                  <Select
+                    data={agentOptions.length ? agentOptions : [{ value: "manager", label: "Galidima" }]}
+                    value={selectedAgent}
+                    onChange={(value) => value && setSelectedAgent(value)}
+                    placeholder="Select agent"
+                    size="sm"
+                    w={220}
+                  />
+                  <Group gap={6} wrap="nowrap">
+                    {agents
+                      .filter((a) => a.enabled)
+                      .slice(0, 4)
+                      .map((agent) => (
+                        <Tooltip
+                          key={agent.id}
+                          label={`${agent.name} • ${getStatusLabel(agent.state, agent.enabled)}`}
+                        >
+                          <Paper
+                            withBorder
+                            py={4}
+                            px={8}
+                            radius="xl"
+                            className="chat-agent-chip"
+                            style={{
+                              cursor: "pointer",
+                              borderColor:
+                                selectedAgent === agent.id
+                                  ? tokens.colors.primary[500]
+                                  : undefined,
+                              backgroundColor:
+                                selectedAgent === agent.id
+                                  ? "var(--agent-chip-selected-bg)"
+                                  : undefined,
+                              flexShrink: 0,
+                            }}
+                            onClick={() => setSelectedAgent(agent.id)}
+                          >
+                            <Group gap={4}>
+                              <Box
+                                style={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: "50%",
+                                  backgroundColor: getStatusColor(agent.state, agent.enabled),
+                                }}
+                              />
+                              <Text size="xs" fw={selectedAgent === agent.id ? 600 : 400}>
+                                {agent.name.split(" ")[0]}
+                              </Text>
+                            </Group>
+                          </Paper>
+                        </Tooltip>
+                      ))}
+                  </Group>
+                  <ActionIcon
+                    variant={showAgentSettings ? "filled" : "subtle"}
+                    color="gray"
+                    size="sm"
+                    onClick={() => setShowAgentSettings(!showAgentSettings)}
+                  >
+                    <IconSettings size={14} />
+                  </ActionIcon>
+                </Group>
+              </Box>
 
           {/* Agent Controls Panel - More Prominent */}
           <Collapse in={showAgentSettings}>
@@ -1620,7 +1788,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
           </Collapse>
 
           {/* Messages */}
-          <ScrollArea style={{ flex: 1 }} p="sm" type="auto" className="global-chat-messages">
+          <ScrollArea style={{ flex: 1, minHeight: 0 }} p="sm" type="auto" className="global-chat-messages">
             <Stack gap="sm">
               {!chatAllowed && personalModeChecked && personalModeError && (
                 <Alert color="red" title="Backend unavailable">
@@ -2073,6 +2241,8 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                 </ActionIcon>
               </Group>
             </form>
+          </Box>
+            </Box>
           </Box>
     </Box>
   );

@@ -190,12 +190,19 @@ export default function ContractorsPage() {
   const activeJobs = jobs.filter(j => j.status !== "completed" && j.status !== "cancelled");
   const completedJobs = jobs.filter(j => j.status === "completed");
   const totalEst = activeJobs.reduce((sum, j) => sum + (j.estimated_cost || 0), 0);
+  const statsUnavailable = Boolean(error);
+
+  const subtitle = statsUnavailable
+    ? "Contractor data unavailable"
+    : loading
+      ? "Loading contractors..."
+      : `${contractors.length} contractors • ${activeJobs.length} active jobs`;
 
   return (
     <Shell>
       <Page
         title="Contractors"
-        subtitle={`${contractors.length} contractors • ${activeJobs.length} active jobs`}
+        subtitle={subtitle}
         actions={
           <Group>
             <Button variant="light" leftSection={<IconUser size={16} />} onClick={openContractorModal}>
@@ -211,24 +218,48 @@ export default function ContractorsPage() {
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} className="contractors-stats">
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Contractors</Text>
-            <Text size="xl" fw={700} mt={4}>{contractors.length}</Text>
+            {loading ? (
+              <Loader size="sm" mt={8} />
+            ) : statsUnavailable ? (
+              <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
+            ) : (
+              <Text size="xl" fw={700} mt={4}>{contractors.length}</Text>
+            )}
             <Text size="xs" c="dimmed">Active profiles</Text>
           </Card>
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Active jobs</Text>
-            <Text size="xl" fw={700} mt={4}>{activeJobs.length}</Text>
+            {loading ? (
+              <Loader size="sm" mt={8} />
+            ) : statsUnavailable ? (
+              <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
+            ) : (
+              <Text size="xl" fw={700} mt={4}>{activeJobs.length}</Text>
+            )}
             <Text size="xs" c="dimmed">In pipeline</Text>
           </Card>
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Completed</Text>
-            <Text size="xl" fw={700} mt={4}>{completedJobs.length}</Text>
+            {loading ? (
+              <Loader size="sm" mt={8} />
+            ) : statsUnavailable ? (
+              <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
+            ) : (
+              <Text size="xl" fw={700} mt={4}>{completedJobs.length}</Text>
+            )}
             <Text size="xs" c="dimmed">Finished jobs</Text>
           </Card>
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Est. active spend</Text>
-            <Text size="xl" fw={700} mt={4}>
-              {totalEst > 0 ? `$${totalEst.toLocaleString()}` : "—"}
-            </Text>
+            {loading ? (
+              <Loader size="sm" mt={8} />
+            ) : statsUnavailable ? (
+              <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
+            ) : (
+              <Text size="xl" fw={700} mt={4}>
+                {totalEst > 0 ? `$${totalEst.toLocaleString()}` : "—"}
+              </Text>
+            )}
             <Text size="xs" c="dimmed">From active jobs</Text>
           </Card>
         </SimpleGrid>

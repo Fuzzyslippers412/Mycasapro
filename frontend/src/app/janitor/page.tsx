@@ -2,7 +2,18 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Shell } from "@/components/layout/Shell";
-import { getApiBaseUrl } from "@/lib/api";
+import {
+  getApiBaseUrl,
+  sendAgentChat,
+  getAgentChatHistory,
+  getAgentConversations,
+  createAgentConversation,
+  renameAgentConversation,
+  archiveAgentConversation,
+  restoreAgentConversation,
+  apiFetch,
+} from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { Page } from "@/components/layout/Page";
 import {
   Container,
@@ -42,6 +53,9 @@ import {
   IconCheck,
   IconX,
   IconTrash,
+  IconPlus,
+  IconArchive,
+  IconEdit,
   IconShieldCheck,
   IconFileCode,
   IconHistory,
@@ -119,6 +133,16 @@ interface ReviewConcern {
   issue: string;
 }
 
+interface ConversationSummary {
+  id: string;
+  title?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  archived_at?: string | null;
+  message_count?: number;
+  last_message?: string | null;
+}
+
 interface ReviewResult {
   approved: boolean;
   concerns: ReviewConcern[];
@@ -184,6 +208,7 @@ interface PreflightInfo {
 
 export default function JanitorPage() {
   // State
+  const { user } = useAuth();
   const [status, setStatus] = useState<JanitorStatus | null>(null);
   const [audit, setAudit] = useState<AuditResult | null>(null);
   const [editHistory, setEditHistory] = useState<EditHistoryItem[]>([]);
@@ -207,8 +232,15 @@ export default function JanitorPage() {
 
   // Chat state
   const [chatMessage, setChatMessage] = useState("");
-  const [chatHistory, setChatHistory] = useState<Array<{ role: string; content: string }>>([]);
+  const [chatHistory, setChatHistory] = useState<Array<{ role: string; content: string; timestamp?: string }>>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatSessions, setChatSessions] = useState<ConversationSummary[]>([]);
+  const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
+  const [chatSessionsError, setChatSessionsError] = useState<string | null>(null);
+  const [chatShowArchived, setChatShowArchived] = useState(false);
+  const [chatConversationId, setChatConversationId] = useState<string | null>(null);
+  const [chatHistoryStatus, setChatHistoryStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [chatHistoryError, setChatHistoryError] = useState<string | null>(null);
 
   // Code review modal
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -253,6 +285,52 @@ export default function JanitorPage() {
       console.error("Failed to fetch backups:", e);
     }
   }, []);
+
+  const chatStorageKey = useCallback((userId?: number | null) => {
+    return `mycasa_janitor_conversation:${userId ?? "guest"}`;
+  }, []);
+
+  const refreshChatSessions = useCallback(async (includeArchived = chatShowArchived) => {
+    setChatSessionsLoading(true);
+    setChatSessionsError(null);
+    try {
+      const data = await getAgentConversations("janitor", 12, includeArchived);
+      setChatSessions(data?.conversations || []);
+    } catch (err: any) {
+      setChatSessionsError(err?.detail || "Unable to load sessions");
+    } finally {
+      setChatSessionsLoading(false);
+    }
+  }, [chatShowArchived]);
+
+  const loadChatHistory = useCallback(async (conversationId?: string | null) => {
+    if (!conversationId) {
+      setChatHistory([]);
+      setChatHistoryStatus("idle");
+      return;
+    }
+    setChatHistoryStatus("loading");
+    setChatHistoryError(null);
+    try {
+      const data = await getAgentChatHistory("janitor", conversationId, 50);
+      const mapped = (data?.messages || []).map((msg: any) => ({
+        role: msg.role === "assistant" ? "assistant" : "user",
+        content: msg.content,
+        timestamp: msg.timestamp,
+      }));
+      setChatHistory(mapped);
+      setChatHistoryStatus("idle");
+      if (data?.conversation_id) {
+        setChatConversationId(data.conversation_id);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(chatStorageKey(user?.id ?? null), data.conversation_id);
+        }
+      }
+    } catch (err: any) {
+      setChatHistoryStatus("error");
+      setChatHistoryError(err?.detail || "Unable to load history");
+    }
+  }, [chatStorageKey, user?.id]);
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -309,6 +387,45 @@ export default function JanitorPage() {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  useEffect(() => {
+    let active = true;
+    const initChat = async () => {
+      await refreshChatSessions(chatShowArchived);
+      if (!active) return;
+      let storedId: string | null = null;
+      if (typeof window !== "undefined") {
+        storedId = localStorage.getItem(chatStorageKey(user?.id ?? null));
+      }
+      if (!storedId) {
+        try {
+          const created = await createAgentConversation("janitor");
+          storedId = created?.conversation_id || null;
+          if (storedId && typeof window !== "undefined") {
+            localStorage.setItem(chatStorageKey(user?.id ?? null), storedId);
+          }
+        } catch {
+          storedId = null;
+        }
+      }
+      if (!active) return;
+      setChatConversationId(storedId);
+      await loadChatHistory(storedId);
+    };
+    initChat();
+    return () => {
+      active = false;
+    };
+  }, [chatShowArchived, chatStorageKey, loadChatHistory, refreshChatSessions, user?.id]);
+
+  useEffect(() => {
+    if (chatSessionsLoading) return;
+    if (chatShowArchived) return;
+    if (!chatConversationId) return;
+    if (!chatSessions.find((session) => session.id === chatConversationId)) {
+      handleNewChatSession();
+    }
+  }, [chatSessions, chatSessionsLoading, chatShowArchived, chatConversationId]);
 
   // Actions
   const runAudit = async () => {
@@ -543,19 +660,113 @@ export default function JanitorPage() {
     setChatLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/janitor/chat?message=${encodeURIComponent(userMsg)}`, {
-        method: "POST",
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setChatHistory((prev) => [...prev, { role: "assistant", content: data.response }]);
-      } else {
-        throw new Error("Chat failed");
+      let activeId = chatConversationId;
+      if (!activeId) {
+        const created = await createAgentConversation("janitor");
+        activeId = created?.conversation_id || null;
+        if (activeId) {
+          setChatConversationId(activeId);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(chatStorageKey(user?.id ?? null), activeId);
+          }
+          await refreshChatSessions(chatShowArchived);
+        }
       }
+      const data = await sendAgentChat("janitor", userMsg, activeId || undefined);
+      if (data?.conversation_id && data.conversation_id !== activeId) {
+        setChatConversationId(data.conversation_id);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(chatStorageKey(user?.id ?? null), data.conversation_id);
+        }
+        await refreshChatSessions(chatShowArchived);
+      }
+      setChatHistory((prev) => [
+        ...prev,
+        { role: "assistant", content: data?.response || "(no response)", timestamp: data?.timestamp },
+      ]);
     } catch {
       setChatHistory((prev) => [...prev, { role: "error", content: "Failed to get response" }]);
     } finally {
       setChatLoading(false);
+    }
+  };
+
+  const handleNewChatSession = async () => {
+    try {
+      const created = await createAgentConversation("janitor");
+      const id = created?.conversation_id || null;
+      if (id && typeof window !== "undefined") {
+        localStorage.setItem(chatStorageKey(user?.id ?? null), id);
+      }
+      setChatConversationId(id);
+      setChatHistory([]);
+      await refreshChatSessions(chatShowArchived);
+      if (id) {
+        await loadChatHistory(id);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSelectChatSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    setChatConversationId(sessionId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(chatStorageKey(user?.id ?? null), sessionId);
+    }
+    await loadChatHistory(sessionId);
+  };
+
+  const handleDeleteChatSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      await apiFetch(`/api/agents/janitor/history?conversation_id=${sessionId}`, { method: "DELETE" });
+      await refreshChatSessions(chatShowArchived);
+      if (chatConversationId === sessionId) {
+        setChatConversationId(null);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(chatStorageKey(user?.id ?? null));
+        }
+        setChatHistory([]);
+        await handleNewChatSession();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleArchiveChatSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      await archiveAgentConversation("janitor", sessionId);
+      await refreshChatSessions(chatShowArchived);
+      if (chatConversationId === sessionId) {
+        await handleNewChatSession();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleRestoreChatSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      await restoreAgentConversation("janitor", sessionId);
+      await refreshChatSessions(chatShowArchived);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleRenameChatSession = async (sessionId: string, currentTitle?: string | null) => {
+    const nextTitle = prompt("Rename session", currentTitle || "");
+    if (nextTitle === null) return;
+    try {
+      await renameAgentConversation("janitor", sessionId, nextTitle.trim() || null);
+      await refreshChatSessions(chatShowArchived);
+    } catch {
+      // ignore
     }
   };
 
@@ -1580,16 +1791,153 @@ export default function JanitorPage() {
           {/* Chat Tab */}
           <Tabs.Panel value="chat">
             <Card withBorder p="md" radius="md">
-              <Text fw={600} mb="md">
-                Chat with Salimata ✨
-              </Text>
+              <Group justify="space-between" mb="md">
+                <Stack gap={2}>
+                  <Text fw={600}>Janitor chat</Text>
+                  <Text size="xs" c="dimmed">
+                    Sessions are saved per user. Archive or delete as needed.
+                  </Text>
+                </Stack>
+              </Group>
+
+              <Box mb="md">
+                <Group justify="space-between" align="center" mb="xs">
+                  <Text size="xs" fw={600} c="dimmed">
+                    Sessions
+                  </Text>
+                  <Group gap="xs">
+                    <Button
+                      size="xs"
+                      variant="light"
+                      leftSection={<IconPlus size={12} />}
+                      onClick={handleNewChatSession}
+                    >
+                      New
+                    </Button>
+                    <Group gap={6}>
+                      <Text size="xs" c="dimmed">Archived</Text>
+                      <Switch
+                        size="sm"
+                        checked={chatShowArchived}
+                        onChange={(e) => setChatShowArchived(e.currentTarget.checked)}
+                      />
+                    </Group>
+                  </Group>
+                </Group>
+                <ScrollArea h={140}>
+                  <Stack gap="xs">
+                    {chatSessionsLoading && (
+                      <Text size="xs" c="dimmed">Loading sessions…</Text>
+                    )}
+                    {!chatSessionsLoading && chatSessions.length === 0 && (
+                      <Text size="xs" c="dimmed">No sessions yet</Text>
+                    )}
+                    {chatSessions.map((session) => {
+                      const label =
+                        session.title
+                        || session.last_message?.slice(0, 48)
+                        || (session.updated_at
+                          ? `Session ${new Date(session.updated_at).toLocaleDateString()}`
+                          : "Session");
+                      const isActive = session.id === chatConversationId;
+                      const isArchived = Boolean(session.archived_at);
+                      return (
+                        <Paper
+                          key={session.id}
+                          withBorder
+                          p="xs"
+                          radius="md"
+                          onClick={() => handleSelectChatSession(session.id)}
+                          style={{
+                            cursor: "pointer",
+                            borderColor: isActive ? "var(--mantine-color-blue-3)" : "var(--mantine-color-default-border)",
+                            background: isActive ? "var(--mantine-color-blue-light)" : undefined,
+                          }}
+                        >
+                          <Group justify="space-between" align="center" wrap="nowrap">
+                            <Stack gap={2} style={{ minWidth: 0 }}>
+                              <Text size="xs" fw={600} lineClamp={1}>
+                                {label}
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                {session.updated_at ? new Date(session.updated_at).toLocaleString() : "No activity yet"}
+                              </Text>
+                            </Stack>
+                            <Group gap="xs">
+                              {isActive && <Badge size="xs">Active</Badge>}
+                              {isArchived && <Badge size="xs" color="gray">Archived</Badge>}
+                              <ActionIcon
+                                size="xs"
+                                variant="subtle"
+                                color="blue"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRenameChatSession(session.id, session.title);
+                                }}
+                              >
+                                <IconEdit size={12} />
+                              </ActionIcon>
+                              {isArchived ? (
+                                <ActionIcon
+                                  size="xs"
+                                  variant="subtle"
+                                  color="green"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRestoreChatSession(session.id);
+                                  }}
+                                >
+                                  <IconRefresh size={12} />
+                                </ActionIcon>
+                              ) : (
+                                <ActionIcon
+                                  size="xs"
+                                  variant="subtle"
+                                  color="yellow"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleArchiveChatSession(session.id);
+                                  }}
+                                >
+                                  <IconArchive size={12} />
+                                </ActionIcon>
+                              )}
+                              <ActionIcon
+                                size="xs"
+                                variant="subtle"
+                                color="red"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteChatSession(session.id);
+                                }}
+                              >
+                                <IconTrash size={12} />
+                              </ActionIcon>
+                            </Group>
+                          </Group>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                </ScrollArea>
+                {chatSessionsError && (
+                  <Text size="xs" c="red" mt="xs">
+                    {chatSessionsError}
+                  </Text>
+                )}
+              </Box>
 
               <ScrollArea h={300} mb="md">
                 <Stack gap="sm">
+                  {chatHistoryStatus === "error" && chatHistoryError && (
+                    <Alert color="red" title="History error">
+                      {chatHistoryError}
+                    </Alert>
+                  )}
                   {chatHistory.length === 0 && (
                     <Box ta="center" py="xl">
                       <Text c="dimmed">
-                        Start a conversation with Salimata!
+                        Start a conversation with Janitor.
                       </Text>
                       <Text size="xs" c="dimmed" mt="sm">
                         Try: &quot;run audit&quot;, &quot;cleanup&quot;, &quot;show edit history&quot;
@@ -1623,7 +1971,7 @@ export default function JanitorPage() {
                     <Group gap="xs">
                       <Loader size="xs" />
                       <Text size="sm" c="dimmed">
-                        Salimata is typing...
+                        Janitor is typing...
                       </Text>
                     </Group>
                   )}
@@ -1633,7 +1981,7 @@ export default function JanitorPage() {
               <Group gap="sm">
                 <TextInput
                   style={{ flex: 1 }}
-                  placeholder="Ask Salimata anything..."
+                  placeholder="Ask Janitor anything..."
                   value={chatMessage}
                   onChange={(e) => setChatMessage(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && sendChatMessage()}

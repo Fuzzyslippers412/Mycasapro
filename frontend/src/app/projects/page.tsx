@@ -91,6 +91,7 @@ export default function ProjectsPage() {
     const totalBudget = projects.reduce((sum, p) => sum + (p.budget || 0), 0);
     return { total, inProgress, completed, totalBudget };
   }, [projects]);
+  const statsUnavailable = Boolean(error);
 
   const getProgress = (project: Project) => {
     if (project.status === "completed") return 100;
@@ -111,24 +112,48 @@ export default function ProjectsPage() {
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} className="projects-stats">
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Total projects</Text>
-            <Text size="xl" fw={700} mt={4}>{summary.total}</Text>
+            {loading ? (
+              <Skeleton height={22} width="40%" mt={6} />
+            ) : statsUnavailable ? (
+              <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
+            ) : (
+              <Text size="xl" fw={700} mt={4}>{summary.total}</Text>
+            )}
             <Text size="xs" c="dimmed">All statuses</Text>
           </Card>
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>In progress</Text>
-            <Text size="xl" fw={700} mt={4}>{summary.inProgress}</Text>
+            {loading ? (
+              <Skeleton height={22} width="40%" mt={6} />
+            ) : statsUnavailable ? (
+              <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
+            ) : (
+              <Text size="xl" fw={700} mt={4}>{summary.inProgress}</Text>
+            )}
             <Text size="xs" c="dimmed">Active workstreams</Text>
           </Card>
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Completed</Text>
-            <Text size="xl" fw={700} mt={4}>{summary.completed}</Text>
+            {loading ? (
+              <Skeleton height={22} width="40%" mt={6} />
+            ) : statsUnavailable ? (
+              <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
+            ) : (
+              <Text size="xl" fw={700} mt={4}>{summary.completed}</Text>
+            )}
             <Text size="xs" c="dimmed">Finished work</Text>
           </Card>
           <Card withBorder radius="lg">
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Total budget</Text>
-            <Text size="xl" fw={700} mt={4}>
-              {summary.totalBudget > 0 ? `$${summary.totalBudget.toLocaleString()}` : "—"}
-            </Text>
+            {loading ? (
+              <Skeleton height={22} width="60%" mt={6} />
+            ) : statsUnavailable ? (
+              <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
+            ) : (
+              <Text size="xl" fw={700} mt={4}>
+                {summary.totalBudget > 0 ? `$${summary.totalBudget.toLocaleString()}` : "—"}
+              </Text>
+            )}
             <Text size="xs" c="dimmed">Across all projects</Text>
           </Card>
         </SimpleGrid>

@@ -2,14 +2,14 @@
 import { Shell } from "@/components/layout/Shell";
 import { Page } from "@/components/layout/Page";
 import { StatCard } from "@/components/widgets/WidgetCard";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import {
   Card, Text, Stack, Box, Button, Group, Badge,
   Modal, TextInput, Textarea, Select, Paper, ActionIcon,
   Loader, Tabs, SimpleGrid, ThemeIcon, Tooltip,
   SegmentedControl, ScrollArea, rem, Alert,
 } from "@mantine/core";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, IndicatorDiagnostic } from "@/lib/api";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
@@ -19,6 +19,7 @@ import {
   IconCalendarEvent, IconFilter, IconRefresh,
 } from "@tabler/icons-react";
 import { tokens } from "@/theme/tokens";
+import { useIndicatorDiagnostics } from "@/lib/hooks";
 
 interface Task {
   id: number;
@@ -500,6 +501,29 @@ export default function MaintenancePage() {
     category: "general",
     due_date: null as Date | null,
   });
+  const indicatorDiagnostics = useIndicatorDiagnostics(60000);
+  const indicatorIndex = useMemo(() => {
+    const map = new Map<string, IndicatorDiagnostic>();
+    indicatorDiagnostics.data?.results?.forEach((item) => {
+      map.set(item.id, item);
+    });
+    return map;
+  }, [indicatorDiagnostics.data]);
+  const indicatorLookup = (id: string) => indicatorIndex.get(id);
+  const indicatorTooltip = (meta?: IndicatorDiagnostic) =>
+    meta
+      ? `${meta.label} • ${meta.status.toUpperCase()}${meta.last_updated ? ` • Updated ${new Date(meta.last_updated).toLocaleString()}` : ""}${meta.source ? ` • Source: ${meta.source}` : ""}`
+      : "";
+  const wrapIndicator = (node: ReactNode, meta?: IndicatorDiagnostic) =>
+    meta ? (
+      <Tooltip label={indicatorTooltip(meta)} withArrow>
+        <Box>{node}</Box>
+      </Tooltip>
+    ) : (
+      <>{node}</>
+    );
+  const statsUnavailable = Boolean(tasksError);
+  const statsLoading = loading && !statsUnavailable;
 
   const fetchTasks = async () => {
     setTasksError(null);
@@ -613,11 +637,17 @@ export default function MaintenancePage() {
     openDetail();
   };
 
+  const subtitle = statsUnavailable
+    ? "Tasks unavailable"
+    : loading
+      ? "Loading tasks..."
+      : `${pendingTasks.length} pending tasks${overdueTasks.length > 0 ? ` - ${overdueTasks.length} overdue` : ""}`;
+
   return (
     <Shell>
       <Page
         title="Maintenance"
-        subtitle={`${pendingTasks.length} pending tasks${overdueTasks.length > 0 ? ` - ${overdueTasks.length} overdue` : ""}`}
+        subtitle={subtitle}
         actions={
           <Group gap="sm">
             <Button leftSection={<IconPlus size={16} />} onClick={open}>
@@ -637,30 +667,46 @@ export default function MaintenancePage() {
           )}
           {/* Stats */}
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md" className="maintenance-stats">
-            <StatCard
+            {wrapIndicator(
+              <StatCard
               title="Pending Tasks"
-              value={pendingTasks.length}
+              value={statsUnavailable ? "N/A" : pendingTasks.length}
               icon={<IconTool size={22} />}
               color="primary"
-            />
-            <StatCard
+              loading={statsLoading}
+              />,
+              indicatorLookup("maintenance.tasks.list")
+            )}
+            {wrapIndicator(
+              <StatCard
               title="Overdue"
-              value={overdueTasks.length}
+              value={statsUnavailable ? "N/A" : overdueTasks.length}
               icon={<IconAlertTriangle size={22} />}
-              color={overdueTasks.length > 0 ? "error" : "neutral"}
-            />
-            <StatCard
+              color={statsUnavailable ? "neutral" : (overdueTasks.length > 0 ? "error" : "neutral")}
+              loading={statsLoading}
+              />,
+              indicatorLookup("maintenance.tasks.list")
+            )}
+            {wrapIndicator(
+              <StatCard
               title="Due This Week"
-              value={pendingTasks.filter(isDueSoon).length}
+              value={statsUnavailable ? "N/A" : pendingTasks.filter(isDueSoon).length}
               icon={<IconClock size={22} />}
               color="warning"
-            />
-            <StatCard
+              loading={statsLoading}
+              />,
+              indicatorLookup("maintenance.tasks.list")
+            )}
+            {wrapIndicator(
+              <StatCard
               title="Completed"
-              value={completedTasks.length}
+              value={statsUnavailable ? "N/A" : completedTasks.length}
               icon={<IconCheck size={22} />}
               color="success"
-            />
+              loading={statsLoading}
+              />,
+              indicatorLookup("maintenance.tasks.completed")
+            )}
           </SimpleGrid>
 
           {/* View controls */}

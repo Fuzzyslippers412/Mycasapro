@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { Shell } from "@/components/layout/Shell";
 import { Page } from "@/components/layout/Page";
 import { LiveSystemDashboard } from "@/components/LiveSystemDashboard";
@@ -8,7 +8,7 @@ import { MemoryGraph } from "@/components/MemoryGraph";
 import { SchedulerManager } from "@/components/SchedulerManager";
 import { AgentManager } from "@/components/AgentManager";
 import { AgentTimeline } from "@/components/AgentTimeline";
-import { apiFetch, getJanitorWizardHistory, JanitorWizardRun } from "@/lib/api";
+import { apiFetch, getJanitorWizardHistory, JanitorWizardRun, IndicatorDiagnostic } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import {
   Text,
@@ -49,6 +49,7 @@ import {
   IconCheck,
   IconSparkles
 } from "@tabler/icons-react";
+import { useIndicatorDiagnostics } from "@/lib/hooks";
 
 // Define TypeScript interfaces
 interface Holding {
@@ -100,6 +101,27 @@ export default function SystemPage() {
   const [editTicker, setEditTicker] = useState("");
   const [editShares, setEditShares] = useState<number | "">("");
   const [editAssetType, setEditAssetType] = useState("");
+  const indicatorDiagnostics = useIndicatorDiagnostics(60000);
+  const indicatorIndex = useMemo(() => {
+    const map = new Map<string, IndicatorDiagnostic>();
+    indicatorDiagnostics.data?.results?.forEach((item) => {
+      map.set(item.id, item);
+    });
+    return map;
+  }, [indicatorDiagnostics.data]);
+  const indicatorLookup = (id: string) => indicatorIndex.get(id);
+  const indicatorTooltip = (meta?: IndicatorDiagnostic) =>
+    meta
+      ? `${meta.label} • ${meta.status.toUpperCase()}${meta.last_updated ? ` • Updated ${new Date(meta.last_updated).toLocaleString()}` : ""}${meta.source ? ` • Source: ${meta.source}` : ""}`
+      : "";
+  const wrapIndicator = (node: ReactNode, meta?: IndicatorDiagnostic) =>
+    meta ? (
+      <Tooltip label={indicatorTooltip(meta)} withArrow>
+        <Box>{node}</Box>
+      </Tooltip>
+    ) : (
+      <>{node}</>
+    );
 
   const fetchPortfolio = async () => {
     setLoading(true);
@@ -148,8 +170,9 @@ export default function SystemPage() {
   }, []);
 
   // Calculate total value
-  const totalValue = portfolio?.holdings.reduce((sum, holding) => sum + holding.value, 0) || 0;
-  const dayChangeValue =
+  const portfolioUnavailable = Boolean(error);
+  const totalValueNumeric = portfolio?.holdings.reduce((sum, holding) => sum + holding.value, 0) || 0;
+  const dayChangeNumeric =
     typeof portfolio?.day_change === "number"
       ? portfolio.day_change
       : portfolio?.holdings.reduce((sum, holding) => {
@@ -515,44 +538,79 @@ export default function SystemPage() {
               )}
               {/* Summary Cards */}
               <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} className="system-portfolio-grid">
-                <Paper withBorder p="md" radius="md">
-                  <Text size="sm" c="dimmed">Total Portfolio Value</Text>
-                  <div style={{ marginTop: '4px' }}>
-                    <Text component="div" size="xl" fw={700}>
-                      {loading ? <Skeleton height={24} width="60%" /> : formatCurrency(totalValue)}
-                    </Text>
-                  </div>
-                </Paper>
+                {wrapIndicator(
+                  <Paper withBorder p="md" radius="md">
+                    <Text size="sm" c="dimmed">Total Portfolio Value</Text>
+                    <div style={{ marginTop: '4px' }}>
+                      {loading ? (
+                        <Skeleton height={24} width="60%" />
+                      ) : portfolioUnavailable ? (
+                        <Text size="sm" c="dimmed">Unavailable</Text>
+                      ) : portfolio ? (
+                        <Text component="div" size="xl" fw={700}>
+                          {formatCurrency(totalValueNumeric)}
+                        </Text>
+                      ) : (
+                        <Text size="sm" c="dimmed">—</Text>
+                      )}
+                    </div>
+                  </Paper>,
+                  indicatorLookup("system.portfolio.total_value")
+                )}
                 <Paper withBorder p="md" radius="md">
                   <Text size="sm" c="dimmed">Holdings Count</Text>
                   <div style={{ marginTop: '4px' }}>
-                    <Text component="div" size="xl" fw={700}>
-                      {loading ? <Skeleton height={24} width="60%" /> : portfolio?.holdings.length || 0}
-                    </Text>
+                    {loading ? (
+                      <Skeleton height={24} width="60%" />
+                    ) : portfolioUnavailable ? (
+                      <Text size="sm" c="dimmed">Unavailable</Text>
+                    ) : portfolio ? (
+                      <Text component="div" size="xl" fw={700}>
+                        {portfolio?.holdings.length || 0}
+                      </Text>
+                    ) : (
+                      <Text size="sm" c="dimmed">—</Text>
+                    )}
                   </div>
                 </Paper>
-                <Paper withBorder p="md" radius="md">
-                  <Text size="sm" c="dimmed">Cash Balance</Text>
-                  <div style={{ marginTop: '4px' }}>
-                    <Text component="div" size="xl" fw={700}>
-                      {loading ? <Skeleton height={24} width="60%" /> : formatCurrency(portfolio?.cash || 0)}
-                    </Text>
-                  </div>
-                </Paper>
-                <Paper withBorder p="md" radius="md">
-                  <Text size="sm" c="dimmed">Today's Change</Text>
-                  <div style={{ marginTop: '4px' }}>
-                    <Text component="div" size="xl" fw={700} c={dayChangeValue >= 0 ? "green" : "red"}>
+                {wrapIndicator(
+                  <Paper withBorder p="md" radius="md">
+                    <Text size="sm" c="dimmed">Cash Balance</Text>
+                    <div style={{ marginTop: '4px' }}>
                       {loading ? (
                         <Skeleton height={24} width="60%" />
+                      ) : portfolioUnavailable ? (
+                        <Text size="sm" c="dimmed">Unavailable</Text>
                       ) : portfolio ? (
-                        `${dayChangeValue >= 0 ? "+" : ""}${formatCurrency(dayChangeValue)}`
+                        <Text component="div" size="xl" fw={700}>
+                          {formatCurrency(portfolio?.cash || 0)}
+                        </Text>
                       ) : (
-                        "—"
+                        <Text size="sm" c="dimmed">—</Text>
                       )}
-                    </Text>
-                  </div>
-                </Paper>
+                    </div>
+                  </Paper>,
+                  indicatorLookup("system.portfolio.cash")
+                )}
+                {wrapIndicator(
+                  <Paper withBorder p="md" radius="md">
+                    <Text size="sm" c="dimmed">Today's Change</Text>
+                    <div style={{ marginTop: '4px' }}>
+                      {loading ? (
+                        <Skeleton height={24} width="60%" />
+                      ) : portfolioUnavailable ? (
+                        <Text size="sm" c="dimmed">Unavailable</Text>
+                      ) : portfolio ? (
+                        <Text component="div" size="xl" fw={700} c={dayChangeNumeric >= 0 ? "green" : "red"}>
+                          {`${dayChangeNumeric >= 0 ? "+" : ""}${formatCurrency(dayChangeNumeric)}`}
+                        </Text>
+                      ) : (
+                        <Text size="sm" c="dimmed">—</Text>
+                      )}
+                    </div>
+                  </Paper>,
+                  indicatorLookup("system.portfolio.day_change")
+                )}
               </SimpleGrid>
 
               {/* Cash Management */}
@@ -617,11 +675,15 @@ export default function SystemPage() {
                             <Table.Td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <Progress 
-                                  value={(holding.value / totalValue) * 100} 
+                                  value={totalValueNumeric > 0 ? (holding.value / totalValueNumeric) * 100 : 0} 
                                   size="sm" 
                                   style={{ flex: 1 }}
                                 />
-                                <Text size="sm">{`${((holding.value / totalValue) * 100).toFixed(1)}%`}</Text>
+                                <Text size="sm">
+                                  {totalValueNumeric > 0
+                                    ? `${((holding.value / totalValueNumeric) * 100).toFixed(1)}%`
+                                    : "—"}
+                                </Text>
                               </div>
                             </Table.Td>
                             <Table.Td>

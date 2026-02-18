@@ -994,6 +994,7 @@ class ChatConversation(Base):
     title = Column(String(200))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    archived_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="chat_conversations")
     messages = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan")

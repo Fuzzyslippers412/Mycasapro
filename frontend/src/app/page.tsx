@@ -293,7 +293,7 @@ function KpiCard({
       style={{ cursor: onClick ? "pointer" : "default", minHeight: 110 }}
     >
       <Group justify="space-between" align="flex-start">
-        <Stack gap={4}>
+        <Stack gap={6}>
           <Text size="sm" c="dimmed">
             {title}
           </Text>
@@ -304,7 +304,7 @@ function KpiCard({
               {value}
             </Text>
           )}
-          <Text size="xs" c="dimmed">
+          <Text size="xs" c="dimmed" className="kpi-subtitle">
             {subtitle}
           </Text>
         </Stack>
@@ -359,7 +359,7 @@ function ActivityFeed({
   };
 
   return (
-    <Card radius="lg" withBorder padding="md" className="activity-card" style={{ minHeight: 360 }}>
+    <Card radius="lg" withBorder padding="md" className="activity-card dashboard-card" style={{ minHeight: 360 }}>
       <Group justify="space-between" mb="md">
         <Group gap="xs">
           <ThemeIcon variant="light" color="primary" size="sm" radius="md">
@@ -390,12 +390,13 @@ function ActivityFeed({
           </Stack>
         </Center>
       ) : (
-        <ScrollArea h={320}>
+        <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
           <Stack gap={0}>
             {activities.map((activity, index) => (
               <Box
                 key={activity.id}
                 py="sm"
+                className="activity-item"
                 style={{
                   borderBottom:
                     index < activities.length - 1 ? "1px solid var(--border-1)" : undefined,
@@ -419,7 +420,7 @@ function ActivityFeed({
                   </Box>
                   <Stack gap={2} style={{ flex: 1 }}>
                     <Group gap="xs" justify="space-between" wrap="wrap">
-                      <Text size="sm" fw={600}>
+                      <Text size="sm" fw={600} className="activity-item-title">
                         {activity.title}
                       </Text>
                       <Badge size="xs" variant="light">
@@ -427,13 +428,13 @@ function ActivityFeed({
                       </Badge>
                     </Group>
                     {activity.description && (
-                      <Text size="xs" c="dimmed">
+                      <Text size="xs" c="dimmed" className="activity-item-desc">
                         {activity.description}
                       </Text>
                     )}
                     <Group gap="xs">
                       <IconClock size={12} style={{ opacity: 0.5 }} />
-                      <Text size="xs" c="dimmed">
+                      <Text size="xs" c="dimmed" className="activity-item-meta">
                         {activity.time}
                       </Text>
                       {activity.agent && (
@@ -472,7 +473,7 @@ function AgentCard({
   const displayStatus = agent.status === "not_loaded" ? "idle" : agent.status;
 
   return (
-    <Card withBorder p="sm" radius="md" className="agent-card" style={{ cursor: "pointer" }} onClick={onClick}>
+    <Card withBorder p="sm" radius="md" className="agent-card dashboard-card" style={{ cursor: "pointer" }} onClick={onClick}>
       <Group justify="space-between" align="center">
         <Group gap="sm">
           <Avatar
@@ -483,10 +484,10 @@ function AgentCard({
             <IconRobot size={16} />
           </Avatar>
           <Stack gap={2}>
-            <Text size="sm" fw={600}>
+            <Text size="sm" fw={600} className="agent-card-title">
               {agent.name}
             </Text>
-            <Text size="xs" c="dimmed" lineClamp={2}>
+            <Text size="xs" c="dimmed" lineClamp={2} className="agent-card-desc">
               {agent.description}
             </Text>
             {agent.skills && agent.skills.length > 0 && (
@@ -561,7 +562,7 @@ function SystemHealthCard({
   const hasMetrics = availableMetrics.length > 0;
 
   return (
-    <Card radius="lg" withBorder padding="md" className="system-health-card" style={{ minHeight: 240 }}>
+    <Card radius="lg" withBorder padding="md" className="system-health-card dashboard-card" style={{ minHeight: 360 }}>
       <Group justify="space-between" mb="md">
         <Group gap="xs">
           <ThemeIcon variant="light" color="primary" size="sm" radius="md">
@@ -825,7 +826,7 @@ export default function HomePage() {
           )}
 
           <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" className="dashboard-grid">
-            <Stack gap="lg" className="dashboard-left">
+            <Stack gap="lg" className="dashboard-left" style={{ height: "100%" }}>
               <StatusHeader
                 userName={user?.display_name || user?.username || "there"}
                 pendingTasks={pendingTaskCount}
@@ -912,7 +913,7 @@ export default function HomePage() {
                 />
               </SimpleGrid>
 
-              <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
+              <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" className="dashboard-right-grid">
                 <Card radius="md" withBorder padding="md" style={{ minHeight: 360 }}>
                   <Group justify="space-between" mb="md">
                     <Group gap="xs">
@@ -955,11 +956,13 @@ export default function HomePage() {
                       </Text>
                     </Box>
                   ) : (
-                    <Stack gap="sm">
-                      {agentList.map((agent) => (
-                        <AgentCard key={agent.id} agent={agent} onClick={() => router.push("/settings")} />
-                      ))}
-                    </Stack>
+                    <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
+                      <Stack gap="sm">
+                        {agentList.map((agent) => (
+                          <AgentCard key={agent.id} agent={agent} onClick={() => router.push("/settings")} />
+                        ))}
+                      </Stack>
+                    </ScrollArea>
                   )}
                 </Card>
 

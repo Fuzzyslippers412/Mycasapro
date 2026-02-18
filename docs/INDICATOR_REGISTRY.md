@@ -29,6 +29,7 @@ Diagnostics endpoint: `GET /api/diagnostics/indicators`
 | system.monitor.cpu | CPU usage | System > Live dashboard | `GET /api/system/monitor` | lifecycle monitor | 300 | 0–100 | Show “Unavailable” |
 | system.monitor.memory | Memory usage | System > Live dashboard | `GET /api/system/monitor` | lifecycle monitor | 300 | 0–100 | Show “Unavailable” |
 | system.monitor.disk | Disk usage | System > Live dashboard | `GET /api/system/monitor` | lifecycle monitor | 300 | 0–100 | Show “Unavailable” |
+| system.monitor.uptime | Uptime | System > Live dashboard | `GET /api/system/monitor` | lifecycle monitor | 300 | numeric seconds | Show “Unavailable” |
 | system.janitor.last_run | Janitor wizard run | System > Janitor section | `GET /api/janitor/wizard/history?limit=1` | `janitor_wizard_runs` | 86400 | Latest run exists | Show “Unavailable” |
 
 ## Inbox

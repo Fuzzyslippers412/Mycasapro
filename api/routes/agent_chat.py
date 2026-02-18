@@ -91,6 +91,10 @@ class ConversationCreateRequest(BaseModel):
     title: Optional[str] = None
 
 
+class ConversationUpdateRequest(BaseModel):
+    title: Optional[str] = None
+
+
 # Agent prompts are now imported from core.agent_prompts
 # Uses Chain-of-Thought and ReAct patterns based on LLM research
 
@@ -229,6 +233,8 @@ def _get_cached_agent(agent_id: str):
                 agent = getattr(manager, attr)
 
     if agent is None:
+        if canonical_id == "manager":
+            return None
         AgentClass = _get_agent_class(canonical_id)
         if AgentClass:
             agent = AgentClass()
@@ -612,15 +618,20 @@ async def chat_with_agent(
 async def list_agent_conversations(
     agent_id: str,
     limit: int = 12,
+    include_archived: bool = False,
     user: dict = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
     """List recent chat sessions for an agent."""
     canonical_id = _canonical_agent_id(agent_id)
-    conversations = (
+    query = (
         db.query(ChatConversation)
         .filter(ChatConversation.user_id == user["id"], ChatConversation.agent_name == canonical_id)
-        .order_by(ChatConversation.updated_at.desc())
+    )
+    if not include_archived:
+        query = query.filter(ChatConversation.archived_at.is_(None))
+    conversations = (
+        query.order_by(ChatConversation.updated_at.desc())
         .limit(limit)
         .all()
     )
@@ -643,11 +654,66 @@ async def list_agent_conversations(
                 "title": convo.title,
                 "created_at": convo.created_at.isoformat() if convo.created_at else None,
                 "updated_at": convo.updated_at.isoformat() if convo.updated_at else None,
+                "archived_at": convo.archived_at.isoformat() if convo.archived_at else None,
                 "message_count": message_count,
                 "last_message": last_message.content if last_message else None,
             }
         )
     return {"agent_id": agent_id, "conversations": items}
+
+
+@router.patch("/{agent_id}/conversations/{conversation_id}/archive")
+async def archive_agent_conversation(
+    agent_id: str,
+    conversation_id: str,
+    user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Archive a chat session for an agent."""
+    canonical_id = _canonical_agent_id(agent_id)
+    convo = (
+        db.query(ChatConversation)
+        .filter(
+            ChatConversation.id == conversation_id,
+            ChatConversation.user_id == user["id"],
+            ChatConversation.agent_name == canonical_id,
+        )
+        .first()
+    )
+    if not convo:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    convo.archived_at = datetime.utcnow()
+    db.add(convo)
+    db.commit()
+    db.refresh(convo)
+    return {"success": True, "conversation_id": convo.id, "archived_at": convo.archived_at.isoformat()}
+
+
+@router.patch("/{agent_id}/conversations/{conversation_id}/restore")
+async def restore_agent_conversation(
+    agent_id: str,
+    conversation_id: str,
+    user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Restore an archived chat session."""
+    canonical_id = _canonical_agent_id(agent_id)
+    convo = (
+        db.query(ChatConversation)
+        .filter(
+            ChatConversation.id == conversation_id,
+            ChatConversation.user_id == user["id"],
+            ChatConversation.agent_name == canonical_id,
+        )
+        .first()
+    )
+    if not convo:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    convo.archived_at = None
+    db.add(convo)
+    db.commit()
+    db.refresh(convo)
+    return {"success": True, "conversation_id": convo.id, "archived_at": None}
 
 
 @router.post("/{agent_id}/conversations")
@@ -672,6 +738,41 @@ async def create_agent_conversation(
         "conversation_id": conversation.id,
         "title": conversation.title,
         "created_at": conversation.created_at.isoformat() if conversation.created_at else None,
+    }
+
+
+@router.patch("/{agent_id}/conversations/{conversation_id}")
+async def update_agent_conversation(
+    agent_id: str,
+    conversation_id: str,
+    payload: ConversationUpdateRequest,
+    user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Update metadata for a chat session (title)."""
+    canonical_id = _canonical_agent_id(agent_id)
+    convo = (
+        db.query(ChatConversation)
+        .filter(
+            ChatConversation.id == conversation_id,
+            ChatConversation.user_id == user["id"],
+            ChatConversation.agent_name == canonical_id,
+        )
+        .first()
+    )
+    if not convo:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if payload.title is not None:
+        title = payload.title.strip()
+        convo.title = title[:200] if title else None
+    db.add(convo)
+    db.commit()
+    db.refresh(convo)
+    return {
+        "success": True,
+        "conversation_id": convo.id,
+        "title": convo.title,
+        "updated_at": convo.updated_at.isoformat() if convo.updated_at else None,
     }
 
 

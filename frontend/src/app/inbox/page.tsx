@@ -17,10 +17,10 @@ import {
   IconExternalLink, IconChevronDown, IconChevronUp,
   IconCircle, IconSend, IconX, IconMailOpened,
 } from "@tabler/icons-react";
-import { useState, useEffect, useMemo } from "react";
-import { apiFetch, getApiBaseUrl, isNetworkError } from "@/lib/api";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
+import { apiFetch, getApiBaseUrl, isNetworkError, IndicatorDiagnostic } from "@/lib/api";
 import { notifications } from "@mantine/notifications";
-import { useInboxMessages, useUnreadCount } from "@/lib/hooks";
+import { useInboxMessages, useUnreadCount, useIndicatorDiagnostics } from "@/lib/hooks";
 
 interface Message {
   id: number;
@@ -537,6 +537,28 @@ export default function InboxPage() {
   const sourceFilter = filter === "all" ? undefined : filter === "whatsapp" ? "whatsapp" : "gmail";
   const { data: messages, loading, error, refetch } = useInboxMessages({ source: sourceFilter, limit: 50 });
   const { data: unreadCount, refetch: refetchUnread } = useUnreadCount();
+  const inboxError = Boolean(error);
+  const indicatorDiagnostics = useIndicatorDiagnostics(60000);
+  const indicatorIndex = useMemo(() => {
+    const map = new Map<string, IndicatorDiagnostic>();
+    indicatorDiagnostics.data?.results?.forEach((item) => {
+      map.set(item.id, item);
+    });
+    return map;
+  }, [indicatorDiagnostics.data]);
+  const indicatorLookup = (id: string) => indicatorIndex.get(id);
+  const indicatorTooltip = (meta?: IndicatorDiagnostic) =>
+    meta
+      ? `${meta.label} • ${meta.status.toUpperCase()}${meta.last_updated ? ` • Updated ${new Date(meta.last_updated).toLocaleString()}` : ""}${meta.source ? ` • Source: ${meta.source}` : ""}`
+      : "";
+  const wrapIndicator = (node: ReactNode, meta?: IndicatorDiagnostic) =>
+    meta ? (
+      <Tooltip label={indicatorTooltip(meta)} withArrow>
+        <Box>{node}</Box>
+      </Tooltip>
+    ) : (
+      <>{node}</>
+    );
 
   // Check backend connection AND sync status
   useEffect(() => {
@@ -578,7 +600,7 @@ export default function InboxPage() {
   }, []);
 
   // Filter messages - handle both API format and local format
-  const filteredMessages = messages?.filter((msg) => {
+  const filteredMessages = inboxError ? [] : messages?.filter((msg) => {
     // Handle both API response (content/read) and local Message format (body/is_read)
     const apiMsg = msg as { read?: boolean; content?: string };
     const localMsg = msg as { is_read?: boolean; body?: string };
@@ -716,10 +738,10 @@ export default function InboxPage() {
     }
   };
 
-  const totalMessages = filteredMessages?.length || 0;
-  const unreadTotal = unreadCount?.total || 0;
-  const whatsappUnread = unreadCount?.whatsapp || 0;
-  const gmailUnread = unreadCount?.gmail || 0;
+  const totalMessages = inboxError ? null : filteredMessages?.length || 0;
+  const unreadTotal = inboxError ? null : unreadCount?.total || 0;
+  const whatsappUnread = inboxError ? null : unreadCount?.whatsapp || 0;
+  const gmailUnread = inboxError ? null : unreadCount?.gmail || 0;
   const replyAllowed = useMemo(() => {
     if (!selectedMessage) return false;
     if (!mailPolicy.allowAgentReplies) return false;
@@ -805,10 +827,16 @@ export default function InboxPage() {
     <Shell>
       <Page
         title="Inbox"
-        subtitle={`${totalMessages} messages${unreadTotal > 0 ? ` - ${unreadTotal} unread` : ""}`}
+        subtitle={
+          inboxError
+            ? "Messages unavailable"
+            : loading
+              ? "Loading messages..."
+              : `${totalMessages} messages${unreadTotal && unreadTotal > 0 ? ` - ${unreadTotal} unread` : ""}`
+        }
         actions={
           <Group gap="xs">
-            {unreadTotal > 0 && (
+            {typeof unreadTotal === "number" && unreadTotal > 0 && (
               <Button
                 leftSection={<IconCheck size={16} />}
                 variant="light"
@@ -867,6 +895,11 @@ export default function InboxPage() {
               Start the API to see real messages
             </Alert>
           )}
+          {inboxError && (
+            <Alert color="red" title="Messages unavailable" variant="light">
+              {error}
+            </Alert>
+          )}
           {syncError && (
             <Alert color="red" title="Sync failed" variant="light">
               {syncError}
@@ -879,28 +912,40 @@ export default function InboxPage() {
           )}
 
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md" className="inbox-stats">
-            <Card withBorder radius="lg">
+            {wrapIndicator(
+              <Card withBorder radius="lg">
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Messages in view</Text>
               {loading ? (
                 <Skeleton height={22} width="40%" mt={6} />
+              ) : inboxError ? (
+                <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
               ) : (
                 <Text size="xl" fw={700} mt={4}>{totalMessages}</Text>
               )}
               <Text size="xs" c="dimmed">Matches filters</Text>
-            </Card>
-            <Card withBorder radius="lg">
+            </Card>,
+              indicatorLookup("inbox.messages.list")
+            )}
+            {wrapIndicator(
+              <Card withBorder radius="lg">
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Unread total</Text>
               {loading ? (
                 <Skeleton height={22} width="40%" mt={6} />
+              ) : inboxError ? (
+                <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
               ) : (
                 <Text size="xl" fw={700} mt={4}>{unreadTotal}</Text>
               )}
               <Text size="xs" c="dimmed">Across all sources</Text>
-            </Card>
+            </Card>,
+              indicatorLookup("inbox.unread.count")
+            )}
             <Card withBorder radius="lg">
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>WhatsApp unread</Text>
               {loading ? (
                 <Skeleton height={22} width="40%" mt={6} />
+              ) : inboxError ? (
+                <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
               ) : (
                 <Text size="xl" fw={700} mt={4}>{whatsappUnread}</Text>
               )}
@@ -910,6 +955,8 @@ export default function InboxPage() {
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Gmail unread</Text>
               {loading ? (
                 <Skeleton height={22} width="40%" mt={6} />
+              ) : inboxError ? (
+                <Text size="sm" c="dimmed" mt={6}>Unavailable</Text>
               ) : (
                 <Text size="xl" fw={700} mt={4}>{gmailUnread}</Text>
               )}
@@ -922,13 +969,13 @@ export default function InboxPage() {
             <FilterPill
               label="All"
               active={filter === "all" && !unreadOnly}
-              count={messages?.length}
+              count={inboxError ? undefined : messages?.length}
               onClick={() => { setFilter("all"); setUnreadOnly(false); }}
             />
             <FilterPill
               label="Unread"
               active={unreadOnly}
-              count={unreadTotal}
+              count={typeof unreadTotal === "number" ? unreadTotal : undefined}
               color="blue"
               icon={<IconCircle size={8} fill="currentColor" />}
               onClick={() => setUnreadOnly(!unreadOnly)}
@@ -937,7 +984,7 @@ export default function InboxPage() {
             <FilterPill
               label="WhatsApp"
               active={filter === "whatsapp"}
-              count={unreadCount?.whatsapp}
+              count={inboxError ? undefined : unreadCount?.whatsapp}
               color="green"
               icon={<IconBrandWhatsapp size={14} />}
               onClick={() => setFilter(filter === "whatsapp" ? "all" : "whatsapp")}
@@ -945,7 +992,7 @@ export default function InboxPage() {
             <FilterPill
               label="Gmail"
               active={filter === "email"}
-              count={unreadCount?.gmail}
+              count={inboxError ? undefined : unreadCount?.gmail}
               color="red"
               icon={<IconMail size={14} />}
               onClick={() => setFilter(filter === "email" ? "all" : "email")}
@@ -971,6 +1018,12 @@ export default function InboxPage() {
                     <Loader />
                     <Text c="dimmed" size="sm" mt="md">Loading messages...</Text>
                   </Box>
+                ) : inboxError ? (
+                  <EmptyState
+                    icon={IconAlertTriangle}
+                    title="Messages unavailable"
+                    description="Check your backend connection and retry."
+                  />
                 ) : filteredMessages && filteredMessages.length > 0 ? (
                   <Stack gap={0}>
                     {filteredMessages.map((msg, i) => (

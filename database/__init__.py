@@ -112,6 +112,12 @@ def ensure_schema():
             if "assigned_to" not in maintenance_columns:
                 conn.execute(text("ALTER TABLE maintenance_tasks ADD COLUMN assigned_to VARCHAR(64)"))
 
+    conversation_columns = _column_names("chat_conversations")
+    if conversation_columns:
+        with engine.begin() as conn:
+            if "archived_at" not in conversation_columns:
+                conn.execute(text("ALTER TABLE chat_conversations ADD COLUMN archived_at DATETIME"))
+
 
 def seed_user_management():
     """Seed default org, roles, permissions, and backfill user roles."""

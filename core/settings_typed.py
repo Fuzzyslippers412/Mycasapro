@@ -89,7 +89,7 @@ class SystemSettings(BaseModel):
     household_name: str = "My Home"
     locale: str = "en-US"
     llm_provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai-compatible"))
-    llm_base_url: str = Field(default_factory=lambda: os.getenv("LLM_BASE_URL", "https://api.venice.ai/api/v1"))
+    llm_base_url: str = Field(default_factory=lambda: os.getenv("LLM_BASE_URL", "https://portal.qwen.ai/v1"))
     llm_model: str = Field(default_factory=lambda: os.getenv("LLM_MODEL") or os.getenv("QWEN_MODEL", "qwen3-coder-plus"))
     llm_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("LLM_API_KEY") or os.getenv("VENICE_API_KEY") or os.getenv("QWEN_API_KEY"))
     llm_auth_type: str = Field(default_factory=lambda: os.getenv("LLM_AUTH_TYPE", "api_key"))

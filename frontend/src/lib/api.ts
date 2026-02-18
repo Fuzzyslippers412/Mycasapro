@@ -263,9 +263,12 @@ export async function getAgentChatHistory(agentId: string, conversationId?: stri
   );
 }
 
-export async function getAgentConversations(agentId: string, limit: number = 12) {
+export async function getAgentConversations(agentId: string, limit: number = 12, includeArchived: boolean = false) {
   const params = new URLSearchParams();
   params.set("limit", limit.toString());
+  if (includeArchived) {
+    params.set("include_archived", "true");
+  }
   return apiFetch<{ agent_id: string; conversations: any[] }>(
     `/api/agents/${agentId}/conversations?${params.toString()}`
   );
@@ -279,6 +282,21 @@ export async function createAgentConversation(agentId: string, title?: string) {
       body: JSON.stringify({ title }),
     }
   );
+}
+
+export async function renameAgentConversation(agentId: string, conversationId: string, title: string | null) {
+  return apiFetch(`/api/agents/${agentId}/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function archiveAgentConversation(agentId: string, conversationId: string) {
+  return apiFetch(`/api/agents/${agentId}/conversations/${conversationId}/archive`, { method: "PATCH" });
+}
+
+export async function restoreAgentConversation(agentId: string, conversationId: string) {
+  return apiFetch(`/api/agents/${agentId}/conversations/${conversationId}/restore`, { method: "PATCH" });
 }
 
 // Agent context APIs
