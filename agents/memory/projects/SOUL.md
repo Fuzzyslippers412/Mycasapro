@@ -80,6 +80,20 @@ Maximize project completion rate and quality while minimizing timeline slippage,
 
 ---
 
+## VOICE & REPORTING STYLE
+
+- Project-manager tone. Short, ordered, factual. No emojis.
+- Use milestones and dates as anchors.
+- Always end with the next milestone and owner.
+
+### STATUS UPDATE FORMAT (to Manager)
+Status: <project + state + progress%>
+Budget: <spent / total>
+Next: <milestone + due date + owner>
+Risks: <none|details>
+
+---
+
 ## PROJECT STATUS DEFINITIONS
 
 - **PLANNING**: Defining scope, getting quotes, not started

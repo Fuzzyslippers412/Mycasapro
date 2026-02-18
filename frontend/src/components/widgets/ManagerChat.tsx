@@ -44,6 +44,7 @@ import {
   IconHistory,
   IconArrowRight,
   IconPlus,
+  IconTrash,
 } from "@tabler/icons-react";
 import ReactMarkdown from "react-markdown";
 import { sendManagerChat, getAgentChatHistory, getAgentConversations, createAgentConversation } from "@/lib/api";
@@ -76,7 +77,6 @@ interface AgentCommand {
   command: string;
   description: string;
   agent: string;
-  emoji: string;
 }
 
 interface ConversationSummary {
@@ -91,26 +91,26 @@ interface ConversationSummary {
 // ============ AGENT COMMANDS ============
 const AGENT_COMMANDS: AgentCommand[] = [
   // Finance Agent
-  { command: "/bills", description: "View upcoming bills", agent: "Finance", emoji: "💰" },
-  { command: "/portfolio", description: "Check investments", agent: "Finance", emoji: "💰" },
-  { command: "/budget", description: "Budget overview", agent: "Finance", emoji: "💰" },
-  { command: "/spending", description: "Monthly spending", agent: "Finance", emoji: "💰" },
-  { command: "/alerts finance", description: "Financial alerts", agent: "Finance", emoji: "💰" },
+  { command: "/bills", description: "View upcoming bills", agent: "Finance" },
+  { command: "/portfolio", description: "Check investments", agent: "Finance" },
+  { command: "/budget", description: "Budget overview", agent: "Finance" },
+  { command: "/spending", description: "Monthly spending", agent: "Finance" },
+  { command: "/alerts finance", description: "Financial alerts", agent: "Finance" },
   
   // Maintenance Agent  
-  { command: "/tasks", description: "Maintenance tasks", agent: "Maintenance", emoji: "🔧" },
-  { command: "/schedule", description: "Upcoming maintenance", agent: "Maintenance", emoji: "🔧" },
-  { command: "/readings", description: "Home readings", agent: "Maintenance", emoji: "🔧" },
-  { command: "/overdue", description: "Overdue items", agent: "Maintenance", emoji: "🔧" },
+  { command: "/tasks", description: "Maintenance tasks", agent: "Maintenance" },
+  { command: "/schedule", description: "Upcoming maintenance", agent: "Maintenance" },
+  { command: "/readings", description: "Home readings", agent: "Maintenance" },
+  { command: "/overdue", description: "Overdue items", agent: "Maintenance" },
   
   // Contractors Agent
-  { command: "/contractors", description: "List contractors", agent: "Contractors", emoji: "👷" },
-  { command: "/reviews", description: "Contractor ratings", agent: "Contractors", emoji: "👷" },
+  { command: "/contractors", description: "List contractors", agent: "Contractors" },
+  { command: "/reviews", description: "Contractor ratings", agent: "Contractors" },
   
   // System
-  { command: "/status", description: "System status", agent: "System", emoji: "⚡" },
-  { command: "/agents", description: "Active agents", agent: "System", emoji: "🤖" },
-  { command: "/help", description: "All commands", agent: "System", emoji: "❓" },
+  { command: "/status", description: "System status", agent: "System" },
+  { command: "/agents", description: "Active agents", agent: "System" },
+  { command: "/help", description: "All commands", agent: "System" },
 ];
 
 // ============ CONSTANTS ============
@@ -246,6 +246,18 @@ export function ManagerChat() {
     }
   };
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail as { conversationId?: string | null } | undefined;
+      if (!detail) return;
+      if (!detail.conversationId || detail.conversationId === conversationId) {
+        loadConversation(conversationId);
+      }
+    };
+    window.addEventListener("mycasa-chat-sync", handler as EventListener);
+    return () => window.removeEventListener("mycasa-chat-sync", handler as EventListener);
+  }, [conversationId]);
+
   // Load session history from backend
   useEffect(() => {
     const convoKey = conversationKey(user?.id ?? null);
@@ -357,7 +369,7 @@ export function ManagerChat() {
     setInput("");
     setShowCommands(false);
     setIsLoading(true);
-    setRoutingStatus(isMaintenanceIntent(userMessage) ? "Routing → Maintenance" : "Routing...");
+    setRoutingStatus(isMaintenanceIntent(userMessage) ? "Routing to Maintenance" : "Routing...");
 
     try {
       const data = await sendManagerChat(userMessage, conversationId || undefined);
@@ -374,7 +386,7 @@ export function ManagerChat() {
           if (updated[lastIdx]?.isStreaming) {
             updated[lastIdx] = {
               ...updated[lastIdx],
-              text: `❌ ${message}`,
+              text: `Error: ${message}`,
               isStreaming: false,
             };
           }
@@ -383,16 +395,16 @@ export function ManagerChat() {
         return;
       }
 
-      if (data.routed_to) {
-        const labels: Record<string, string> = {
-          finance_agent: "💰 Finance",
-          maintenance_agent: "🔧 Maintenance", 
-          contractors_agent: "👷 Contractors",
-          clawdbot_agent: "🤖 Clawdbot",
-          clawdbot_cli: "⚡ CLI",
-        };
-        setRoutingStatus(labels[data.routed_to] || data.routed_to);
-      }
+        if (data.routed_to) {
+          const labels: Record<string, string> = {
+            finance_agent: "Finance",
+            maintenance_agent: "Maintenance", 
+            contractors_agent: "Contractors",
+            clawdbot_agent: "Clawdbot",
+            clawdbot_cli: "CLI",
+          };
+          setRoutingStatus(labels[data.routed_to] || data.routed_to);
+        }
 
       setMessages(prev => {
         const updated = [...prev];
@@ -423,7 +435,7 @@ export function ManagerChat() {
           {
             id: `status_${Date.now()}`,
             role: "system",
-            text: `✅ ${title}${due ? ` • Due ${due}` : ""}. Open Maintenance to review.`,
+            text: `Task created: ${title}${due ? ` • Due ${due}` : ""}. Open Maintenance to review.`,
             timestamp: new Date().toISOString(),
           },
         ]);
@@ -452,7 +464,7 @@ export function ManagerChat() {
         if (updated[lastIdx]?.isStreaming) {
           updated[lastIdx] = {
             ...updated[lastIdx],
-            text: `❌ ${message}`,
+            text: `Error: ${message}`,
             isStreaming: false,
           };
         }
@@ -624,6 +636,21 @@ export function ManagerChat() {
     await loadConversation(sessionId);
   };
 
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      await apiFetch(`/api/agents/manager/history?conversation_id=${sessionId}`, { method: "DELETE" });
+      await refreshSessions();
+      if (conversationId === sessionId) {
+        setConversationId(null);
+        setMessages([]);
+        await handleNewSession();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const formatTime = (ts: string) => {
     try {
       return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -782,7 +809,20 @@ export function ManagerChat() {
                         onClick={() => handleSelectSession(session.id)}
                         rightSection={session.id === conversationId ? <Badge size="xs">Active</Badge> : null}
                       >
-                        <Text size="xs" lineClamp={1}>{label}</Text>
+                        <Group justify="space-between" gap="xs" wrap="nowrap">
+                          <Text size="xs" lineClamp={1}>{label}</Text>
+                          <ActionIcon
+                            size="xs"
+                            variant="subtle"
+                            color="red"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSession(session.id);
+                            }}
+                          >
+                            <IconTrash size={12} />
+                          </ActionIcon>
+                        </Group>
                       </Menu.Item>
                     );
                   })}
@@ -1006,7 +1046,7 @@ export function ManagerChat() {
                                         fontSize: 14,
                                       }}
                                     >
-                                      {msg.agentEmoji || "✅"}
+                                      {label ? label.slice(0, 1) : "•"}
                                     </Box>
                                     <Box>
                                       <Text size="xs" fw={600}>{label} handoff</Text>
@@ -1028,13 +1068,13 @@ export function ManagerChat() {
                       {(msg.latencyMs || msg.inputTokens || msg.outputTokens) && (
                         <Group gap="xs" mt={4}>
                           {typeof msg.latencyMs === "number" && (
-                            <Badge size="xs" variant="light">⏱ {msg.latencyMs}ms</Badge>
+                            <Badge size="xs" variant="light">Latency {msg.latencyMs}ms</Badge>
                           )}
                           {typeof msg.inputTokens === "number" && (
-                            <Badge size="xs" variant="light">⇡ {msg.inputTokens} tok</Badge>
+                            <Badge size="xs" variant="light">Input {msg.inputTokens} tok</Badge>
                           )}
                           {typeof msg.outputTokens === "number" && (
-                            <Badge size="xs" variant="light">⇣ {msg.outputTokens} tok</Badge>
+                            <Badge size="xs" variant="light">Output {msg.outputTokens} tok</Badge>
                           )}
                         </Group>
                       )}
@@ -1082,7 +1122,6 @@ export function ManagerChat() {
                   onMouseEnter={(e) => e.currentTarget.style.background = "var(--surface-1)"}
                   onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                 >
-                  <Text size="sm">{cmd.emoji}</Text>
                   <Text size="sm" c="blue.6" ff="monospace">{cmd.command}</Text>
                   <Text size="xs" c="dimmed" style={{ flex: 1 }}>{cmd.description}</Text>
                   <Badge size="xs" variant="light" color="gray">{cmd.agent}</Badge>
@@ -1185,22 +1224,22 @@ export function ManagerChat() {
                   </ActionIcon>
                 </Menu.Target>
                 <Menu.Dropdown>
-                  <Menu.Label>💰 Finance</Menu.Label>
-                  <Menu.Item leftSection={<Text size="xs">📊</Text>} onClick={() => handleCommandSelect("/portfolio")}>Portfolio</Menu.Item>
-                  <Menu.Item leftSection={<Text size="xs">💳</Text>} onClick={() => handleCommandSelect("/bills")}>Bills</Menu.Item>
-                  <Menu.Item leftSection={<Text size="xs">📈</Text>} onClick={() => handleCommandSelect("/budget")}>Budget</Menu.Item>
+                  <Menu.Label>Finance</Menu.Label>
+                  <Menu.Item onClick={() => handleCommandSelect("/portfolio")}>Portfolio</Menu.Item>
+                  <Menu.Item onClick={() => handleCommandSelect("/bills")}>Bills</Menu.Item>
+                  <Menu.Item onClick={() => handleCommandSelect("/budget")}>Budget</Menu.Item>
                   <Menu.Divider />
-                  <Menu.Label>🔧 Maintenance</Menu.Label>
-                  <Menu.Item leftSection={<Text size="xs">📋</Text>} onClick={() => handleCommandSelect("/tasks")}>Tasks</Menu.Item>
-                  <Menu.Item leftSection={<Text size="xs">🗓️</Text>} onClick={() => handleCommandSelect("/schedule")}>Schedule</Menu.Item>
-                  <Menu.Item leftSection={<Text size="xs">📉</Text>} onClick={() => handleCommandSelect("/readings")}>Readings</Menu.Item>
+                  <Menu.Label>Maintenance</Menu.Label>
+                  <Menu.Item onClick={() => handleCommandSelect("/tasks")}>Tasks</Menu.Item>
+                  <Menu.Item onClick={() => handleCommandSelect("/schedule")}>Schedule</Menu.Item>
+                  <Menu.Item onClick={() => handleCommandSelect("/readings")}>Readings</Menu.Item>
                   <Menu.Divider />
-                  <Menu.Label>👷 Contractors</Menu.Label>
-                  <Menu.Item leftSection={<Text size="xs">📞</Text>} onClick={() => handleCommandSelect("/contractors")}>List All</Menu.Item>
+                  <Menu.Label>Contractors</Menu.Label>
+                  <Menu.Item onClick={() => handleCommandSelect("/contractors")}>List All</Menu.Item>
                   <Menu.Divider />
-                  <Menu.Label>⚡ System</Menu.Label>
-                  <Menu.Item leftSection={<Text size="xs">🔍</Text>} onClick={() => handleCommandSelect("/status")}>Status</Menu.Item>
-                  <Menu.Item leftSection={<Text size="xs">🤖</Text>} onClick={() => handleCommandSelect("/agents")}>Agents</Menu.Item>
+                  <Menu.Label>System</Menu.Label>
+                  <Menu.Item onClick={() => handleCommandSelect("/status")}>Status</Menu.Item>
+                  <Menu.Item onClick={() => handleCommandSelect("/agents")}>Agents</Menu.Item>
                 </Menu.Dropdown>
               </Menu>
 

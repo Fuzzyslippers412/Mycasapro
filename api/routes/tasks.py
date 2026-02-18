@@ -262,6 +262,26 @@ async def complete_task(
         "task_id": task_id,
         "completion_notes": body.completion_notes if body else None
     })
+
+    # Notify originating chat session if available
+    try:
+        from core.chat_store import add_message
+        from database.models import ChatConversation
+        from database import get_db
+
+        conversation_id = result.get("conversation_id")
+        if conversation_id:
+            with get_db() as db:
+                convo = (
+                    db.query(ChatConversation)
+                    .filter(ChatConversation.id == conversation_id, ChatConversation.user_id == user.get("id"))
+                    .first()
+                )
+                if convo:
+                    title = result.get("title") or f"Task #{task_id}"
+                    add_message(db, convo, "assistant", f"Task \"{title}\" marked complete.")
+    except Exception:
+        pass
     
     return result
 
@@ -290,5 +310,26 @@ async def delete_task(
         "user_id": user.get("id"),
         "task_id": task_id
     })
+
+    # Notify originating chat session if available
+    try:
+        from core.chat_store import add_message
+        from database.models import ChatConversation
+        from database import get_db
+
+        task_payload = result.get("task") or {}
+        conversation_id = task_payload.get("conversation_id")
+        if conversation_id:
+            with get_db() as db:
+                convo = (
+                    db.query(ChatConversation)
+                    .filter(ChatConversation.id == conversation_id, ChatConversation.user_id == user.get("id"))
+                    .first()
+                )
+                if convo:
+                    title = task_payload.get("title") or f"Task #{task_id}"
+                    add_message(db, convo, "assistant", f"Task \"{title}\" removed.")
+    except Exception:
+        pass
     
     return {"success": True, "message": "Task deleted successfully"}

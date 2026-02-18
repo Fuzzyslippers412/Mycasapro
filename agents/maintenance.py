@@ -530,9 +530,10 @@ class MaintenanceAgent(BaseAgent):
                 task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
                 if not task:
                     return {"error": "Task not found"}
+                payload = self._task_to_dict(task)
                 db.delete(task)
                 self.log_action("task_removed", f"Removed task: {task_id}", db=db)
-                return {"success": True, "id": task_id}
+                return {"success": True, "id": task_id, "task": payload}
         return self._with_db_retry(_remove)
     
     # ============ CONTRACTORS ============

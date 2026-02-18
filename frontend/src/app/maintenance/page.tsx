@@ -534,9 +534,15 @@ export default function MaintenancePage() {
 
   const handleCompleteTask = async (taskId: number) => {
     try {
+      const task = tasks.find((t) => t.id === taskId);
       await apiFetch(`/tasks/${taskId}/complete`, { method: "PATCH" });
       notifications.show({ title: "Task Completed", message: "Nice work!", color: "green" });
       fetchTasks();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("mycasa-chat-sync", {
+          detail: { conversationId: task?.conversation_id || null },
+        }));
+      }
     } catch (e) {
       notifications.show({ title: "Error", message: "Failed to complete task", color: "red" });
     }
@@ -544,9 +550,15 @@ export default function MaintenancePage() {
 
   const handleDeleteTask = async (taskId: number) => {
     try {
+      const task = tasks.find((t) => t.id === taskId);
       await apiFetch(`/tasks/${taskId}`, { method: "DELETE" });
       notifications.show({ title: "Task Deleted", message: "Task removed", color: "gray" });
       fetchTasks();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("mycasa-chat-sync", {
+          detail: { conversationId: task?.conversation_id || null },
+        }));
+      }
     } catch (e) {
       notifications.show({ title: "Error", message: "Failed to delete task", color: "red" });
     }

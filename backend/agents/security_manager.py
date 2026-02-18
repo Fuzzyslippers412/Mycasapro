@@ -44,21 +44,18 @@ class SecurityManagerAgent(BaseAgent):
         if "status" in msg_lower or "security" in msg_lower or "incidents" in msg_lower:
             metrics = self._get_metrics()
             logs = self.get_recent_logs(5)
-            
-            status_icon = "✅" if metrics["system_status"] == "secure" else "⚠️"
+
             lines = [
-                f"{status_icon} **Security Status:** {metrics['system_status'].upper()}",
-                f"  • Recent errors: {metrics['recent_errors']}",
-                f"  • Recent warnings: {metrics['recent_warnings']}",
+                f"Security status: {metrics['system_status'].upper()}",
+                f"Recent errors: {metrics['recent_errors']}",
+                f"Recent warnings: {metrics['recent_warnings']}",
             ]
-            
+
             if logs:
-                lines.append("\n**Recent Activity:**")
-                for l in logs[:3]:
-                    icon = "✅" if l.get("status") == "success" else "⚠️"
-                    lines.append(f"  {icon} {l.get('action', 'unknown')}")
-            
+                recent = "; ".join([l.get("action", "unknown") for l in logs[:3]])
+                lines.append(f"Recent activity: {recent}")
+
             self.log_action("security_check", "Reported security status")
-            return "\n".join(lines) + f"\n\n— Aïcha 🛡️"
+            return "\n".join(lines) + "\n\nSecurity-Manager"
         
         return await super().chat(message)

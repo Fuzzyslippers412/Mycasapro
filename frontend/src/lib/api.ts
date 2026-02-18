@@ -667,7 +667,7 @@ export interface QuickStatus {
   mode: string;
   timestamp: string;
   facts: {
-    agents: Record<string, { state: string; doing: string | null }>;
+    agents: Record<string, { state: string; doing: string | null; skills?: string[] }>;
     galidima_connected: boolean | null;
     tasks: { pending: number; upcoming: any[] };
     alerts: any[];

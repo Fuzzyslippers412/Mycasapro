@@ -414,7 +414,7 @@ function AgentCard({
   agent,
   onClick,
 }: {
-  agent: { id: string; name: string; status: string; description: string };
+  agent: { id: string; name: string; status: string; description: string; skills?: string[] };
   onClick: () => void;
 }) {
   const statusColors: Record<string, string> = {
@@ -446,6 +446,15 @@ function AgentCard({
             <Text size="xs" c="dimmed" lineClamp={2}>
               {agent.description}
             </Text>
+            {agent.skills && agent.skills.length > 0 && (
+              <Group gap={6} mt={4} wrap="wrap">
+                {agent.skills.slice(0, 3).map((skill) => (
+                  <Badge key={skill} size="xs" variant="light" color="gray">
+                    {skill}
+                  </Badge>
+                ))}
+              </Group>
+            )}
           </Stack>
         </Group>
         <Badge
@@ -682,6 +691,7 @@ export default function HomePage() {
         name: getAgentName(id),
         status: data.state || "offline",
         description: getAgentDescription(id),
+        skills: Array.isArray((data as any).skills) ? (data as any).skills : [],
       }))
     : [];
 

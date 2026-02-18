@@ -18,6 +18,7 @@ from enum import Enum
 from collections import defaultdict
 import threading
 
+from core.agent_skills import get_agent_skills
 logger = logging.getLogger(__name__)
 
 
@@ -92,6 +93,7 @@ class AgentConfig:
     id: str
     name: str
     description: str = ""
+    skills: List[str] = field(default_factory=list)
     enabled: bool = True
     max_concurrent_requests: int = 5
     timeout_seconds: int = 60
@@ -147,6 +149,7 @@ class FleetManager:
             id="manager",
             name="Galidima",
             description="Orchestrator agent - coordinates all other agents",
+            skills=get_agent_skills("manager"),
             max_tier="reasoning",
             priority=10,
             cost_limit_daily_usd=20.0,
@@ -155,6 +158,7 @@ class FleetManager:
             id="finance",
             name="Mamadou",
             description="Finance agent - manages budgets, investments, bills",
+            skills=get_agent_skills("finance"),
             max_tier="complex",
             priority=8,
             cost_limit_daily_usd=15.0,
@@ -163,6 +167,7 @@ class FleetManager:
             id="maintenance",
             name="Ousmane",
             description="Maintenance agent - tracks tasks, schedules repairs",
+            skills=get_agent_skills("maintenance"),
             max_tier="medium",
             priority=6,
             cost_limit_daily_usd=5.0,
@@ -171,6 +176,7 @@ class FleetManager:
             id="contractors",
             name="Malik",
             description="Contractors agent - manages service providers",
+            skills=get_agent_skills("contractors"),
             max_tier="medium",
             priority=5,
             cost_limit_daily_usd=5.0,
@@ -179,6 +185,7 @@ class FleetManager:
             id="projects",
             name="Zainab",
             description="Projects agent - tracks home improvement projects",
+            skills=get_agent_skills("projects"),
             max_tier="complex",
             priority=6,
             cost_limit_daily_usd=10.0,
@@ -187,6 +194,7 @@ class FleetManager:
             id="security-manager",
             name="Aicha",
             description="Security agent - monitors threats, manages access",
+            skills=get_agent_skills("security-manager"),
             max_tier="complex",
             priority=9,
             cost_limit_daily_usd=10.0,
@@ -195,6 +203,7 @@ class FleetManager:
             id="janitor",
             name="Sule",
             description="Janitor agent - system health, cleanup, telemetry",
+            skills=get_agent_skills("janitor"),
             max_tier="simple",
             priority=3,
             cost_limit_daily_usd=2.0,
@@ -203,6 +212,7 @@ class FleetManager:
             id="backup-recovery",
             name="Backup",
             description="Backup agent - data backup and recovery",
+            skills=get_agent_skills("backup-recovery"),
             max_tier="simple",
             priority=4,
             cost_limit_daily_usd=2.0,
@@ -212,6 +222,7 @@ class FleetManager:
             id="mail-skill",
             name="Amina",
             description="Mail agent - inbox triage and communication",
+            skills=get_agent_skills("mail-skill"),
             max_tier="medium",
             priority=6,
             cost_limit_daily_usd=5.0,
@@ -395,6 +406,7 @@ class FleetManager:
                 "name": agent.config.name,
                 "state": agent.state.value,
                 "enabled": agent.config.enabled,
+                "skills": agent.config.skills,
                 "default_model": agent.config.default_model,
                 "current_requests": agent.current_requests,
                 "max_concurrent": agent.config.max_concurrent_requests,

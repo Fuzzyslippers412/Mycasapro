@@ -79,6 +79,7 @@ interface Agent {
   status: "active" | "idle" | "error" | "offline";
   color: string;
   description: string;
+  skills: string[];
   pendingTasks: number;
   errorCount: number;
   alwaysOn?: boolean;
@@ -211,6 +212,7 @@ const AGENT_DEFINITIONS: {
   displayName: string;
   name: string;
   description: string;
+  skills: string[];
   color: string;
   alwaysOn?: boolean;
 }[] = [
@@ -219,6 +221,11 @@ const AGENT_DEFINITIONS: {
     displayName: "Galidima",
     name: "Manager",
     description: "Your home manager - coordinates all agents",
+    skills: [
+      "Route requests to the right agent",
+      "Summarize status and decisions",
+      "Coordinate approvals and handoffs",
+    ],
     color: "violet",
     alwaysOn: true,
   },
@@ -227,6 +234,11 @@ const AGENT_DEFINITIONS: {
     displayName: "Mamadou",
     name: "Finance Manager",
     description: "Bills, budgets, portfolio tracking",
+    skills: [
+      "Track bills, budgets, and cash flow",
+      "Summarize portfolio and spending",
+      "Flag due dates and anomalies",
+    ],
     color: "teal",
   },
   {
@@ -234,6 +246,11 @@ const AGENT_DEFINITIONS: {
     displayName: "Ousmane",
     name: "Maintenance Manager",
     description: "Home tasks and schedules",
+    skills: [
+      "Intake and triage maintenance requests",
+      "Schedule and track maintenance tasks",
+      "Log service history and reminders",
+    ],
     color: "blue",
   },
   {
@@ -241,6 +258,11 @@ const AGENT_DEFINITIONS: {
     displayName: "Aïcha",
     name: "Security Manager",
     description: "Incidents and monitoring",
+    skills: [
+      "Monitor security signals and alerts",
+      "Run checks and incident triage",
+      "Report risks and mitigation steps",
+    ],
     color: "red",
   },
   {
@@ -248,6 +270,11 @@ const AGENT_DEFINITIONS: {
     displayName: "Malik",
     name: "Contractors Manager",
     description: "Service provider directory",
+    skills: [
+      "Source and track service providers",
+      "Manage quotes, scheduling, and follow-ups",
+      "Maintain vendor notes and history",
+    ],
     color: "orange",
   },
   {
@@ -255,6 +282,11 @@ const AGENT_DEFINITIONS: {
     displayName: "Zainab",
     name: "Projects Manager",
     description: "Home improvement tracking",
+    skills: [
+      "Plan projects into milestones",
+      "Track timelines, dependencies, and scope",
+      "Document decisions and progress",
+    ],
     color: "grape",
   },
   {
@@ -262,6 +294,11 @@ const AGENT_DEFINITIONS: {
     displayName: "Salimata",
     name: "Janitor",
     description: "System health, audits, action logging",
+    skills: [
+      "Audit system health and drift",
+      "Run preflight and integrity checks",
+      "Recommend cleanup and fixes",
+    ],
     color: "cyan",
     alwaysOn: true,
   },
@@ -270,6 +307,11 @@ const AGENT_DEFINITIONS: {
     displayName: "Amina",
     name: "Mail Agent",
     description: "Inbox triage and communications",
+    skills: [
+      "Triage inbox and flag priorities",
+      "Summarize threads and open loops",
+      "Draft replies for approval",
+    ],
     color: "violet",
   },
   {
@@ -277,6 +319,11 @@ const AGENT_DEFINITIONS: {
     displayName: "Backup",
     name: "Backup & Recovery",
     description: "Backups, restore drills, retention",
+    skills: [
+      "Run backups and verify integrity",
+      "Track restore points and retention",
+      "Coordinate recovery drills",
+    ],
     color: "gray",
   },
 ];
@@ -554,6 +601,15 @@ function SortableAgentCard({
           <Text size="sm" c="gray.5" lh={1.5}>
             {agent.description}
           </Text>
+          {agent.skills.length > 0 && (
+            <Group gap={6} mt={10} wrap="wrap">
+              {agent.skills.slice(0, 3).map((skill) => (
+                <Badge key={skill} size="xs" variant="light" color="gray" radius="sm">
+                  {skill}
+                </Badge>
+              ))}
+            </Group>
+          )}
         </Box>
       </Box>
 
@@ -919,6 +975,7 @@ function buildDefaultAgents(): Agent[] {
     status: def.alwaysOn ? "active" as const : "offline" as const,
     color: def.color,
     description: def.description,
+    skills: def.skills,
     pendingTasks: 0,
     errorCount: 0,
     alwaysOn: def.alwaysOn || false,
@@ -980,6 +1037,7 @@ export function AgentManager() {
             thinking: fleet?.max_tier ? (TIER_TO_THINKING[fleet.max_tier] || agent.thinking) : agent.thinking,
             pendingTasks: backendData?.pending_tasks ?? fleet?.current_requests ?? 0,
             errorCount: backendData?.error_count ?? (fleet?.last_error ? 1 : 0),
+            skills: Array.isArray(fleet?.skills) && fleet?.skills.length > 0 ? fleet.skills : agent.skills,
           };
         })
       );

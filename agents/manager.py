@@ -23,6 +23,7 @@ from agents.persona_registry import get_persona_registry
 from agents.teams import TeamRouter, TeamType
 from agents.heartbeat_checker import HouseholdHeartbeatChecker, CheckType
 from core.tenant_identity import TenantIdentityManager
+from core.agent_skills import get_agent_skills
 
 
 class ManagerAgent(BaseAgent):
@@ -228,33 +229,73 @@ class ManagerAgent(BaseAgent):
         Fast-path task/reminder requests to Maintenance (real DB), then fallback to LLM.
         """
         msg_lower = message.lower()
+        status_keywords = [
+            "status",
+            "overview",
+            "summary",
+            "what's going on",
+            "whats going on",
+            "checking in",
+            "check in",
+            "how are things",
+            "how is everything",
+        ]
 
         # Task/reminder creation
-        if any(k in msg_lower for k in ["remind", "reminder", "add a task", "add task", "schedule", "task reminder"]):
+        if any(k in msg_lower for k in [
+            "remind",
+            "reminder",
+            "add a task",
+            "add task",
+            "schedule",
+            "task reminder",
+            "clean",
+            "fix",
+            "repair",
+            "maintenance",
+        ]):
             maintenance = self.maintenance
             if maintenance and hasattr(maintenance, "create_task_from_message"):
                 try:
                     result = maintenance.create_task_from_message(message)
                     if result:
                         if not result.get("success", True):
-                            return f"Sorry — I couldn’t create that task. {result.get('error', 'Please try again.')} — Galidima 🏠"
+                            return f"Sorry — I couldn’t create that task. {result.get('error', 'Please try again.')}"
                         due = result.get("due_date")
                         if due:
-                            return f"Task \"{result['title']}\" scheduled for {due}. — Galidima 🏠"
-                        return f"Task \"{result['title']}\" added. — Galidima 🏠"
+                            return f"Task \"{result['title']}\" scheduled for {due}."
+                        return f"Task \"{result['title']}\" added."
                 except Exception as exc:
                     self.log_action("task_create_failed", str(exc), status="error")
-                    return f"Sorry — I couldn’t create that task. {str(exc)} — Galidima 🏠"
+                    return f"Sorry — I couldn’t create that task. {str(exc)}"
+
+        if any(k in msg_lower for k in status_keywords):
+            try:
+                quick = self.quick_status()
+                facts = quick.get("facts", {})
+                tasks = facts.get("tasks", {})
+                pending = tasks.get("pending", 0)
+                upcoming = tasks.get("upcoming", []) or []
+                if pending == 0:
+                    return "Everything looks calm. No pending maintenance tasks right now."
+                lines = [f"Everything’s running smoothly. {pending} maintenance task(s) pending."]
+                for t in upcoming[:3]:
+                    title = t.get("title") or "Task"
+                    due = t.get("due_date") or t.get("scheduled_date") or "no date"
+                    lines.append(f"• {title} (due {due})")
+                return "\n".join(lines)
+            except Exception as exc:
+                self.log_action("status_check_failed", str(exc), status="error")
 
         # Reminder checks
         if "reminder" in msg_lower or "reminders" in msg_lower:
             maintenance = self.maintenance
             if not maintenance:
-                return "I can’t reach Maintenance right now. Try again in a moment. — Galidima 🏠"
+                return "I can’t reach Maintenance right now. Try again in a moment."
             try:
                 tasks = maintenance.get_pending_tasks()
                 if not tasks:
-                    return "You don’t have any scheduled maintenance tasks right now. — Galidima 🏠"
+                    return "You don’t have any scheduled maintenance tasks right now."
                 def fmt(d: Optional[str]) -> str:
                     if not d:
                         return "no date"
@@ -265,7 +306,7 @@ class ManagerAgent(BaseAgent):
                 lines = ["Here are your scheduled maintenance tasks:"]
                 for t in tasks[:5]:
                     lines.append(f"• {t.get('title')} (due {fmt(t.get('due_date'))})")
-                return "\n".join(lines) + "\n— Galidima 🏠"
+                return "\n".join(lines)
             except Exception as exc:
                 self.log_action("reminder_check_failed", str(exc), status="error")
 
@@ -301,10 +342,15 @@ class ManagerAgent(BaseAgent):
                 health = self._agent_health.get(name, {})
                 agents_summary[name] = {
                     "state": health.get("state", "unknown"),
-                    "doing": self._get_agent_current_task(name)
+                    "doing": self._get_agent_current_task(name),
+                    "skills": get_agent_skills(name),
                 }
             else:
-                agents_summary[name] = {"state": "not_loaded", "doing": None}
+                agents_summary[name] = {
+                    "state": "not_loaded",
+                    "doing": None,
+                    "skills": get_agent_skills(name),
+                }
         
         result["facts"]["agents"] = agents_summary
         # NOTE: Galidima check is expensive (subprocess call), skip in quick status

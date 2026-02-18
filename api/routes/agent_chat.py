@@ -127,6 +127,25 @@ def _extract_task_delete_id(message: str) -> Optional[int]:
     return None
 
 
+def _is_task_intent(message: str) -> bool:
+    if not message:
+        return False
+    msg_lower = message.lower()
+    keywords = [
+        "remind",
+        "reminder",
+        "add a task",
+        "add task",
+        "schedule",
+        "task reminder",
+        "clean",
+        "fix",
+        "repair",
+        "maintenance",
+    ]
+    return any(k in msg_lower for k in keywords)
+
+
 def _get_cached_manager():
     global _manager_instance, _manager_init_error
     if _manager_instance is not None:
@@ -222,7 +241,12 @@ def _get_cached_agent(agent_id: str):
     return agent
 
 
-async def get_agent_response(agent_id: str, message: str, context: Optional[str] = None) -> Dict[str, Any]:
+async def get_agent_response(
+    agent_id: str,
+    message: str,
+    context: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Get a response from the actual agent using the configured LLM (Kimi K2.5, Claude, etc.)
     Ensures task/reminder actions are executed before replying.
@@ -263,8 +287,9 @@ async def get_agent_response(agent_id: str, message: str, context: Optional[str]
                 "grounded_in": 0,
                 "routed_to": "maintenance" if canonical_id == "manager" else canonical_id,
             }
+        task_intent = _is_task_intent(message)
         if hasattr(agent, "create_task_from_message"):
-            task_result = agent.create_task_from_message(message)
+            task_result = agent.create_task_from_message(message, conversation_id=conversation_id)
             if task_result:
                 if not task_result.get("success", True):
                     return {
@@ -290,11 +315,11 @@ async def get_agent_response(agent_id: str, message: str, context: Optional[str]
                     "routed_to": canonical_id,
                     "delegation_note": f"{agent.name} queued the task. You can track it in the Maintenance list.",
                 }
-        # If talking to the manager, also try routing task intents through maintenance.
-        if canonical_id == "manager":
+        # If not maintenance, route task intents through maintenance when available.
+        if task_intent and canonical_id != "maintenance":
             maintenance_agent = _get_cached_agent("maintenance")
             if maintenance_agent and hasattr(maintenance_agent, "create_task_from_message"):
-                task_result = maintenance_agent.create_task_from_message(message)
+                task_result = maintenance_agent.create_task_from_message(message, conversation_id=conversation_id)
                 if task_result:
                     if not task_result.get("success", True):
                         return {
@@ -623,7 +648,12 @@ async def chat_with_agent(
             thinking_trace = None  # Real agents handle their own reasoning
         else:
             # Fallback to template responses for unknown agents
-            result = await get_agent_response(agent_id, req.message, req.context)
+            result = await get_agent_response(
+                agent_id,
+                req.message,
+                req.context,
+                req.conversation_id,
+            )
             response_text = result["response"]
             thinking_trace = result.get("thinking")
             grounded_in = result.get("grounded_in", 0)
@@ -631,7 +661,7 @@ async def chat_with_agent(
         
         error_message = _extract_llm_error(response_text)
         if error_message:
-            response_text = f"⚠️ {error_message}"
+            response_text = f"Warning: {error_message}"
 
         # Add agent response to history (include thinking for auditability)
         assistant_msg = add_message(db, conversation, "assistant", response_text)

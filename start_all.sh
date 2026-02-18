@@ -140,6 +140,10 @@ fi
 # Start Frontend UI
 if [ -d "frontend/node_modules" ]; then
     echo -e "${BLUE}Starting Frontend UI (port ${UI_PORT})...${NC}"
+    if [ "${MYCASA_CLEAR_NEXT_CACHE:-1}" = "1" ] && [ -d "$PWD/frontend/.next" ]; then
+        echo -e "${YELLOW}Clearing Next.js cache...${NC}"
+        rm -rf "$PWD/frontend/.next"
+    fi
     ENV_FILE="$PWD/frontend/.env.local"
     if [ -f "$ENV_FILE" ]; then
         if grep -q "^NEXT_PUBLIC_API_URL=" "$ENV_FILE"; then

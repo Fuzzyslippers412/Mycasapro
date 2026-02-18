@@ -455,6 +455,19 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   };
 
   useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail as { conversationId?: string | null } | undefined;
+      if (!detail || typeof window === "undefined") return;
+      const current = window.localStorage.getItem(conversationKey(selectedAgent, user?.id)) || undefined;
+      if (!detail.conversationId || detail.conversationId === current) {
+        loadConversation(selectedAgent, current);
+      }
+    };
+    window.addEventListener("mycasa-chat-sync", handler as EventListener);
+    return () => window.removeEventListener("mycasa-chat-sync", handler as EventListener);
+  }, [selectedAgent, user?.id, chatAllowed]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     setMessages([]);
     messageIdRef.current = 1;
@@ -661,7 +674,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         const data = await res.json();
         const alreadyRunning = data.already_running;
         const success = data.success;
-        let content = "❌ Failed to launch agents.";
+        let content = "Failed to launch agents.";
 
         if (success) {
           let liveStats: { online: number; total: number } | null = null;
@@ -680,19 +693,19 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
           }
 
           if (alreadyRunning) {
-            content = "✅ System already running.";
+            content = "System already running.";
           } else if (liveStats) {
             if (liveStats.total === 0) {
-              content = "✅ System online (no agents enabled).";
+              content = "System online (no agents enabled).";
             } else {
-              content = `✅ System online (${liveStats.online}/${liveStats.total} agents ready).`;
+              content = `System online (${liveStats.online}/${liveStats.total} agents ready).`;
             }
           } else {
             const started = data.agents_started?.length || 0;
             if (started > 0) {
-              content = `✅ Agents launched (${started}).`;
+              content = `Agents launched (${started}).`;
             } else {
-              content = "⚠️ No agents enabled to start.";
+              content = "Warning: No agents enabled to start.";
             }
           }
 
@@ -715,7 +728,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
           {
             id: nextMessageId(),
             role: "assistant",
-            content: "❌ Failed to launch agents.",
+            content: "Failed to launch agents.",
             timestamp: new Date().toISOString(),
             agent: "System",
           },
@@ -727,7 +740,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         {
           id: nextMessageId(),
           role: "assistant",
-          content: "❌ Failed to launch agents.",
+          content: "Failed to launch agents.",
           timestamp: new Date().toISOString(),
           agent: "System",
         },
@@ -774,7 +787,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
             );
             continue;
           }
-          addLocalResponse(`⚠️ ${detail}`, "System");
+          addLocalResponse(`Warning: ${detail}`, "System");
         } else {
           addLocalResponse(`Failed to reach ${AGENT_NAMES[agentId] || agentId}.`, "System");
         }
@@ -787,7 +800,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       const agent = agents.find((a) => a.id === agentId);
 
       if (data?.error) {
-        addLocalResponse(`⚠️ ${data.error}`, "System");
+        addLocalResponse(`Warning: ${data.error}`, "System");
         continue;
       }
 
@@ -816,7 +829,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
           {
             id: nextMessageId(),
             role: "assistant",
-            content: `✅ ${title}${due ? ` • Due ${due}` : ""}. Open Maintenance to review.`,
+            content: `Task created: ${title}${due ? ` • Due ${due}` : ""}. Open Maintenance to review.`,
             timestamp: new Date().toISOString(),
             agent: "System",
           },
@@ -905,17 +918,17 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         const summaryItems = Array.isArray(report?.results) ? report.results : [];
         const failures = summaryItems.filter((r: any) => !r.ok);
         if (failures.length === 0) {
-          addLocalResponse("✅ Preflight passed. No failures detected.", "Janitor");
+          addLocalResponse("Preflight passed. No failures detected.", "Janitor");
         } else {
           const topFails = failures.slice(0, 5).map((f: any) => `- ${f.name}: ${f.detail}`).join("\n");
-          addLocalResponse(
-            `⚠️ Preflight reported ${failures.length} failure(s):\n${topFails}`,
+        addLocalResponse(
+            `Warning: Preflight reported ${failures.length} failure(s):\n${topFails}`,
             "Janitor"
           );
         }
       } catch (err: any) {
         const detail = err?.detail || err?.message || "Preflight failed.";
-        addLocalResponse(`⚠️ Janitor preflight failed: ${detail}`, "Janitor");
+        addLocalResponse(`Warning: Janitor preflight failed: ${detail}`, "Janitor");
       }
     };
 
@@ -1120,6 +1133,25 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     await loadConversation(selectedAgent, sessionId);
   };
 
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      await apiFetch(`/api/agents/${selectedAgent}/history?conversation_id=${sessionId}`, { method: "DELETE" });
+      await refreshSessions(selectedAgent);
+      const currentId = typeof window !== "undefined" ? localStorage.getItem(conversationKey(selectedAgent, user?.id)) : null;
+      if (currentId === sessionId) {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(conversationKey(selectedAgent, user?.id));
+        }
+        setMessages([]);
+        setHistoryStatus("idle");
+        await handleNewSession();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const panelStyle = isEmbedded
     ? {
         marginBottom: -1,
@@ -1201,7 +1233,20 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                         onClick={() => handleSelectSession(session.id)}
                         rightSection={session.id === (typeof window !== "undefined" ? localStorage.getItem(conversationKey(selectedAgent, user?.id)) : null) ? <Badge size="xs">Active</Badge> : null}
                       >
-                        <Text size="xs" lineClamp={1}>{label}</Text>
+                        <Group justify="space-between" gap="xs" wrap="nowrap">
+                          <Text size="xs" lineClamp={1}>{label}</Text>
+                          <ActionIcon
+                            size="xs"
+                            variant="subtle"
+                            color="red"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSession(session.id);
+                            }}
+                          >
+                            <IconTrash size={12} />
+                          </ActionIcon>
+                        </Group>
                       </Menu.Item>
                     );
                   })}
@@ -1512,13 +1557,13 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                     {message.role === "assistant" && (message.latencyMs || message.inputTokens || message.outputTokens) && (
                       <Group gap={6} mt={6}>
                         {typeof message.latencyMs === "number" && (
-                          <Badge size="xs" variant="light">⏱ {message.latencyMs}ms</Badge>
+                          <Badge size="xs" variant="light">Latency {message.latencyMs}ms</Badge>
                         )}
                         {typeof message.inputTokens === "number" && (
-                          <Badge size="xs" variant="light">⇡ {message.inputTokens} tok</Badge>
+                          <Badge size="xs" variant="light">Input {message.inputTokens} tok</Badge>
                         )}
                         {typeof message.outputTokens === "number" && (
-                          <Badge size="xs" variant="light">⇣ {message.outputTokens} tok</Badge>
+                          <Badge size="xs" variant="light">Output {message.outputTokens} tok</Badge>
                         )}
                       </Group>
                     )}

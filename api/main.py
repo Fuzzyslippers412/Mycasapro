@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import math
+import re
 import time
 from pathlib import Path
 import asyncio
@@ -551,12 +552,117 @@ async def manager_chat(
                 maintenance = manager.maintenance or manager.get_agent_by_id("maintenance")
                 if maintenance and hasattr(maintenance, "create_task_from_message"):
                     msg_lower = (request.message or "").lower()
-                    intent_keywords = ["remind", "reminder", "add a task", "add task", "schedule", "task reminder"]
+                    delete_match = re.search(
+                        r"(?:delete|remove|cancel)\s+(?:task|reminder)\s*(?:#|id\s*)?(\d+)",
+                        request.message or "",
+                        re.IGNORECASE,
+                    )
+                    if delete_match:
+                        try:
+                            task_id = int(delete_match.group(1))
+                        except Exception:
+                            task_id = None
+                        if task_id is not None:
+                            removed = maintenance.remove_task(task_id)
+                            if not removed or removed.get("error"):
+                                response = f"Sorry — I couldn’t delete task #{task_id}. {removed.get('error', 'Task not found')}."
+                                add_message(db, conversation, "assistant", response)
+                                return {
+                                    "response": response,
+                                    "timestamp": datetime.now().isoformat(),
+                                    "agent": "manager",
+                                    "agent_name": "Galidima",
+                                    "conversation_id": conversation_id,
+                                    "input_tokens_est": input_tokens_est,
+                                    "output_tokens_est": _estimate_tokens(response),
+                                    "latency_ms": 0,
+                                    "error": removed.get("error", "Task not found"),
+                                }
+                            title = (removed.get("task") or {}).get("title") or f"Task #{task_id}"
+                            response = f"Task \"{title}\" removed."
+                            add_message(db, conversation, "assistant", response)
+                            return {
+                                "response": response,
+                                "timestamp": datetime.now().isoformat(),
+                                "agent": "manager",
+                                "agent_name": "Galidima",
+                                "conversation_id": conversation_id,
+                                "input_tokens_est": input_tokens_est,
+                                "output_tokens_est": _estimate_tokens(response),
+                                "latency_ms": 0,
+                                "routed_to": "maintenance",
+                            }
+                    if re.search(r"(?:delete|remove|cancel)\s+(?:task|reminder)", msg_lower):
+                        try:
+                            tasks = maintenance.get_pending_tasks()
+                        except Exception:
+                            tasks = []
+                        matches = []
+                        for t in tasks:
+                            title = (t.get("title") or "").lower()
+                            if title and title in msg_lower:
+                                matches.append(t)
+                        if len(matches) == 1:
+                            task_id = matches[0].get("id")
+                            removed = maintenance.remove_task(int(task_id))
+                            if removed and not removed.get("error"):
+                                title = (removed.get("task") or {}).get("title") or matches[0].get("title") or f"Task #{task_id}"
+                                response = f"Task \"{title}\" removed."
+                                add_message(db, conversation, "assistant", response)
+                                return {
+                                    "response": response,
+                                    "timestamp": datetime.now().isoformat(),
+                                    "agent": "manager",
+                                    "agent_name": "Galidima",
+                                    "conversation_id": conversation_id,
+                                    "input_tokens_est": input_tokens_est,
+                                    "output_tokens_est": _estimate_tokens(response),
+                                    "latency_ms": 0,
+                                    "routed_to": "maintenance",
+                                }
+                        elif len(matches) > 1:
+                            response = "Multiple tasks match that description. Please specify the task id."
+                            add_message(db, conversation, "assistant", response)
+                            return {
+                                "response": response,
+                                "timestamp": datetime.now().isoformat(),
+                                "agent": "manager",
+                                "agent_name": "Galidima",
+                                "conversation_id": conversation_id,
+                                "input_tokens_est": input_tokens_est,
+                                "output_tokens_est": _estimate_tokens(response),
+                                "latency_ms": 0,
+                            }
+                        elif "delete" in msg_lower or "remove" in msg_lower or "cancel" in msg_lower:
+                            response = "Tell me the task id to delete."
+                            add_message(db, conversation, "assistant", response)
+                            return {
+                                "response": response,
+                                "timestamp": datetime.now().isoformat(),
+                                "agent": "manager",
+                                "agent_name": "Galidima",
+                                "conversation_id": conversation_id,
+                                "input_tokens_est": input_tokens_est,
+                                "output_tokens_est": _estimate_tokens(response),
+                                "latency_ms": 0,
+                            }
+                    intent_keywords = [
+                        "remind",
+                        "reminder",
+                        "add a task",
+                        "add task",
+                        "schedule",
+                        "task reminder",
+                        "clean",
+                        "fix",
+                        "repair",
+                        "maintenance",
+                    ]
                     is_task_intent = any(k in msg_lower for k in intent_keywords)
                     task_result = maintenance.create_task_from_message(request.message, conversation_id=conversation_id)
                     if task_result:
                         if not task_result.get("success", True):
-                            response = f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')} — Galidima 🏠"
+                            response = f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')}"
                             add_message(db, conversation, "assistant", response)
                             return {
                                 "response": response,
@@ -581,26 +687,26 @@ async def manager_chat(
                             try:
                                 verified = maintenance.get_task(int(task_id))
                                 if not verified:
-                                    response = "I couldn't verify the task in the system. Please try again. — Galidima 🏠"
-                            add_message(db, conversation, "assistant", response)
-                            return {
-                                "response": response,
-                                "timestamp": datetime.now().isoformat(),
-                                "agent": "manager",
-                                "agent_name": "Galidima",
-                                "conversation_id": conversation_id,
-                                "input_tokens_est": input_tokens_est,
-                                "output_tokens_est": _estimate_tokens(response),
-                                "latency_ms": 0,
-                                "error": "task_verification_failed",
-                            }
+                                    response = "I couldn't verify the task in the system. Please try again."
+                                    add_message(db, conversation, "assistant", response)
+                                    return {
+                                        "response": response,
+                                        "timestamp": datetime.now().isoformat(),
+                                        "agent": "manager",
+                                        "agent_name": "Galidima",
+                                        "conversation_id": conversation_id,
+                                        "input_tokens_est": input_tokens_est,
+                                        "output_tokens_est": _estimate_tokens(response),
+                                        "latency_ms": 0,
+                                        "error": "task_verification_failed",
+                                    }
                             except Exception:
                                 pass
 
                         response = (
-                            f"Task \"{task_result['title']}\" scheduled for {task_result.get('due_date')}. — Galidima 🏠"
+                            f"Task \"{task_result['title']}\" scheduled for {task_result.get('due_date')}."
                             if task_result.get("due_date")
-                            else f"Task \"{task_result['title']}\" added. — Galidima 🏠"
+                            else f"Task \"{task_result['title']}\" added."
                         )
                         add_message(db, conversation, "assistant", response)
                         if background_tasks:
@@ -623,7 +729,7 @@ async def manager_chat(
                             "delegation_note": "Maintenance queued the task. You can review it in the Maintenance list.",
                         }
                     if is_task_intent and not task_result:
-                        response = "I couldn’t parse that into a task. Try: “Add a task to clean the garage by Friday.” — Galidima 🏠"
+                        response = "I couldn’t parse that into a task. Try: “Add a task to clean the garage by Friday.”"
                         add_message(db, conversation, "assistant", response)
                         return {
                             "response": response,
@@ -637,7 +743,7 @@ async def manager_chat(
                             "error": "task_parse_failed",
                         }
             except Exception as exc:
-                response = f"Sorry — I couldn’t create that task. {str(exc)} — Galidima 🏠"
+                response = f"Sorry — I couldn’t create that task. {str(exc)}"
                 add_message(db, conversation, "assistant", response)
                 return {
                     "response": response,
@@ -656,7 +762,7 @@ async def manager_chat(
             response = _strip_cot_format(response)
             error_message = _extract_llm_error(response)
             if error_message:
-                response = f"⚠️ {error_message}"
+                response = f"Warning: {error_message}"
             add_message(db, conversation, "assistant", response)
         
         return {
@@ -706,9 +812,18 @@ async def get_quick_status():
             is_running = agent_info.get("running", False)
             state = "running" if is_running else ("idle" if enabled else "offline")
             doing = existing_agents.get(agent_id, {}).get("doing")
+            skills = existing_agents.get(agent_id, {}).get("skills")
+            if skills is None:
+                try:
+                    from core.agent_skills import get_agent_skills
+
+                    skills = get_agent_skills(agent_id)
+                except Exception:
+                    skills = []
             merged_agents[agent_id] = {
                 "state": state,
                 "doing": doing,
+                "skills": skills,
             }
 
         if isinstance(result, dict):
@@ -842,6 +957,21 @@ async def delete_task(task_id: int, background_tasks: BackgroundTasks = None):
     
     if not result or result.get("error"):
         raise HTTPException(status_code=404, detail=result.get("error", "Task not found"))
+
+    try:
+        task_payload = result.get("task") if isinstance(result, dict) else None
+        conversation_id = task_payload.get("conversation_id") if isinstance(task_payload, dict) else None
+        title = task_payload.get("title") if isinstance(task_payload, dict) else f"Task #{task_id}"
+        if conversation_id:
+            from database import get_db
+            from database.models import ChatConversation
+            from core.chat_store import add_message
+            with get_db() as db:
+                conversation = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
+                if conversation:
+                    add_message(db, conversation, "assistant", f"🗑️ {title} removed.")
+    except Exception:
+        pass
     
     if background_tasks:
         background_tasks.add_task(
