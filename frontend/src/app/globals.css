@@ -951,6 +951,10 @@ html, body {
   background-color: var(--surface-1);
 }
 
+.global-chat-input--top {
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
 @media (max-width: 1000px) {
   .global-chat-body {
     flex-direction: column;

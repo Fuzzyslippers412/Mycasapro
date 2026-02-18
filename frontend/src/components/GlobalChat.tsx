@@ -1787,6 +1787,47 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
             </Box>
           </Collapse>
 
+          {/* Input */}
+          <Box
+            px="sm"
+            py="xs"
+            className="global-chat-input global-chat-input--top"
+          >
+            <form onSubmit={handleSubmit}>
+              <Group gap="sm">
+                <TextInput
+                  placeholder={
+                    chatAllowed
+                      ? `Message ${agentTheme.label}... (@agent or /help)`
+                      : "Start the backend to send messages"
+                  }
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.currentTarget.value)}
+                  flex={1}
+                  size="sm"
+                  radius="md"
+                  styles={{
+                    input: {
+                      border: "1px solid var(--border-1)",
+                      backgroundColor: "var(--surface-2)",
+                      boxShadow: "none",
+                    },
+                  }}
+                />
+                <ActionIcon
+                  type="submit"
+                  size="lg"
+                  radius="md"
+                  variant="filled"
+                  color={agentTheme.color}
+                  disabled={!inputValue.trim() || isLoading || !chatAllowed}
+                >
+                  <IconSend size={16} />
+                </ActionIcon>
+              </Group>
+            </form>
+          </Box>
+
           {/* Messages */}
           <ScrollArea style={{ flex: 1, minHeight: 0 }} p="sm" type="auto" className="global-chat-messages">
             <Stack gap="sm">
@@ -2198,50 +2239,6 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
               <div ref={messagesEndRef} />
             </Stack>
           </ScrollArea>
-
-          {/* Input */}
-          <Box
-            px="sm"
-            py="xs"
-            className="global-chat-input"
-            style={{
-              borderTop: "1px solid var(--mantine-color-default-border)",
-            }}
-          >
-            <form onSubmit={handleSubmit}>
-              <Group gap="sm">
-                <TextInput
-                  placeholder={
-                    chatAllowed
-                      ? `Message ${agentTheme.label}... (@agent or /help)`
-                      : "Start the backend to send messages"
-                  }
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.currentTarget.value)}
-                  flex={1}
-                  size="sm"
-                  radius="md"
-                  styles={{
-                    input: {
-                      border: "1px solid var(--border-1)",
-                      backgroundColor: "var(--surface-2)",
-                      boxShadow: "none",
-                    },
-                  }}
-                />
-                <ActionIcon
-                  type="submit"
-                  size="lg"
-                  radius="md"
-                  variant="filled"
-                  color={agentTheme.color}
-                  disabled={!inputValue.trim() || isLoading || !chatAllowed}
-                >
-                  <IconSend size={16} />
-                </ActionIcon>
-              </Group>
-            </form>
-          </Box>
             </Box>
           </Box>
     </Box>
