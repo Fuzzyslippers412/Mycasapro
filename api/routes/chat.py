@@ -182,7 +182,7 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
     
     # Get shared context for relevant responses
     context = shared_ctx.get_full_context(include_session=True)  # Sync with Clawdbot session history
-    reasoning_log.append(f"🧠 Loaded context: {len(context.get('contacts', []))} contacts, {len(context.get('long_term_memory', ''))} chars memory")
+    reasoning_log.append(f"Loaded context: {len(context.get('contacts', []))} contacts, {len(context.get('long_term_memory', ''))} chars memory")
     
     # Lowercase for pattern matching
     msg_lower = user_message.lower().strip()
@@ -218,14 +218,14 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
             # Strip all @mentions from the message
             for m in agent_mentions.keys():
                 clean_message = re.sub(re.escape(m), '', clean_message, flags=re.IGNORECASE).strip()
-            reasoning_log.append(f"✓ Detected @mention: {AGENT_PERSONAS[agent_id]['name']} ({agent_id})")
+            reasoning_log.append(f"Detected @mention: {AGENT_PERSONAS[agent_id]['name']} ({agent_id})")
             break
     
     format_agent_id = "manager"
 
     if mentioned_agent_id:
         persona = AGENT_PERSONAS[mentioned_agent_id]
-        reasoning_log.append(f"🔄 Routing to {persona['name']} via LLM...")
+        reasoning_log.append(f"Routing to {persona['name']} via LLM")
         
         # Build context for the agent
         agent_context = {}
@@ -248,7 +248,7 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
                 agent = ProjectsAgent()
                 agent_context["projects"] = agent.get_active_projects()
         except Exception as e:
-            reasoning_log.append(f"⚠️ Context fetch error: {str(e)}")
+            reasoning_log.append(f"Context fetch error: {str(e)}")
         
         # Call LLM with agent persona
         try:
@@ -258,12 +258,17 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
                 context=agent_context,
                 conversation_history=conversation_history
             )
-            reasoning_log.append(f"✅ {persona['name']} responded via LLM")
+            reasoning_log.append(f"{persona['name']} responded via LLM")
             format_agent_id = mentioned_agent_id
         except Exception as e:
-            reasoning_log.append(f"❌ LLM error: {str(e)}")
+            reasoning_log.append(f"LLM error: {str(e)}")
             response_text = f"{persona['name']} is having trouble connecting.\n\nError: {str(e)}"
         
+        try:
+            from core.response_formatting import normalize_agent_response
+            response_text = normalize_agent_response(format_agent_id, response_text)
+        except Exception:
+            pass
         return {
             "response": response_text,
             "actions_taken": actions_taken,
@@ -280,10 +285,10 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
         "what is happening", "system status", "quick status", "update me", 
         "what's up", "whats up", "what is up"
     ]):
-        reasoning_log.append("✓ Detected intent: STATUS_QUERY")
-        reasoning_log.append("🔄 Calling manager.quick_status()")
+        reasoning_log.append("Detected intent: STATUS_QUERY")
+        reasoning_log.append("Calling manager.quick_status()")
         status = manager.quick_status()
-        reasoning_log.append(f"📊 Got status with {len(status.get('facts', {}))} fact categories")
+        reasoning_log.append(f"Got status with {len(status.get('facts', {}))} fact categories")
         response_text = _format_quick_status(status)
     
     # 2. Full report
@@ -298,26 +303,26 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
         "send whatsapp", "send a whatsapp", "whatsapp to", "message to",
         "text to", "send message"
     ]):
-        reasoning_log.append("✓ Detected intent: SEND_MESSAGE")
-        reasoning_log.append("📱 Parsing message request...")
+        reasoning_log.append("Detected intent: SEND_MESSAGE")
+        reasoning_log.append("Parsing message request")
         result = manager.handle_messaging_request(user_message)
         if result.get("success"):
-            reasoning_log.append(f"✅ Message sent to {result.get('to')}")
-            response_text = f"✅ Message sent to {result.get('to')}!\n\nPreview: \"{result.get('message_preview')}\""
+            reasoning_log.append(f"Message sent to {result.get('to')}")
+            response_text = f"Message sent to {result.get('to')}. Preview: \"{result.get('message_preview')}\""
             actions_taken.append({
                 "action": "whatsapp_sent",
                 "to": result.get("to"),
                 "phone": result.get("phone")
             })
         else:
-            reasoning_log.append(f"❌ Send failed: {result.get('error')}")
+            reasoning_log.append(f"Send failed: {result.get('error')}")
             contacts = result.get("available_contacts", [])
             suggestion = result.get("suggestion", "")
-            response_text = f"❌ {result.get('error', 'Failed to send message')}"
+            response_text = f"{result.get('error', 'Failed to send message')}"
             if contacts:
                 response_text += f"\n\nAvailable contacts: {', '.join(contacts)}"
             if suggestion:
-                response_text += f"\n\n💡 {suggestion}"
+                response_text += f"\n\nSuggestion: {suggestion}"
     
     # 4. List contacts
     elif any(phrase in msg_lower for phrase in [
@@ -325,9 +330,9 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
     ]):
         contacts = manager.get_contacts()
         if contacts:
-            response_text = "📇 **Contacts:**\n\n"
+            response_text = "Contacts:\n"
             for c in contacts:
-                response_text += f"• **{c['name']}** ({c.get('relation', 'Contact')}): {c['phone']}\n"
+                response_text += f"- {c['name']} ({c.get('relation', 'Contact')}): {c['phone']}\n"
         else:
             response_text = "No contacts found. Add contacts to TOOLS.md."
     
@@ -335,8 +340,8 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
     elif any(phrase in msg_lower for phrase in [
         "pending task", "task", "todo", "to do", "what needs", "overdue"
     ]):
-        reasoning_log.append("✓ Detected intent: TASK_QUERY")
-        reasoning_log.append("📋 Querying database for tasks...")
+        reasoning_log.append("Detected intent: TASK_QUERY")
+        reasoning_log.append("Querying database for tasks")
         try:
             from database import get_db
             from database.models import MaintenanceTask
@@ -346,16 +351,16 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
                     MaintenanceTask.status.in_(["pending", "in_progress"])
                 ).order_by(MaintenanceTask.due_date).limit(10).all()
                 
-                reasoning_log.append(f"📊 Found {len(tasks)} pending tasks")
+                reasoning_log.append(f"Found {len(tasks)} pending tasks")
                 if tasks:
-                    response_text = "📋 **Pending Tasks:**\n\n"
+                    response_text = "Pending tasks:\n"
                     for t in tasks:
                         due = t.due_date.strftime("%b %d") if t.due_date else "No date"
-                        response_text += f"• [{t.priority.upper()}] {t.title} - Due: {due}\n"
+                        response_text += f"- [{t.priority.upper()}] {t.title} - Due: {due}\n"
                 else:
-                    response_text = "✅ No pending tasks!"
+                    response_text = "No pending tasks."
         except Exception as e:
-            reasoning_log.append(f"❌ Database error: {e}")
+            reasoning_log.append(f"Database error: {e}")
             response_text = f"Could not fetch tasks: {e}"
     
     # 6. Bill queries
@@ -372,12 +377,12 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
                 ).order_by(Bill.due_date).limit(10).all()
                 
                 if bills:
-                    response_text = "💰 **Upcoming Bills:**\n\n"
+                    response_text = "Upcoming bills:\n"
                     for b in bills:
                         due = b.due_date.strftime("%b %d") if b.due_date else "No date"
-                        response_text += f"• {b.name}: ${b.amount:.2f} - Due: {due}\n"
+                        response_text += f"- {b.name}: ${b.amount:.2f} - Due: {due}\n"
                 else:
-                    response_text = "✅ No pending bills!"
+                    response_text = "No pending bills."
         except Exception as e:
             response_text = f"Could not fetch bills: {e}"
     
@@ -390,7 +395,7 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
         if recent_memories:
             today = recent_memories[0] if recent_memories else None
             if today:
-                response_text = f"📜 **Recent Activity**\n\n{today.get('content', 'No activity recorded')[:2000]}"
+                response_text = f"Recent activity:\n{today.get('content', 'No activity recorded')[:2000]}"
             else:
                 response_text = "No recent activity recorded yet today."
         else:
@@ -402,7 +407,7 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
     ]):
         user_info = context.get("user", "")
         if user_info:
-            response_text = f"👤 **User Profile**\n\n{user_info[:1500]}"
+            response_text = f"User profile:\n{user_info[:1500]}"
         else:
             response_text = "User profile not found."
     
@@ -411,51 +416,49 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
         "what do you know", "your memory", "what do you remember", "context"
     ]):
         memory = context.get("long_term_memory", "")
-        response_text = "🧠 **My Knowledge**\n\n"
-        response_text += f"I have access to:\n"
-        response_text += f"• Long-term memory ({len(memory)} chars)\n"
-        response_text += f"• {len(context.get('contacts', []))} contacts\n"
-        response_text += f"• {len(context.get('recent_memory', []))} days of recent activity\n"
-        response_text += f"\nRecent session messages are also available for context."
+        response_text = "What I know:\n"
+        response_text += "I have access to:\n"
+        response_text += f"- Long-term memory ({len(memory)} chars)\n"
+        response_text += f"- {len(context.get('contacts', []))} contacts\n"
+        response_text += f"- {len(context.get('recent_memory', []))} days of recent activity\n"
+        response_text += "\nRecent session messages are also available for context."
         
         # Show a snippet of memory
         if memory:
-            response_text += f"\n\n**Memory Snippet:**\n{memory[:500]}..."
+            response_text += f"\n\nMemory snippet:\n{memory[:500]}..."
     
     # 10. Help
     elif any(phrase in msg_lower for phrase in [
         "help", "what can you do", "commands", "how do i"
     ]):
-        response_text = """👋 I'm **Galidima**, your MyCasa Pro Manager.
+        response_text = """I'm Galidima, your MyCasa Pro manager.
 
-I share context with the main Clawdbot agent, so I know about your conversations, contacts, and preferences.
+What I can do:
 
-**What I can do:**
+Status reports
+- "What's going on?" - Quick status
+- "Full report" - Detailed system report
+- "Recent activity" - What happened today
 
-📊 **Status Reports**
-• "What's going on?" - Quick status
-• "Full report" - Detailed system report
-• "Recent activity" - What happened today
+Messaging
+- "Send WhatsApp to [name] saying [message]"
+- "List contacts"
 
-💬 **Messaging**
-• "Send WhatsApp to [name] saying [message]"
-• "List contacts"
+Tasks and bills
+- "Show pending tasks"
+- "Upcoming bills"
 
-📋 **Tasks & Bills**
-• "Show pending tasks"
-• "Upcoming bills"
+Context and memory
+- "What do you know?" - See my knowledge
+- "Who am I?" - Your profile
+- "What did we do?" - Recent history
 
-🧠 **Context & Memory**
-• "What do you know?" - See my knowledge
-• "Who am I?" - Your profile
-• "What did we do?" - Recent history
-
-Just type naturally - I'll figure out what you need!"""
+Just type naturally and I will figure out what you need."""
     
     # 11. Fallback - use LLM with Galidima persona
     else:
-        reasoning_log.append("🤷 No specific pattern matched")
-        reasoning_log.append("🤖 Routing to Galidima (Manager) via LLM")
+        reasoning_log.append("No specific pattern matched")
+        reasoning_log.append("Routing to Galidima (Manager) via LLM")
         
         try:
             from core.llm import chat_with_agent
@@ -472,12 +475,12 @@ Just type naturally - I'll figure out what you need!"""
                 context=manager_context,
                 conversation_history=conversation_history
             )
-            reasoning_log.append("✅ Galidima responded via LLM")
+            reasoning_log.append("Galidima responded via LLM")
         except Exception as e:
-            reasoning_log.append(f"❌ LLM fallback error: {str(e)}")
-            response_text = f"🏠 I'm Galidima, your home manager. I had trouble processing that. Try asking about status, tasks, or bills, or @mention a specific agent like @Mamadou for finance."
+            reasoning_log.append(f"LLM fallback error: {str(e)}")
+            response_text = "I'm Galidima, your home manager. I had trouble processing that. Try asking about status, tasks, or bills, or mention a specific agent like @Mamadou for finance."
     
-    reasoning_log.append(f"✅ Response generated ({len(response_text)} chars)")
+    reasoning_log.append(f"Response generated ({len(response_text)} chars)")
     
     try:
         from core.response_formatting import normalize_agent_response
@@ -498,58 +501,56 @@ def _format_quick_status(status: Dict) -> str:
     alerts = facts.get("alerts", [])
     tasks = facts.get("tasks", {})
     
-    text = "📊 **Quick Status**\n\n"
+    text = "Quick status\n"
     
     # Alerts
     if alerts:
-        text += "⚠️ **Alerts:**\n"
+        text += "Alerts:\n"
         for alert in alerts[:3]:
-            text += f"• {alert}\n"
-        text += "\n"
+            text += f"- {alert}\n"
     
     # Tasks
-    text += f"📋 **Tasks:** {tasks.get('pending', 0)} pending, {tasks.get('overdue', 0)} overdue\n\n"
+    text += f"\nTasks: {tasks.get('pending', 0)} pending, {tasks.get('overdue', 0)} overdue\n"
     
     # Recent changes
     changes = facts.get("recent_changes", [])
     if changes:
-        text += "🕐 **Recent:**\n"
+        text += "\nRecent changes:\n"
         for change in changes[:3]:
-            text += f"• {change}\n"
+            text += f"- {change}\n"
     
     # Unknowns
     unknowns = status.get("unknowns", [])
     if unknowns:
-        text += "\n❓ **Unknowns:**\n"
+        text += "\nUnknowns:\n"
         for u in unknowns[:2]:
-            text += f"• {u}\n"
+            text += f"- {u}\n"
     
     return text
 
 
 def _format_full_report(report: Dict) -> str:
     """Format full report for chat display"""
-    text = "📊 **Full System Report**\n\n"
+    text = "Full system report\n"
     
     # Agent status
     agents = report.get("agents", {})
     if agents:
-        text += "🤖 **Agents:**\n"
+        text += "\nAgents:\n"
         for name, info in list(agents.items())[:5]:
             state = info.get("state", "unknown")
-            text += f"• {name}: {state}\n"
-        text += "\n"
+            text += f"- {name}: {state}\n"
     
     # Tasks
     tasks = report.get("tasks", {})
-    text += f"📋 **Tasks:** {tasks.get('running', 0)} running, {tasks.get('queued', 0)} queued\n\n"
+    text += f"\nTasks: {tasks.get('running', 0)} running, {tasks.get('queued', 0)} queued\n"
     
     # Recommendations
     recs = report.get("recommendations", [])
     if recs:
-        text += "💡 **Recommendations:**\n"
+        text += "\nRecommendations:\n"
         for rec in recs[:3]:
-            text += f"• {rec}\n"
+            text += f"- {rec}\n"
     
     return text
 

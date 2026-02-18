@@ -327,6 +327,15 @@ export default function JanitorPage() {
         }
       }
     } catch (err: any) {
+      if (err?.status === 404) {
+        setChatHistory([]);
+        setChatHistoryStatus("idle");
+        setChatHistoryError(null);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(chatStorageKey(user?.id ?? null));
+        }
+        return;
+      }
       setChatHistoryStatus("error");
       setChatHistoryError(err?.detail || "Unable to load history");
     }
@@ -729,7 +738,6 @@ export default function JanitorPage() {
           localStorage.removeItem(chatStorageKey(user?.id ?? null));
         }
         setChatHistory([]);
-        await handleNewChatSession();
       }
     } catch {
       // ignore
@@ -888,7 +896,7 @@ export default function JanitorPage() {
             <div>
               <Text fw={600}>Janitor</Text>
               <Text c="dimmed" size="sm">
-                Salimata ✨ — System health, audits, and safe edits
+                Janitor — system health, audits, and safe edits
               </Text>
             </div>
           </Group>
@@ -1282,7 +1290,7 @@ export default function JanitorPage() {
                       Run the audit wizard
                     </Text>
                     <Text size="sm" c="dimmed" mt="xs">
-                      Salimata will verify every subsystem and list fixes in priority order.
+                      Janitor will verify every subsystem and list fixes in priority order.
                     </Text>
                   </Box>
                 </Card>

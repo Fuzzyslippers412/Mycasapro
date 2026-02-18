@@ -21,6 +21,7 @@ import {
   Skeleton,
   Switch,
   Divider,
+  Modal,
   Menu,
   Loader,
   Select,
@@ -48,7 +49,7 @@ import {
   IconEdit,
 } from "@tabler/icons-react";
 import { tokens } from "@/theme/tokens";
-import { sendAgentChat, sendManagerChat, getAgentChatHistory, getAgentConversations, createAgentConversation, renameAgentConversation, archiveAgentConversation, restoreAgentConversation, getApiBaseUrl, isNetworkError, apiFetch } from "@/lib/api";
+import { sendAgentChat, sendManagerChat, getAgentChatHistory, getAgentConversations, createAgentConversation, renameAgentConversation, archiveAgentConversation, restoreAgentConversation, deleteAgentConversation, getApiBaseUrl, isNetworkError, apiFetch } from "@/lib/api";
 
 interface Message {
   id: number;
@@ -78,6 +79,13 @@ interface Message {
       includeOauth: boolean;
     };
   };
+}
+
+interface DelegateMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
 }
 
 interface ConversationSummary {
@@ -348,6 +356,13 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   const [personalModeChecked, setPersonalModeChecked] = useState(false);
   const [personalModeError, setPersonalModeError] = useState<string | null>(null);
   const [taskActionState, setTaskActionState] = useState<Record<string, string>>({});
+  const [delegateOpen, setDelegateOpen] = useState(false);
+  const [delegateAgent, setDelegateAgent] = useState<string | null>(null);
+  const [delegateMessages, setDelegateMessages] = useState<DelegateMessage[]>([]);
+  const [delegateLoading, setDelegateLoading] = useState(false);
+  const [delegateError, setDelegateError] = useState<string | null>(null);
+  const [delegateConversationId, setDelegateConversationId] = useState<string | null>(null);
+  const delegateCloseTimeout = useRef<number | null>(null);
   const agentTheme = (() => {
     const key = selectedAgent || "manager";
     switch (key) {
@@ -433,6 +448,84 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     [nextMessageId]
   );
 
+  const closeDelegatePanel = useCallback(() => {
+    if (delegateCloseTimeout.current) {
+      window.clearTimeout(delegateCloseTimeout.current);
+      delegateCloseTimeout.current = null;
+    }
+    setDelegateOpen(false);
+    setDelegateAgent(null);
+    setDelegateMessages([]);
+    setDelegateLoading(false);
+    setDelegateError(null);
+    setDelegateConversationId(null);
+  }, []);
+
+  const runDelegatedAgent = useCallback(
+    async (agentId: string, prompt: string) => {
+      if (!agentId) return;
+      if (delegateCloseTimeout.current) {
+        window.clearTimeout(delegateCloseTimeout.current);
+        delegateCloseTimeout.current = null;
+      }
+      setDelegateOpen(true);
+      setDelegateAgent(agentId);
+      setDelegateMessages([
+        {
+          id: nextMessageId(),
+          role: "user",
+          content: prompt,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      setDelegateLoading(true);
+      setDelegateError(null);
+      setDelegateConversationId(null);
+
+      try {
+        const created = await createAgentConversation(agentId);
+        const convoId = created?.conversation_id || null;
+        setDelegateConversationId(convoId);
+        if (convoId && typeof window !== "undefined") {
+          window.localStorage.setItem(conversationKey(agentId, user?.id), convoId);
+        }
+        const response = await sendAgentChat(agentId, prompt, convoId || undefined);
+        const responseText = response?.response || "Task completed.";
+        setDelegateMessages((prev) => [
+          ...prev,
+          {
+            id: nextMessageId(),
+            role: "assistant",
+            content: responseText,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextMessageId(),
+            role: "assistant",
+            content: responseText,
+            timestamp: new Date().toISOString(),
+            agent: AGENT_NAMES[agentId] || agentId,
+          },
+        ]);
+        delegateCloseTimeout.current = window.setTimeout(() => {
+          closeDelegatePanel();
+        }, 2500);
+      } catch (e: any) {
+        setDelegateError(
+          isNetworkError(e)
+            ? `Unable to reach backend at ${API_URL}.`
+            : e?.detail || e?.message || "Delegation failed."
+        );
+      } finally {
+        setDelegateLoading(false);
+      }
+    },
+    [closeDelegatePanel, nextMessageId]
+  );
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -499,12 +592,8 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         }
       }
       if (!conversationId) {
-        try {
-          const created = await createAgentConversation(agentId);
-          conversationId = created?.conversation_id;
-        } catch {
-          conversationId = undefined;
-        }
+        setHistoryStatus("idle");
+        return;
       }
       const data = await getAgentChatHistory(agentId, conversationId, 50);
       if (data?.messages?.length) {
@@ -523,6 +612,15 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       }
       setHistoryStatus("idle");
     } catch (err: any) {
+      if (err?.status === 404) {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(conversationKey(agentId, user?.id));
+        }
+        setMessages([]);
+        setHistoryStatus("idle");
+        setHistoryError(null);
+        return;
+      }
       setHistoryStatus("error");
       if (isNetworkError(err)) {
         setHistoryError(`Unable to reach backend at ${API_URL}.`);
@@ -576,7 +674,10 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     const currentId = localStorage.getItem(conversationKey(selectedAgent, user?.id));
     if (!currentId) return;
     if (!sessions.find((session) => session.id === currentId)) {
-      handleNewSession();
+      localStorage.removeItem(conversationKey(selectedAgent, user?.id));
+      setMessages([]);
+      setHistoryStatus("idle");
+      setHistoryError(null);
     }
   }, [sessions, sessionsLoading, showArchivedSessions, selectedAgent, user?.id]);
 
@@ -1004,7 +1105,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         const detail = err?.detail || err?.message;
         if (isNetworkError(err)) {
           addLocalResponse(
-            `Unable to reach the backend at ${API_URL}. Start the server and try again.`,
+            `Backend is offline at ${API_URL}. Start MyCasa Pro (./start_all.sh) and retry.`,
             "System"
           );
           continue;
@@ -1056,6 +1157,10 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       setMessages((prev) => [...prev, assistantMessage]);
       setPendingRoute(null);
       refreshSessions(agentId);
+      if (data?.routed_to && !data?.task_created) {
+        const delegationPrompt = data.delegation_note || userMessage.content;
+        runDelegatedAgent(data.routed_to, delegationPrompt);
+      }
       if (data?.task_created && typeof window !== "undefined") {
         const routed = data?.routed_to || "maintenance";
         setSelectedAgent(routed);
@@ -1274,10 +1379,6 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       setHistoryStatus("idle");
       setHistoryError(null);
       try {
-        const created = await createAgentConversation(selectedAgent);
-        if (created?.conversation_id && typeof window !== "undefined") {
-          localStorage.setItem(convKey, created.conversation_id);
-        }
         await refreshSessions(selectedAgent);
       } catch {
         // ignore
@@ -1286,7 +1387,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       setHistoryStatus("error");
       setHistoryError(
         isNetworkError(e)
-          ? `Unable to reach backend at ${API_URL}.`
+          ? `Backend is offline at ${API_URL}. Start MyCasa Pro (./start_all.sh) and retry.`
           : (e as any)?.detail || (e as Error)?.message || "Failed to clear chat history."
       );
     }
@@ -1318,7 +1419,12 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   const handleDeleteSession = async (sessionId: string) => {
     if (!sessionId) return;
     try {
-      await apiFetch(`/api/agents/${selectedAgent}/history?conversation_id=${sessionId}`, { method: "DELETE" });
+      try {
+        await deleteAgentConversation(selectedAgent, sessionId);
+      } catch {
+        // Fallback for older backend route
+        await apiFetch(`/api/agents/${selectedAgent}/history?conversation_id=${sessionId}`, { method: "DELETE" });
+      }
       await refreshSessions(selectedAgent);
       const currentId = typeof window !== "undefined" ? localStorage.getItem(conversationKey(selectedAgent, user?.id)) : null;
       if (currentId === sessionId) {
@@ -1327,10 +1433,15 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         }
         setMessages([]);
         setHistoryStatus("idle");
-        await handleNewSession();
+        setHistoryError(null);
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      setHistoryStatus("error");
+      setHistoryError(
+        isNetworkError(e)
+          ? `Backend is offline at ${API_URL}. Start MyCasa Pro (./start_all.sh) and retry.`
+          : (e as any)?.detail || (e as Error)?.message || "Failed to delete session."
+      );
     }
   };
 
@@ -1375,7 +1486,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        minHeight: 640,
+        minHeight: 420,
       }
     : {
         marginBottom: -1,
@@ -1834,6 +1945,14 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
 
           {/* Messages */}
           <ScrollArea style={{ flex: 1, minHeight: 0 }} p="sm" type="auto" className="global-chat-messages">
+            <Box
+              style={{
+                minHeight: "100%",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-end",
+              }}
+            >
             <Stack gap="sm">
               {!chatAllowed && personalModeChecked && personalModeError && (
                 <Alert color="red" title="Backend unavailable">
@@ -2242,62 +2361,162 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
               )}
               <div ref={messagesEndRef} />
             </Stack>
+            </Box>
           </ScrollArea>
             </Box>
           </Box>
     </Box>
   );
 
+  const delegateMeta = delegateAgent ? agents.find((a) => a.id === delegateAgent) : null;
+  const delegateLabel = delegateAgent ? (AGENT_NAMES[delegateAgent] || delegateAgent) : "Agent";
+  const delegateRoute = delegateAgent ? handoffRouteFor(delegateAgent) : null;
+  const delegateStateLabel = delegateLoading
+    ? "Working"
+    : delegateError
+      ? "Error"
+      : "Completed";
+
   return (
-    <Box
-      className={`global-chat${isEmbedded ? " global-chat--embedded" : ""}`}
-      ref={rootRef}
-      style={{
-        position: isEmbedded ? "sticky" : "fixed",
-        top: isEmbedded ? 88 : undefined,
-        bottom: isEmbedded ? "auto" : 16,
-        left: isEmbedded ? "auto" : "50%",
-        right: "auto",
-        transform: isEmbedded ? "none" : "translateX(-50%)",
-        zIndex: 200,
+    <>
+      <Modal
+        opened={delegateOpen}
+        onClose={closeDelegatePanel}
+        fullScreen
+        withCloseButton
+        title={`Delegating to ${delegateLabel}`}
+      >
+        <Stack gap="sm">
+          <Group justify="space-between" align="center">
+            <Group gap="sm">
+              <Avatar size="sm" radius="xl" color="primary">
+                <IconRobot size={14} />
+              </Avatar>
+              <Stack gap={2}>
+                <Text size="sm" fw={600}>
+                  {delegateLabel}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {delegateMeta?.state || delegateStateLabel.toLowerCase()}
+                </Text>
+              </Stack>
+            </Group>
+            <Badge size="xs" variant="light" color={delegateError ? "red" : delegateLoading ? "yellow" : "green"}>
+              {delegateStateLabel}
+            </Badge>
+            {delegateConversationId && (
+              <Text size="xs" c="dimmed">
+                Session {delegateConversationId.slice(0, 8)}
+              </Text>
+            )}
+          </Group>
+
+          <Divider />
+
+          <ScrollArea h="calc(100vh - 300px)" type="auto">
+            <Stack gap="sm">
+              {delegateMessages.map((msg) => (
+                <Group
+                  key={msg.id}
+                  justify={msg.role === "user" ? "flex-end" : "flex-start"}
+                  align="flex-end"
+                >
+                  <Paper
+                    px="sm"
+                    py="xs"
+                    radius="lg"
+                    style={{
+                      maxWidth: "82%",
+                      background: msg.role === "user" ? tokens.colors.primary[600] : "var(--chat-message-bg)",
+                      color: msg.role === "user" ? "white" : undefined,
+                    }}
+                  >
+                    <Text size="sm">{msg.content}</Text>
+                  </Paper>
+                </Group>
+              ))}
+              {delegateLoading && (
+                <Group justify="flex-start" align="center">
+                  <Loader size="xs" />
+                  <Text size="sm" c="dimmed">
+                    Working…
+                  </Text>
+                </Group>
+              )}
+            </Stack>
+          </ScrollArea>
+
+          {delegateError && (
+            <Alert color="red" title="Delegation failed">
+              <Text size="sm">{delegateError}</Text>
+            </Alert>
+          )}
+
+          <Group justify="space-between">
+            {delegateRoute ? (
+              <Button size="xs" variant="light" onClick={() => router.push(delegateRoute)}>
+                Open {delegateLabel}
+              </Button>
+            ) : (
+              <Box />
+            )}
+            <Button size="xs" variant="default" onClick={closeDelegatePanel}>
+              Close
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Box
+        className={`global-chat${isEmbedded ? " global-chat--embedded" : ""}`}
+        ref={rootRef}
+        style={{
+          position: isEmbedded ? "sticky" : "fixed",
+          top: isEmbedded ? 96 : undefined,
+          bottom: isEmbedded ? "auto" : 16,
+          left: isEmbedded ? "auto" : "50%",
+          right: "auto",
+          transform: isEmbedded ? "none" : "translateX(-50%)",
+          zIndex: 200,
         width: isEmbedded ? "100%" : "min(560px, calc(100vw - 32px))",
         minWidth: isEmbedded ? "100%" : undefined,
         maxWidth: isEmbedded ? "100%" : undefined,
         height: isEmbedded ? "100%" : undefined,
+        maxHeight: isEmbedded ? "100%" : undefined,
         alignSelf: isEmbedded ? "stretch" : undefined,
       }}
-    >
-      {/* Chat panel */}
-      {isEmbedded ? panel : <Collapse in={showPanel}>{panel}</Collapse>}
+      >
+        {/* Chat panel */}
+        {isEmbedded ? panel : <Collapse in={showPanel}>{panel}</Collapse>}
 
-      {!isEmbedded && (
-        <Box onClick={toggle} className="global-chat-lip" data-expanded={expanded}>
-          <Box className="global-chat-lip-inner">
-            <Box className="global-chat-lip-notch" aria-hidden="true" />
-            <Group
-              justify="center"
-              gap="xs"
-              py={expanded ? 6 : 8}
-              px="lg"
-            >
-              <ThemeIcon
-                variant={expanded ? "light" : "filled"}
-                color={agentTheme.color}
-                size="sm"
-                radius="md"
-                style={{ transition: "opacity 200ms ease" }}
+        {!isEmbedded && (
+          <Box onClick={toggle} className="global-chat-lip" data-expanded={expanded}>
+            <Box className="global-chat-lip-inner">
+              <Box className="global-chat-lip-notch" aria-hidden="true" />
+              <Group
+                justify="center"
+                gap="xs"
+                py={expanded ? 6 : 8}
+                px="lg"
               >
-                <IconMessage size={14} />
-              </ThemeIcon>
-              <Text fw={expanded ? 500 : 600} size="xs" c={expanded ? "dimmed" : "gray.7"}>
-                {lipTitle}
-              </Text>
-              {!expanded && (
-                <Badge
-                  size="xs"
-                  variant="light"
-                  color={onlineCount > 0 ? "green" : "gray"}
+                <ThemeIcon
+                  variant={expanded ? "light" : "filled"}
+                  color={agentTheme.color}
+                  size="sm"
+                  radius="md"
+                  style={{ transition: "opacity 200ms ease" }}
                 >
+                  <IconMessage size={14} />
+                </ThemeIcon>
+                <Text fw={expanded ? 500 : 600} size="xs" c={expanded ? "dimmed" : "gray.7"}>
+                  {lipTitle}
+                </Text>
+                {!expanded && (
+                  <Badge
+                    size="xs"
+                    variant="light"
+                    color={onlineCount > 0 ? "green" : "gray"}
+                  >
                   {onlineCount}
                 </Badge>
               )}
@@ -2311,5 +2530,6 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         </Box>
       )}
     </Box>
+    </>
   );
 }

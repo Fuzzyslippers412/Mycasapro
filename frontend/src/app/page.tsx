@@ -523,6 +523,9 @@ function SystemHealthCard({
   status,
   loading,
   error,
+  fallback,
+  fallbackLoading,
+  fallbackError,
 }: {
   status: {
     cpu_usage?: number | null;
@@ -532,6 +535,9 @@ function SystemHealthCard({
   } | null;
   loading: boolean;
   error: Error | null;
+  fallback: Array<{ label: string; value: string }>;
+  fallbackLoading: boolean;
+  fallbackError: Error | null;
 }) {
   const metrics = [
     {
@@ -560,6 +566,25 @@ function SystemHealthCard({
     (m) => typeof m.value === "number" && Number.isFinite(m.value)
   );
   const hasMetrics = availableMetrics.length > 0;
+  const hasFallback = fallback.length > 0;
+  const badgeLabel = error
+    ? hasFallback
+      ? "Snapshot"
+      : "Offline"
+    : hasMetrics
+      ? "Live"
+      : hasFallback
+        ? "Snapshot"
+        : "Unavailable";
+  const badgeColor = error
+    ? hasFallback
+      ? "yellow"
+      : "gray"
+    : hasMetrics
+      ? "success"
+      : hasFallback
+        ? "yellow"
+        : "yellow";
 
   return (
     <Card radius="lg" withBorder padding="md" className="system-health-card dashboard-card" style={{ minHeight: 360 }}>
@@ -572,24 +597,12 @@ function SystemHealthCard({
             System Health
           </Text>
         </Group>
-        <Badge
-          size="sm"
-          variant="light"
-          color={error ? "gray" : hasMetrics ? "success" : "yellow"}
-        >
-          {error ? "Offline" : hasMetrics ? "Live" : "Unavailable"}
+        <Badge size="sm" variant="light" color={badgeColor}>
+          {badgeLabel}
         </Badge>
       </Group>
 
-      {error ? (
-        <Text size="sm" c="dimmed">
-          System metrics unavailable right now.
-        </Text>
-      ) : !hasMetrics ? (
-        <Text size="sm" c="dimmed">
-          Live telemetry is not available on this host.
-        </Text>
-      ) : (
+      {hasMetrics ? (
         <Stack gap="xs">
           {availableMetrics.map((row) => (
             <Group key={row.label} justify="space-between">
@@ -606,6 +619,26 @@ function SystemHealthCard({
             </Group>
           ))}
         </Stack>
+      ) : hasFallback ? (
+        <Stack gap="xs">
+          {fallbackLoading && (
+            <Text size="sm" c="dimmed">Loading system snapshot…</Text>
+          )}
+          {!fallbackLoading && fallback.map((row) => (
+            <Group key={row.label} justify="space-between">
+              <Text size="sm" c="dimmed">
+                {row.label}
+              </Text>
+              <Text size="sm" fw={600}>
+                {row.value}
+              </Text>
+            </Group>
+          ))}
+        </Stack>
+      ) : (
+        <Text size="sm" c="dimmed">
+          {fallbackError ? "System snapshot unavailable." : "System metrics unavailable right now."}
+        </Text>
       )}
     </Card>
   );
@@ -649,6 +682,10 @@ export default function HomePage() {
   };
   const [portfolioChange, setPortfolioChange] = useState<number | null>(null);
   const [portfolioLoading, setPortfolioLoading] = useState(true);
+  const [systemLive, setSystemLive] = useState<any>(null);
+  const [systemLiveLoading, setSystemLiveLoading] = useState(true);
+  const [systemLiveError, setSystemLiveError] = useState<Error | null>(null);
+  const [graphStats, setGraphStats] = useState<{ nodes: number; edges: number } | null>(null);
   const apiBase = getApiBaseUrl();
   const isOnline = !statusError;
   const statusErrorStatus = (statusError as any)?.status;
@@ -725,6 +762,32 @@ export default function HomePage() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const fetchLiveSnapshot = async () => {
+      try {
+        const [live, graph] = await Promise.all([
+          apiFetch<any>("/api/system/live"),
+          apiFetch<any>("/api/secondbrain/graph"),
+        ]);
+        if (!active) return;
+        setSystemLive(live);
+        const nodes = Array.isArray(graph?.nodes) ? graph.nodes.length : 0;
+        const edges = Array.isArray(graph?.edges) ? graph.edges.length : 0;
+        setGraphStats({ nodes, edges });
+      } catch (e) {
+        if (!active) return;
+        setSystemLiveError(e as Error);
+      } finally {
+        if (active) setSystemLiveLoading(false);
+      }
+    };
+    fetchLiveSnapshot();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const activities: Activity[] = [];
 
   const statusData = statusError ? null : status;
@@ -765,6 +828,89 @@ export default function HomePage() {
   const onlineAgents = agentList.filter(
     (a) => a.status === "online" || a.status === "running"
   ).length;
+
+  const fallbackHealthRows = useMemo(() => {
+    if (!systemLive) return [];
+    const rows: Array<{ label: string; value: string }> = [];
+    const secondbrain = systemLive.secondbrain;
+    if (secondbrain) {
+      const totalNotes = secondbrain?.stats?.total_notes ?? 0;
+      rows.push({
+        label: "SecondBrain",
+        value: `${secondbrain.status || "unknown"} • ${totalNotes} notes`,
+      });
+      const folders = secondbrain?.stats?.folders ? Object.keys(secondbrain.stats.folders).length : 0;
+      rows.push({
+        label: "Vault folders",
+        value: `${folders} folders`,
+      });
+    }
+    if (graphStats) {
+      rows.push({
+        label: "Memory graph",
+        value: `${graphStats.nodes} nodes • ${graphStats.edges} links`,
+      });
+      const byType = systemLive?.secondbrain?.stats?.by_type;
+      if (byType && typeof byType === "object") {
+        const typeCount = Object.keys(byType).length;
+        rows.push({
+          label: "Memory types",
+          value: `${typeCount} types`,
+        });
+      }
+    }
+    const memory = systemLive.memory;
+    if (memory?.core_files) {
+      const coreCount = Object.values(memory.core_files).filter(Boolean).length;
+      rows.push({
+        label: "Memory vault",
+        value: `${coreCount} core files`,
+      });
+    }
+    if (memory?.daily_memory) {
+      rows.push({
+        label: "Daily memory",
+        value: `${memory.daily_memory.total_files ?? 0} files`,
+      });
+    }
+    const shared = systemLive.shared_context?.sources;
+    if (shared) {
+      const memChars = shared.memory_chars ?? 0;
+      rows.push({
+        label: "Shared context",
+        value: `${memChars} chars`,
+      });
+    }
+    const heartbeat = systemLive.household_heartbeat;
+    if (heartbeat) {
+      rows.push({
+        label: "Heartbeat",
+        value: `${heartbeat.open_findings ?? 0} findings`,
+      });
+    }
+    const chat = systemLive.chat;
+    if (chat) {
+      rows.push({
+        label: "Chat sessions",
+        value: `${chat.active_sessions ?? 0} active`,
+      });
+    }
+    const connectors = systemLive.connectors?.stats;
+    if (connectors) {
+      rows.push({
+        label: "Connectors",
+        value: `${connectors.healthy ?? 0}/${connectors.total ?? 0} healthy`,
+      });
+    }
+    const scheduled = systemLive.scheduled_jobs;
+    if (scheduled) {
+      rows.push({
+        label: "Scheduled jobs",
+        value: `${scheduled.active_jobs ?? 0} active`,
+      });
+    }
+    return rows;
+  }, [systemLive, graphStats]);
 
   return (
     <Shell>
@@ -970,6 +1116,9 @@ export default function HomePage() {
                   status={systemStatus.data}
                   loading={systemStatus.loading}
                   error={systemStatus.error}
+                  fallback={fallbackHealthRows}
+                  fallbackLoading={systemLiveLoading}
+                  fallbackError={systemLiveError}
                 />
               </SimpleGrid>
 

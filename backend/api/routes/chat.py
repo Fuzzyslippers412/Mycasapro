@@ -19,6 +19,15 @@ _conversations: Dict[str, Dict[str, Any]] = {}
 _messages: Dict[str, List[Dict[str, Any]]] = {}
 _uploads_dir = Path(__file__).parent.parent.parent / "data" / "chat_uploads"
 _uploads_dir.mkdir(parents=True, exist_ok=True)
+_manager_instance: Optional[Any] = None
+
+
+def _get_manager():
+    global _manager_instance
+    if _manager_instance is None:
+        from ...agents import ManagerAgent
+        _manager_instance = ManagerAgent()
+    return _manager_instance
 
 
 # ==================== MODELS ====================
@@ -199,8 +208,6 @@ async def send_message(request: SendMessageRequest):
     Send a message to Galidima (Manager Agent).
     Optionally include file attachments by their file_ids.
     """
-    from ...agents import ManagerAgent
-    
     conversation_id = get_or_create_conversation(request.conversation_id)
     
     # Process attachments
@@ -256,38 +263,44 @@ async def send_message(request: SendMessageRequest):
     reasoning_log = []
     
     try:
-        manager = ManagerAgent()
+        manager = _get_manager()
         
         # Build reasoning log
-        reasoning_log.append(f"📨 Received message in conversation {conversation_id[:20]}...")
+        reasoning_log.append(f"Received message in conversation {conversation_id[:20]}...")
         
         if attachments:
-            reasoning_log.append(f"📎 Processing {len(attachments)} attachment(s)")
+            reasoning_log.append(f"Processing {len(attachments)} attachment(s)")
             for att in attachments:
                 reasoning_log.append(f"   - {att['name']} ({att['type']})")
         
         # Check for team routing
         routing = manager.get_team_for_request(full_message)
         if routing:
-            reasoning_log.append(f"🎯 Detected complex request - suggesting team: {routing}")
+            reasoning_log.append(f"Detected complex request - suggesting team: {routing}")
         else:
             # Simple routing
             route_to = manager.route_to_appropriate_agent(full_message)
             if route_to:
-                reasoning_log.append(f"🎯 Routing to agent: {route_to}")
+                reasoning_log.append(f"Routing to agent: {route_to}")
             else:
-                reasoning_log.append("🎯 Handling directly")
+                reasoning_log.append("Handling directly")
         
-        reasoning_log.append("💭 Generating response...")
+        reasoning_log.append("Generating response...")
         
         # Get AI response
         response = await manager.chat(full_message)
         
-        reasoning_log.append("✅ Response generated")
+        reasoning_log.append("Response generated")
         
     except Exception as e:
-        response = f"Sorry, I encountered an error: {str(e)} 🏠"
-        reasoning_log.append(f"❌ Error: {str(e)}")
+        response = f"Sorry, I encountered an error: {str(e)}"
+        reasoning_log.append(f"Error: {str(e)}")
+
+    try:
+        from core.response_formatting import normalize_agent_response
+        response = normalize_agent_response("manager", response)
+    except Exception:
+        pass
     
     # Add assistant message
     assistant_msg = add_message(

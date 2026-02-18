@@ -299,6 +299,10 @@ export async function restoreAgentConversation(agentId: string, conversationId: 
   return apiFetch(`/api/agents/${agentId}/conversations/${conversationId}/restore`, { method: "PATCH" });
 }
 
+export async function deleteAgentConversation(agentId: string, conversationId: string) {
+  return apiFetch(`/api/agents/${agentId}/conversations/${conversationId}`, { method: "DELETE" });
+}
+
 // Agent context APIs
 export interface AgentContextSummary {
   id: string;

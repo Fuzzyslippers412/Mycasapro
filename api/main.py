@@ -699,8 +699,30 @@ async def manager_chat(
                 action_results["task_error"] = {"success": False, "error": action_error}
             start_time = time.perf_counter()
             context = {"history": history_payload, "request_id": request_id}
+            tool_results = []
             if action_results:
-                context["action_results"] = action_results
+                for key, payload in action_results.items():
+                    if isinstance(payload, dict):
+                        success = payload.get("success")
+                        detail = payload.get("error") or payload.get("task") or payload.get("matches") or payload
+                        status = "success" if success else "failed"
+                        tool_results.append({"id": key, "content": f"{key} {status}: {detail}"})
+                    else:
+                        tool_results.append({"id": key, "content": str(payload)})
+            try:
+                status_snapshot = manager.quick_status()
+                tasks = status_snapshot.get("facts", {}).get("tasks", {}) if isinstance(status_snapshot, dict) else {}
+                pending = tasks.get("pending", 0)
+                upcoming = tasks.get("upcoming", [])[:3] if isinstance(tasks, dict) else []
+                upcoming_text = ", ".join(
+                    f"{t.get('title')} ({t.get('date')})" for t in upcoming if isinstance(t, dict)
+                )
+                snapshot_text = f"tasks_pending={pending}; upcoming={upcoming_text or 'none'}"
+                tool_results.append({"id": "system_snapshot", "content": snapshot_text})
+            except Exception:
+                pass
+            if tool_results:
+                context["tool_results"] = tool_results
             response = await manager.chat(
                 request.message,
                 context=context,

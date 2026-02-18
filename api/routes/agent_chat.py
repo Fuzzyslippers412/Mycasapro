@@ -25,6 +25,7 @@ from database.connection import get_db
 from database.models import ChatConversation, ChatMessage, AgentLog, Notification
 from core.chat_store import get_or_create_conversation, add_message, get_history
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 from core.secondbrain import SecondBrain
 from core.agent_prompts import get_agent_prompt
 
@@ -560,12 +561,23 @@ async def chat_with_agent(
                         action_results.append({"id": "task-create", "content": f"task_create error: {action_error}"})
             request_id = getattr(http_request.state, "request_id", None)
             start_time = time.perf_counter()
+            tool_results = list(action_results)
+            if canonical_id in {"manager", "maintenance"}:
+                try:
+                    maintenance_agent = _get_cached_agent("maintenance")
+                    if maintenance_agent and hasattr(maintenance_agent, "get_pending_tasks"):
+                        pending_tasks = maintenance_agent.get_pending_tasks()
+                        pending_titles = [t.get("title") for t in pending_tasks[:3] if t.get("title")]
+                        summary = f"pending_tasks={len(pending_tasks)}; next={', '.join(pending_titles) or 'none'}"
+                        tool_results.append({"id": "tasks_snapshot", "content": summary})
+                except Exception:
+                    pass
             response_text = await agent.chat(
                 req.message,
                 context={
                     "history": history_payload,
                     "request_id": request_id,
-                    "tool_results": action_results,
+                    "tool_results": tool_results,
                 },
             )
             latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -715,6 +727,44 @@ async def restore_agent_conversation(
     db.refresh(convo)
     return {"success": True, "conversation_id": convo.id, "archived_at": None}
 
+@router.delete("/{agent_id}/conversations/{conversation_id}")
+async def delete_agent_conversation(
+    agent_id: str,
+    conversation_id: str,
+    user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Delete a chat session and its messages for an agent."""
+    canonical_id = _canonical_agent_id(agent_id)
+    convo = (
+        db.query(ChatConversation)
+        .filter(
+            ChatConversation.id == conversation_id,
+            ChatConversation.user_id == user["id"],
+            ChatConversation.agent_name == canonical_id,
+        )
+        .first()
+    )
+    if not convo:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    for _ in range(3):
+        try:
+            db.query(ChatMessage).filter(ChatMessage.conversation_id == convo.id).delete()
+            db.delete(convo)
+            db.commit()
+            break
+        except OperationalError as exc:
+            db.rollback()
+            if "locked" not in str(exc).lower():
+                raise
+            time.sleep(0.2)
+
+    if agent_id in _agent_conversations:
+        _agent_conversations[agent_id] = []
+
+    return {"success": True, "conversation_id": conversation_id}
+
 
 @router.post("/{agent_id}/conversations")
 async def create_agent_conversation(
@@ -786,9 +836,33 @@ async def get_agent_history(
 ):
     """Get conversation history with an agent."""
     canonical_id = _canonical_agent_id(agent_id)
-    conversation = get_or_create_conversation(
-        db, user_id=user["id"], agent_name=canonical_id, conversation_id=conversation_id
-    )
+    conversation = None
+    if conversation_id:
+        conversation = (
+            db.query(ChatConversation)
+            .filter(
+                ChatConversation.id == conversation_id,
+                ChatConversation.user_id == user["id"],
+                ChatConversation.agent_name == canonical_id,
+            )
+            .first()
+        )
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+    else:
+        conversation = (
+            db.query(ChatConversation)
+            .filter(ChatConversation.user_id == user["id"], ChatConversation.agent_name == canonical_id)
+            .order_by(ChatConversation.updated_at.desc())
+            .first()
+        )
+        if not conversation:
+            return {
+                "agent_id": agent_id,
+                "conversation_id": None,
+                "messages": [],
+                "total": 0,
+            }
     history = get_history(db, conversation.id, limit=limit)
     return {
         "agent_id": agent_id,
@@ -825,13 +899,21 @@ async def clear_agent_history(
 
     cleared = 0
     if conversation:
-        cleared = (
-            db.query(ChatMessage)
-            .filter(ChatMessage.conversation_id == conversation.id)
-            .delete()
-        )
-        db.delete(conversation)
-        db.commit()
+        for _ in range(3):
+            try:
+                cleared = (
+                    db.query(ChatMessage)
+                    .filter(ChatMessage.conversation_id == conversation.id)
+                    .delete()
+                )
+                db.delete(conversation)
+                db.commit()
+                break
+            except OperationalError as exc:
+                db.rollback()
+                if "locked" not in str(exc).lower():
+                    raise
+                time.sleep(0.2)
 
     if agent_id in _agent_conversations:
         _agent_conversations[agent_id] = []

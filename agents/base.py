@@ -481,6 +481,19 @@ class BaseAgent(ABC):
                 identity_blocks.append("## Recent Daily Notes\n" + "\n".join(preview))
             if identity_blocks:
                 system_prompt = f"{system_prompt}\n\n" + "\n\n".join(identity_blocks)
+            if self.name == "manager":
+                try:
+                    from core.settings_typed import get_settings_store
+                    system = get_settings_store().get().system
+                    runtime_note = (
+                        f"Runtime LLM provider: {system.llm_provider}. "
+                        f"Model: {system.llm_model}. "
+                        f"Base URL: {system.llm_base_url}. "
+                        f"Auth: {system.llm_auth_type}."
+                    )
+                    system_prompt = f"{system_prompt}\n\n## Runtime\n{runtime_note}"
+                except Exception:
+                    pass
             developer_prompt = IDENTITY_GUARD.strip()
 
             # Recall relevant context from SecondBrain - with timeout
@@ -609,6 +622,11 @@ class BaseAgent(ABC):
 
             # Strip chain-of-thought formatting if it slips through
             response = self._strip_cot_format(response)
+            try:
+                from core.response_formatting import normalize_agent_response
+                response = normalize_agent_response(self.name, response)
+            except Exception:
+                pass
 
             # Calculate cost (approximate)
             tier_costs = {
@@ -711,20 +729,23 @@ class BaseAgent(ABC):
     # ============ LOGGING & NOTIFICATIONS ============
     
     def log_action(self, action: str, details: str = None, status: str = "success", db: Optional[Session] = None):
-        """Log an agent action to the database (best-effort).
-
-        Always uses a separate session to avoid poisoning caller transactions
-        when SQLite is locked under concurrent writes.
-        """
+        """Log an agent action to the database (best-effort)."""
         try:
-            with get_db() as session:
-                log = AgentLog(
-                    agent=self.name,
-                    action=action,
-                    details=details,
-                    status=status,
-                )
-                session.add(log)
+            log = AgentLog(
+                agent=self.name,
+                action=action,
+                details=details,
+                status=status,
+            )
+            if db is not None:
+                db.add(log)
+                try:
+                    db.flush()
+                except Exception:
+                    pass
+            else:
+                with get_db() as session:
+                    session.add(log)
         except OperationalError as exc:
             # SQLite can be locked briefly under concurrent writes; skip logging to avoid breaking workflows.
             if "database is locked" in str(exc).lower():

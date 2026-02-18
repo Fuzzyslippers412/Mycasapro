@@ -140,7 +140,8 @@ class MaintenanceAgent(BaseAgent):
             
             self.log_action(
                 f"task_status_change",
-                f"Task {task_id} ({task.title}) -> {task.status}"
+                f"Task {task_id} ({task.title}) -> {task.status}",
+                db=db,
             )
             
             return {"success": True, "task": self._task_to_dict(task)}
@@ -480,7 +481,7 @@ class MaintenanceAgent(BaseAgent):
                     task.notes = f"estimated_duration_hours={estimated_duration_hours}"
                 db.add(task)
                 db.flush()
-                self.log_action("task_created", f"Created task: {title}")
+                self.log_action("task_created", f"Created task: {title}", db=db)
                 return self._task_to_dict(task)
         return self._with_db_retry(_create)
 
@@ -513,7 +514,7 @@ class MaintenanceAgent(BaseAgent):
                     task.status = updates["status"]
                 if updates.get("estimated_duration_hours") is not None:
                     task.notes = f"estimated_duration_hours={updates['estimated_duration_hours']}"
-                self.log_action("task_updated", f"Updated task: {task_id}")
+                self.log_action("task_updated", f"Updated task: {task_id}", db=db)
                 return self._task_to_dict(task)
         return self._with_db_retry(_update)
 
@@ -527,7 +528,7 @@ class MaintenanceAgent(BaseAgent):
                 task.completed_date = self._today()
                 if completion_notes:
                     task.notes = completion_notes
-                self.log_action("task_completed", f"Completed task: {task_id}")
+                self.log_action("task_completed", f"Completed task: {task_id}", db=db)
                 return self._task_to_dict(task)
         return self._with_db_retry(_complete)
 
@@ -579,7 +580,7 @@ class MaintenanceAgent(BaseAgent):
             db.add(contractor)
             db.flush()
             
-            self.log_action("contractor_added", f"Added contractor: {name}")
+            self.log_action("contractor_added", f"Added contractor: {name}", db=db)
             
             return {"success": True, "contractor": self._contractor_to_dict(contractor)}
     
@@ -617,7 +618,7 @@ class MaintenanceAgent(BaseAgent):
             db.add(project)
             db.flush()
             
-            self.log_action("project_created", f"Created project: {name}")
+            self.log_action("project_created", f"Created project: {name}", db=db)
             
             return {"success": True, "project": self._project_to_dict(project)}
     
@@ -643,7 +644,7 @@ class MaintenanceAgent(BaseAgent):
             db.add(reading)
             db.flush()
             
-            self.log_action("reading_logged", f"{reading_type}: {value} {unit}")
+            self.log_action("reading_logged", f"{reading_type}: {value} {unit}", db=db)
             
             return {"success": True, "reading_id": reading.id}
     
