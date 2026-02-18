@@ -104,6 +104,12 @@ def ensure_schema():
             if "rotation_parent_id" not in session_columns:
                 conn.execute(text("ALTER TABLE session_tokens ADD COLUMN rotation_parent_id INTEGER"))
 
+    maintenance_columns = _column_names("maintenance_tasks")
+    if maintenance_columns:
+        with engine.begin() as conn:
+            if "conversation_id" not in maintenance_columns:
+                conn.execute(text("ALTER TABLE maintenance_tasks ADD COLUMN conversation_id VARCHAR(36)"))
+
 
 def seed_user_management():
     """Seed default org, roles, permissions, and backfill user roles."""

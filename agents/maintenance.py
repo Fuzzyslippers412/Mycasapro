@@ -7,6 +7,7 @@ from typing import Dict, List, Any, Optional, Union
 from pathlib import Path
 import sys
 import re
+import time
 from dateutil import parser as date_parser
 try:
     from zoneinfo import ZoneInfo
@@ -155,30 +156,35 @@ class MaintenanceAgent(BaseAgent):
         recurrence: str = "none",
         estimated_cost: float = None,
         contractor_id: int = None,
-        notes: str = None
+        notes: str = None,
+        conversation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new maintenance task"""
         scheduled_date = self._coerce_date(scheduled_date)
         due_date = self._coerce_date(due_date) or scheduled_date
-        with get_db() as db:
-            task = MaintenanceTask(
-                title=title,
-                description=description,
-                category=category,
-                priority=priority,
-                scheduled_date=scheduled_date,
-                due_date=due_date or scheduled_date,
-                recurrence=recurrence,
-                estimated_cost=estimated_cost,
-                contractor_id=contractor_id,
-                notes=notes
-            )
-            db.add(task)
-            db.flush()
-            
-            self.log_action("task_created", f"Created task: {title}", db=db)
-            
-            return {"success": True, "task": self._task_to_dict(task)}
+        def _create():
+            with get_db() as db:
+                task = MaintenanceTask(
+                    title=title,
+                    description=description,
+                    category=category,
+                    priority=priority,
+                    scheduled_date=scheduled_date,
+                    due_date=due_date or scheduled_date,
+                    recurrence=recurrence,
+                    estimated_cost=estimated_cost,
+                    contractor_id=contractor_id,
+                    notes=notes,
+                    conversation_id=conversation_id,
+                )
+                db.add(task)
+                db.flush()
+                
+                self.log_action("task_created", f"Created task: {title}", db=db)
+                
+                return {"success": True, "task": self._task_to_dict(task)}
+
+        return self._with_db_retry(_create)
 
     def get_tasks_from_db(self) -> List[Dict[str, Any]]:
         """Get all maintenance tasks (any status)."""
@@ -192,16 +198,18 @@ class MaintenanceAgent(BaseAgent):
 
     def complete_task(self, task_id: int, evidence: Optional[str] = None) -> Dict[str, Any]:
         """Mark a task complete."""
-        with get_db() as db:
-            task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
-            if not task:
-                return {"success": False, "error": "Task not found"}
-            task.status = "completed"
-            task.completed_date = self._today()
-            if evidence:
-                task.notes = (task.notes or "") + f"\n{evidence}"
-            self.log_action("task_completed", f"Completed task: {task_id}", db=db)
-            return {"success": True, "task": self._task_to_dict(task)}
+        def _complete():
+            with get_db() as db:
+                task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
+                if not task:
+                    return {"success": False, "error": "Task not found"}
+                task.status = "completed"
+                task.completed_date = self._today()
+                if evidence:
+                    task.notes = (task.notes or "") + f"\n{evidence}"
+                self.log_action("task_completed", f"Completed task: {task_id}", db=db)
+                return {"success": True, "task": self._task_to_dict(task)}
+        return self._with_db_retry(_complete)
 
     def _coerce_date(self, value: Union[date, str, None]) -> Optional[date]:
         if not value:
@@ -284,7 +292,7 @@ class MaintenanceAgent(BaseAgent):
                     return title
         return text
 
-    def create_task_from_message(self, message: str) -> Optional[Dict[str, Any]]:
+    def create_task_from_message(self, message: str, conversation_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         msg_lower = message.lower()
         intent_keywords = [
             "remind",
@@ -318,6 +326,7 @@ class MaintenanceAgent(BaseAgent):
             category="maintenance",
             priority="medium",
             due_date=due_date,
+            conversation_id=conversation_id,
         )
         if not task or not task.get("id"):
             return {"success": False, "error": "Failed to create task"}
@@ -327,6 +336,7 @@ class MaintenanceAgent(BaseAgent):
             "title": task.get("title", title),
             "due_date": task.get("due_date"),
             "scheduled_date": task.get("scheduled_date"),
+            "conversation_id": conversation_id,
         }
     
     def _create_next_occurrence(self, db, task: MaintenanceTask):
@@ -356,7 +366,8 @@ class MaintenanceAgent(BaseAgent):
             recurrence=task.recurrence,
             estimated_cost=task.estimated_cost,
             contractor_id=task.contractor_id,
-            notes=task.notes
+            notes=task.notes,
+            conversation_id=getattr(task, "conversation_id", None),
         )
         db.add(new_task)
 
@@ -408,6 +419,17 @@ class MaintenanceAgent(BaseAgent):
             # If init fails, still let operations attempt; errors will surface on use.
             self._backend_db_ready = True
 
+    def _with_db_retry(self, operation, retries: int = 3, base_delay: float = 0.2):
+        """Retry small DB writes when SQLite is briefly locked."""
+        from sqlalchemy.exc import OperationalError
+        for attempt in range(retries):
+            try:
+                return operation()
+            except OperationalError as exc:
+                if "database is locked" not in str(exc).lower() or attempt >= retries - 1:
+                    raise
+                time.sleep(base_delay * (attempt + 1))
+
     def list_tasks(self, filters: Optional[Dict[str, Any]] = None, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
         with get_db() as db:
             query = db.query(MaintenanceTask)
@@ -435,23 +457,27 @@ class MaintenanceAgent(BaseAgent):
         due_date: Optional[date] = None,
         assigned_to: Optional[str] = None,
         estimated_duration_hours: Optional[float] = None,
+        conversation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         due_date = self._coerce_date(due_date)
-        with get_db() as db:
-            task = MaintenanceTask(
-                title=title,
-                description=description,
-                category=category,
-                priority=priority,
-                status="pending",
-                due_date=due_date,
-            )
-            if estimated_duration_hours is not None:
-                task.notes = f"estimated_duration_hours={estimated_duration_hours}"
-            db.add(task)
-            db.flush()
-            self.log_action("task_created", f"Created task: {title}")
-            return self._task_to_dict(task)
+        def _create():
+            with get_db() as db:
+                task = MaintenanceTask(
+                    title=title,
+                    description=description,
+                    category=category,
+                    priority=priority,
+                    status="pending",
+                    due_date=due_date,
+                    conversation_id=conversation_id,
+                )
+                if estimated_duration_hours is not None:
+                    task.notes = f"estimated_duration_hours={estimated_duration_hours}"
+                db.add(task)
+                db.flush()
+                self.log_action("task_created", f"Created task: {title}")
+                return self._task_to_dict(task)
+        return self._with_db_retry(_create)
 
     def get_task(self, task_id: int) -> Optional[Dict[str, Any]]:
         with get_db() as db:
@@ -461,47 +487,53 @@ class MaintenanceAgent(BaseAgent):
             return self._task_to_dict(task)
 
     def update_task(self, task_id: int, **updates: Any) -> Dict[str, Any]:
-        with get_db() as db:
-            task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
-            if not task:
-                return {"error": "Task not found"}
-            if updates.get("title") is not None:
-                task.title = updates["title"]
-            if updates.get("description") is not None:
-                task.description = updates["description"]
-            if updates.get("category") is not None:
-                task.category = updates["category"]
-            if updates.get("priority") is not None:
-                task.priority = updates["priority"]
-            if updates.get("due_date") is not None:
-                task.due_date = self._coerce_date(updates["due_date"])
-            if updates.get("status") is not None:
-                task.status = updates["status"]
-            if updates.get("estimated_duration_hours") is not None:
-                task.notes = f"estimated_duration_hours={updates['estimated_duration_hours']}"
-            self.log_action("task_updated", f"Updated task: {task_id}")
-            return self._task_to_dict(task)
+        def _update():
+            with get_db() as db:
+                task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
+                if not task:
+                    return {"error": "Task not found"}
+                if updates.get("title") is not None:
+                    task.title = updates["title"]
+                if updates.get("description") is not None:
+                    task.description = updates["description"]
+                if updates.get("category") is not None:
+                    task.category = updates["category"]
+                if updates.get("priority") is not None:
+                    task.priority = updates["priority"]
+                if updates.get("due_date") is not None:
+                    task.due_date = self._coerce_date(updates["due_date"])
+                if updates.get("status") is not None:
+                    task.status = updates["status"]
+                if updates.get("estimated_duration_hours") is not None:
+                    task.notes = f"estimated_duration_hours={updates['estimated_duration_hours']}"
+                self.log_action("task_updated", f"Updated task: {task_id}")
+                return self._task_to_dict(task)
+        return self._with_db_retry(_update)
 
     def complete_task(self, task_id: int, completion_notes: Optional[str] = None) -> Dict[str, Any]:
-        with get_db() as db:
-            task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
-            if not task:
-                return {"error": "Task not found"}
-            task.status = "completed"
-            task.completed_date = self._today()
-            if completion_notes:
-                task.notes = completion_notes
-            self.log_action("task_completed", f"Completed task: {task_id}")
-            return self._task_to_dict(task)
+        def _complete():
+            with get_db() as db:
+                task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
+                if not task:
+                    return {"error": "Task not found"}
+                task.status = "completed"
+                task.completed_date = self._today()
+                if completion_notes:
+                    task.notes = completion_notes
+                self.log_action("task_completed", f"Completed task: {task_id}")
+                return self._task_to_dict(task)
+        return self._with_db_retry(_complete)
 
     def remove_task(self, task_id: int) -> Dict[str, Any]:
-        with get_db() as db:
-            task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
-            if not task:
-                return {"error": "Task not found"}
-            db.delete(task)
-            self.log_action("task_removed", f"Removed task: {task_id}", db=db)
-            return {"success": True, "id": task_id}
+        def _remove():
+            with get_db() as db:
+                task = db.query(MaintenanceTask).filter(MaintenanceTask.id == task_id).first()
+                if not task:
+                    return {"error": "Task not found"}
+                db.delete(task)
+                self.log_action("task_removed", f"Removed task: {task_id}", db=db)
+                return {"success": True, "id": task_id}
+        return self._with_db_retry(_remove)
     
     # ============ CONTRACTORS ============
     
@@ -643,6 +675,7 @@ class MaintenanceAgent(BaseAgent):
             "category": task.category,
             "priority": task.priority,
             "status": task.status,
+            "conversation_id": getattr(task, "conversation_id", None),
             "scheduled_date": task.scheduled_date.isoformat() if task.scheduled_date else None,
             "due_date": task.due_date.isoformat() if task.due_date else None,
             "completed_date": task.completed_date.isoformat() if task.completed_date else None,

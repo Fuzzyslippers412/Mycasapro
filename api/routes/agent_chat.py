@@ -14,6 +14,8 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import math
+import time
 from threading import Lock
 import re
 
@@ -67,6 +69,9 @@ class AgentResponse(BaseModel):
     task_created: Optional[Dict[str, Any]] = None
     routed_to: Optional[str] = None
     delegation_note: Optional[str] = None
+    input_tokens_est: Optional[int] = None
+    output_tokens_est: Optional[int] = None
+    latency_ms: Optional[int] = None
 
 
 class AgentLogRequest(BaseModel):
@@ -80,6 +85,10 @@ class AgentNotifyRequest(BaseModel):
     title: Optional[str] = None
     category: Optional[str] = None
     priority: Optional[str] = "medium"
+
+
+class ConversationCreateRequest(BaseModel):
+    title: Optional[str] = None
 
 
 # Agent prompts are now imported from core.agent_prompts
@@ -98,6 +107,12 @@ def _extract_llm_error(text: Optional[str]) -> Optional[str]:
     if text.startswith(prefix):
         return text[len(prefix):].strip() or "LLM error"
     return None
+
+
+def _estimate_tokens(text: Optional[str]) -> int:
+    if not text:
+        return 0
+    return max(1, math.ceil(len(text) / 4))
 
 
 def _extract_task_delete_id(message: str) -> Optional[int]:
@@ -395,10 +410,12 @@ async def chat_with_agent(
         conversation = get_or_create_conversation(
             db, user_id=user["id"], agent_name=canonical_id, conversation_id=req.conversation_id
         )
-        history_messages = get_history(db, conversation.id, limit=50)
+        history_messages = get_history(db, conversation.id, limit=20)
         history_payload = [
             {"id": msg.id, "role": msg.role, "content": msg.content} for msg in history_messages
         ]
+        history_tokens_est = sum(_estimate_tokens(msg.content) for msg in history_messages)
+        input_tokens_est = history_tokens_est + _estimate_tokens(req.message)
         add_message(db, conversation, "user", req.message)
 
         # Get real agent and call its chat method
@@ -422,6 +439,9 @@ async def chat_with_agent(
                         thinking=None,
                         conversation_id=conversation.id,
                         error="Maintenance agent not available",
+                        input_tokens_est=input_tokens_est,
+                        output_tokens_est=_estimate_tokens(response_text),
+                        latency_ms=0,
                     )
                 try:
                     result = target_agent.remove_task(delete_id)
@@ -435,6 +455,9 @@ async def chat_with_agent(
                             thinking=None,
                             conversation_id=conversation.id,
                             error=result.get("error", "Task not found"),
+                            input_tokens_est=input_tokens_est,
+                            output_tokens_est=_estimate_tokens(response_text),
+                            latency_ms=0,
                         )
                     try:
                         from core.events_v2 import emit_sync, EventType
@@ -451,6 +474,9 @@ async def chat_with_agent(
                         conversation_id=conversation.id,
                         error=None,
                         routed_to="maintenance" if canonical_id == "manager" else canonical_id,
+                        input_tokens_est=input_tokens_est,
+                        output_tokens_est=_estimate_tokens(response_text),
+                        latency_ms=0,
                     )
                 except Exception as exc:
                     response_text = f"Sorry — I couldn’t delete that task. {str(exc)}"
@@ -463,6 +489,9 @@ async def chat_with_agent(
                         conversation_id=conversation.id,
                         error=str(exc),
                         routed_to="maintenance" if canonical_id == "manager" else canonical_id,
+                        input_tokens_est=input_tokens_est,
+                        output_tokens_est=_estimate_tokens(response_text),
+                        latency_ms=0,
                     )
 
             # Manager fast-path: route task creation to maintenance and return structured payload.
@@ -470,7 +499,7 @@ async def chat_with_agent(
                 maintenance_agent = _get_cached_agent("maintenance")
                 if maintenance_agent and hasattr(maintenance_agent, "create_task_from_message"):
                     try:
-                        task_result = maintenance_agent.create_task_from_message(req.message)
+                        task_result = maintenance_agent.create_task_from_message(req.message, conversation_id=conversation.id)
                         if task_result:
                             if not task_result.get("success", True):
                                 response_text = f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')}"
@@ -484,6 +513,9 @@ async def chat_with_agent(
                                     error=task_result.get("error"),
                                     task_created=task_result,
                                     routed_to="maintenance",
+                                    input_tokens_est=input_tokens_est,
+                                    output_tokens_est=_estimate_tokens(response_text),
+                                    latency_ms=0,
                                 )
                             due = task_result.get("due_date")
                             response_text = (
@@ -502,6 +534,9 @@ async def chat_with_agent(
                                 task_created=task_result,
                                 routed_to="maintenance",
                                 delegation_note=f"{maintenance_agent.name} queued the task in Maintenance. You can track it in the Maintenance list.",
+                                input_tokens_est=input_tokens_est,
+                                output_tokens_est=_estimate_tokens(response_text),
+                                latency_ms=0,
                             )
                     except Exception as exc:
                         response_text = f"Sorry — I couldn’t create that task. {str(exc)}"
@@ -515,12 +550,15 @@ async def chat_with_agent(
                             error=str(exc),
                             routed_to="maintenance",
                             delegation_note=None,
+                            input_tokens_est=input_tokens_est,
+                            output_tokens_est=_estimate_tokens(response_text),
+                            latency_ms=0,
                         )
 
             # Fast-path task creation for maintenance-style intents
             if hasattr(agent, "create_task_from_message"):
                 try:
-                    task_result = agent.create_task_from_message(req.message)
+                    task_result = agent.create_task_from_message(req.message, conversation_id=conversation.id)
                     if task_result:
                         if not task_result.get("success", True):
                             response_text = f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')}"
@@ -534,6 +572,9 @@ async def chat_with_agent(
                                 error=task_result.get("error"),
                                 task_created=task_result,
                                 routed_to=canonical_id,
+                                input_tokens_est=input_tokens_est,
+                                output_tokens_est=_estimate_tokens(response_text),
+                                latency_ms=0,
                             )
                         due = task_result.get("due_date")
                         response_text = (
@@ -552,6 +593,9 @@ async def chat_with_agent(
                             task_created=task_result,
                             routed_to=canonical_id,
                             delegation_note=f"{agent.name} queued the task. You can track it in the Maintenance list.",
+                            input_tokens_est=input_tokens_est,
+                            output_tokens_est=_estimate_tokens(response_text),
+                            latency_ms=0,
                         )
                 except Exception as exc:
                     response_text = f"Sorry — I couldn’t create that task. {str(exc)}"
@@ -565,12 +609,17 @@ async def chat_with_agent(
                         error=str(exc),
                         task_created=None,
                         routed_to=canonical_id,
+                        input_tokens_est=input_tokens_est,
+                        output_tokens_est=_estimate_tokens(response_text),
+                        latency_ms=0,
                     )
             request_id = getattr(http_request.state, "request_id", None)
+            start_time = time.perf_counter()
             response_text = await agent.chat(
                 req.message,
                 context={"history": history_payload, "request_id": request_id},
             )
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
             thinking_trace = None  # Real agents handle their own reasoning
         else:
             # Fallback to template responses for unknown agents
@@ -578,6 +627,7 @@ async def chat_with_agent(
             response_text = result["response"]
             thinking_trace = result.get("thinking")
             grounded_in = result.get("grounded_in", 0)
+            latency_ms = 0
         
         error_message = _extract_llm_error(response_text)
         if error_message:
@@ -593,9 +643,79 @@ async def chat_with_agent(
             thinking=thinking_trace,  # Include thinking trace in response
             conversation_id=conversation.id,
             error=error_message,
+            input_tokens_est=input_tokens_est,
+            output_tokens_est=_estimate_tokens(response_text),
+            latency_ms=latency_ms,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{agent_id}/conversations")
+async def list_agent_conversations(
+    agent_id: str,
+    limit: int = 12,
+    user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """List recent chat sessions for an agent."""
+    canonical_id = _canonical_agent_id(agent_id)
+    conversations = (
+        db.query(ChatConversation)
+        .filter(ChatConversation.user_id == user["id"], ChatConversation.agent_name == canonical_id)
+        .order_by(ChatConversation.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+    items = []
+    for convo in conversations:
+        last_message = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.conversation_id == convo.id)
+            .order_by(ChatMessage.created_at.desc())
+            .first()
+        )
+        message_count = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.conversation_id == convo.id)
+            .count()
+        )
+        items.append(
+            {
+                "id": convo.id,
+                "title": convo.title,
+                "created_at": convo.created_at.isoformat() if convo.created_at else None,
+                "updated_at": convo.updated_at.isoformat() if convo.updated_at else None,
+                "message_count": message_count,
+                "last_message": last_message.content if last_message else None,
+            }
+        )
+    return {"agent_id": agent_id, "conversations": items}
+
+
+@router.post("/{agent_id}/conversations")
+async def create_agent_conversation(
+    agent_id: str,
+    payload: ConversationCreateRequest,
+    user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Create a new chat session for an agent."""
+    canonical_id = _canonical_agent_id(agent_id)
+    conversation = ChatConversation(
+        user_id=user["id"],
+        agent_name=canonical_id,
+        title=payload.title,
+    )
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+    return {
+        "agent_id": agent_id,
+        "conversation_id": conversation.id,
+        "title": conversation.title,
+        "created_at": conversation.created_at.isoformat() if conversation.created_at else None,
+    }
 
 
 @router.get("/{agent_id}/history")

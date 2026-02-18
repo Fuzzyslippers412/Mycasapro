@@ -2021,15 +2021,25 @@ export default function SettingsPage() {
                           )}
                         </Group>
                         {llmActive.oauthConnected ? (
-                          <Button size="xs" variant="subtle" color="red" onClick={handleDisconnectQwenOAuth}>
-                            Disconnect
-                          </Button>
+                          <Group gap="xs">
+                            <Button size="xs" variant="light" onClick={handleStartQwenOAuth}>
+                              Reconnect
+                            </Button>
+                            <Button size="xs" variant="subtle" color="red" onClick={handleDisconnectQwenOAuth}>
+                              Disconnect
+                            </Button>
+                          </Group>
                         ) : (
                           <Button size="xs" loading={qwenOauth.status === "starting"} onClick={handleStartQwenOAuth}>
                             Connect Qwen
                           </Button>
                         )}
                       </Group>
+                      {llmActive.oauthConnected && (
+                        <Text size="xs" c="dimmed">
+                          Model: {llmActive.model || "default"} • Base URL: {llmActive.baseUrl || llmActive.oauthResourceUrl || "not set"}
+                        </Text>
+                      )}
 
                       {qwenOauth.status === "pending" && (
                         <Alert color="blue" variant="light">

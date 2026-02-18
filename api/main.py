@@ -18,6 +18,8 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+import math
+import time
 from pathlib import Path
 import asyncio
 import json
@@ -480,6 +482,12 @@ def _extract_llm_error(text: Optional[str]) -> Optional[str]:
     return None
 
 
+def _estimate_tokens(text: Optional[str]) -> int:
+    if not text:
+        return 0
+    return max(1, math.ceil(len(text) / 4))
+
+
 def _strip_cot_format(text: Optional[str]) -> Optional[str]:
     if not text:
         return text
@@ -530,10 +538,12 @@ async def manager_chat(
                 db, user_id=user["id"], agent_name="manager", conversation_id=request.conversation_id
             )
             conversation_id = conversation.id
-            history_messages = get_history(db, conversation_id, limit=50)
+            history_messages = get_history(db, conversation_id, limit=20)
             history_payload = [
                 {"role": msg.role, "content": msg.content} for msg in history_messages
             ]
+            history_tokens_est = sum(_estimate_tokens(msg.content) for msg in history_messages)
+            input_tokens_est = history_tokens_est + _estimate_tokens(request.message)
             add_message(db, conversation, "user", request.message)
 
             # Fast-path: create real maintenance tasks for reminders/tasks
@@ -543,7 +553,7 @@ async def manager_chat(
                     msg_lower = (request.message or "").lower()
                     intent_keywords = ["remind", "reminder", "add a task", "add task", "schedule", "task reminder"]
                     is_task_intent = any(k in msg_lower for k in intent_keywords)
-                    task_result = maintenance.create_task_from_message(request.message)
+                    task_result = maintenance.create_task_from_message(request.message, conversation_id=conversation_id)
                     if task_result:
                         if not task_result.get("success", True):
                             response = f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')} — Galidima 🏠"
@@ -554,6 +564,9 @@ async def manager_chat(
                                 "agent": "manager",
                                 "agent_name": "Galidima",
                                 "conversation_id": conversation_id,
+                                "input_tokens_est": input_tokens_est,
+                                "output_tokens_est": _estimate_tokens(response),
+                                "latency_ms": 0,
                                 "task_created": {
                                     "task_id": task_result.get("task_id"),
                                     "title": task_result.get("title"),
@@ -569,15 +582,18 @@ async def manager_chat(
                                 verified = maintenance.get_task(int(task_id))
                                 if not verified:
                                     response = "I couldn't verify the task in the system. Please try again. — Galidima 🏠"
-                                    add_message(db, conversation, "assistant", response)
-                                    return {
-                                        "response": response,
-                                        "timestamp": datetime.now().isoformat(),
-                                        "agent": "manager",
-                                        "agent_name": "Galidima",
-                                        "conversation_id": conversation_id,
-                                        "error": "task_verification_failed",
-                                    }
+                            add_message(db, conversation, "assistant", response)
+                            return {
+                                "response": response,
+                                "timestamp": datetime.now().isoformat(),
+                                "agent": "manager",
+                                "agent_name": "Galidima",
+                                "conversation_id": conversation_id,
+                                "input_tokens_est": input_tokens_est,
+                                "output_tokens_est": _estimate_tokens(response),
+                                "latency_ms": 0,
+                                "error": "task_verification_failed",
+                            }
                             except Exception:
                                 pass
 
@@ -599,7 +615,12 @@ async def manager_chat(
                             "agent": "manager",
                             "agent_name": "Galidima",
                             "conversation_id": conversation_id,
+                            "input_tokens_est": input_tokens_est,
+                            "output_tokens_est": _estimate_tokens(response),
+                            "latency_ms": 0,
                             "task_created": task_result,
+                            "routed_to": "maintenance",
+                            "delegation_note": "Maintenance queued the task. You can review it in the Maintenance list.",
                         }
                     if is_task_intent and not task_result:
                         response = "I couldn’t parse that into a task. Try: “Add a task to clean the garage by Friday.” — Galidima 🏠"
@@ -610,6 +631,9 @@ async def manager_chat(
                             "agent": "manager",
                             "agent_name": "Galidima",
                             "conversation_id": conversation_id,
+                            "input_tokens_est": input_tokens_est,
+                            "output_tokens_est": _estimate_tokens(response),
+                            "latency_ms": 0,
                             "error": "task_parse_failed",
                         }
             except Exception as exc:
@@ -621,10 +645,14 @@ async def manager_chat(
                     "agent": "manager",
                     "agent_name": "Galidima",
                     "conversation_id": conversation_id,
+                    "input_tokens_est": input_tokens_est,
+                    "output_tokens_est": _estimate_tokens(response),
+                    "latency_ms": 0,
                     "error": str(exc),
                 }
-
+            start_time = time.perf_counter()
             response = await manager.chat(request.message, conversation_history=history_payload)
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
             response = _strip_cot_format(response)
             error_message = _extract_llm_error(response)
             if error_message:
@@ -637,6 +665,9 @@ async def manager_chat(
             "agent": "manager",
             "agent_name": "Galidima",
             "conversation_id": conversation_id,
+            "input_tokens_est": input_tokens_est,
+            "output_tokens_est": _estimate_tokens(response),
+            "latency_ms": latency_ms,
             "error": error_message,
         }
     except Exception as e:
@@ -747,7 +778,8 @@ async def create_task(task: Dict[str, Any], background_tasks: BackgroundTasks):
         priority=task.get("priority", "medium"),
         scheduled_date=task.get("scheduled_date"),
         due_date=task.get("due_date"),
-        description=task.get("description", "")
+        description=task.get("description", ""),
+        conversation_id=task.get("conversation_id"),
     )
     
     # Emit event
@@ -778,6 +810,21 @@ async def complete_task(task_id: int, evidence: Optional[str] = None, background
             "task_completed",
             {"task_id": task_id}
         )
+
+    try:
+        if isinstance(result, dict) and result.get("conversation_id"):
+            from database import get_db
+            from database.models import ChatConversation
+            from core.chat_store import add_message
+
+            conversation_id = result.get("conversation_id")
+            title = result.get("title") or f"Task #{task_id}"
+            with get_db() as db:
+                conversation = db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
+                if conversation:
+                    add_message(db, conversation, "assistant", f"✅ {title} marked complete.")
+    except Exception:
+        pass
     
     return result
 

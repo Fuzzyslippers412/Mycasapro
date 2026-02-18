@@ -42,9 +42,11 @@ import {
   IconRocket,
   IconTrash,
   IconArrowRight,
+  IconHistory,
+  IconPlus,
 } from "@tabler/icons-react";
 import { tokens } from "@/theme/tokens";
-import { sendAgentChat, sendManagerChat, getAgentChatHistory, getApiBaseUrl, isNetworkError, apiFetch } from "@/lib/api";
+import { sendAgentChat, sendManagerChat, getAgentChatHistory, getAgentConversations, createAgentConversation, getApiBaseUrl, isNetworkError, apiFetch } from "@/lib/api";
 
 interface Message {
   id: number;
@@ -54,6 +56,24 @@ interface Message {
   agent?: string;
   routedTo?: string;
   delegationNote?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  latencyMs?: number;
+  taskCreated?: {
+    task_id?: number | string;
+    title?: string;
+    due_date?: string | null;
+    scheduled_date?: string | null;
+  };
+}
+
+interface ConversationSummary {
+  id: string;
+  title?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+  message_count?: number;
+  last_message?: string | null;
 }
 
 interface AgentStatus {
@@ -152,6 +172,30 @@ const isTaskIntent = (text: string) => {
 const routeHintForMessage = (message: string, agentId: string) => {
   if (agentId === "manager" && isTaskIntent(message)) return "maintenance";
   return null;
+};
+
+const handoffRouteFor = (agentId?: string | null) => {
+  switch (agentId) {
+    case "maintenance":
+    case "maintenance_agent":
+      return "/maintenance";
+    case "finance":
+    case "finance_agent":
+      return "/finance";
+    case "contractors":
+    case "contractors_agent":
+      return "/contractors";
+    case "projects":
+      return "/projects";
+    case "mail":
+    case "mail-skill":
+      return "/inbox";
+    case "backup":
+    case "backup-recovery":
+      return "/system";
+    default:
+      return null;
+  }
 };
 
 function resolveAgentId(token: string): string | null {
@@ -277,6 +321,9 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   const messageIdRef = useRef(1);
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "error">("idle");
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<ConversationSummary[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [personalMode, setPersonalMode] = useState(false);
   const [personalModeChecked, setPersonalModeChecked] = useState(false);
@@ -354,6 +401,59 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     };
   }, []);
 
+  const refreshSessions = async (agentId: string) => {
+    if (!chatAllowed) return;
+    setSessionsLoading(true);
+    setSessionsError(null);
+    try {
+      const data = await getAgentConversations(agentId, 12);
+      setSessions(data?.conversations || []);
+    } catch (err: any) {
+      if (isNetworkError(err)) {
+        setSessionsError(`Unable to reach backend at ${API_URL}.`);
+      } else {
+        setSessionsError(err?.detail || "Unable to load sessions");
+      }
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const loadConversation = async (agentId: string, targetId?: string) => {
+    if (!chatAllowed) return;
+    setHistoryStatus("loading");
+    setHistoryError(null);
+    setMessages([]);
+    messageIdRef.current = 1;
+    try {
+      const data = await getAgentChatHistory(agentId, targetId, 50);
+      if (data?.messages?.length) {
+        const mapped: Message[] = data.messages.map((msg: any, idx: number) => ({
+          id: idx + 1,
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.content,
+          timestamp: msg.timestamp || new Date().toISOString(),
+          agent: msg.role === "assistant" ? (AGENT_NAMES[agentId] || agentId) : undefined,
+        }));
+        setMessages(mapped);
+        messageIdRef.current = mapped.length + 1;
+      }
+      if (data?.conversation_id && typeof window !== "undefined") {
+        window.localStorage.setItem(conversationKey(agentId, user?.id), data.conversation_id);
+      }
+      setHistoryStatus("idle");
+    } catch (err: any) {
+      setHistoryStatus("error");
+      if (isNetworkError(err)) {
+        setHistoryError(`Unable to reach backend at ${API_URL}.`);
+      } else if (err?.status === 401) {
+        setHistoryError("History unavailable on this server. Enable Personal Mode or sign in.");
+      } else {
+        setHistoryError(err?.detail || "Unable to load history.");
+      }
+    }
+  };
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     setMessages([]);
@@ -372,36 +472,8 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       }
 
     const storedConversation = window.localStorage.getItem(conversationKey(selectedAgent, user?.id)) || undefined;
-    setHistoryStatus("loading");
-    setHistoryError(null);
-    getAgentChatHistory(selectedAgent, storedConversation, 50)
-      .then((data) => {
-        if (data?.messages?.length) {
-          const mapped: Message[] = data.messages.map((msg: any, idx: number) => ({
-            id: idx + 1,
-            role: msg.role === "assistant" ? "assistant" : "user",
-            content: msg.content,
-            timestamp: msg.timestamp || new Date().toISOString(),
-            agent: msg.role === "assistant" ? (AGENT_NAMES[selectedAgent] || selectedAgent) : undefined,
-          }));
-          setMessages(mapped);
-          messageIdRef.current = mapped.length + 1;
-        }
-        if (data?.conversation_id) {
-          window.localStorage.setItem(conversationKey(selectedAgent, user?.id), data.conversation_id);
-        }
-        setHistoryStatus("idle");
-      })
-      .catch((err) => {
-        setHistoryStatus("error");
-        if (isNetworkError(err)) {
-          setHistoryError(`Unable to reach backend at ${API_URL}.`);
-        } else if (err?.status === 401) {
-          setHistoryError("History unavailable on this server. Enable Personal Mode or sign in.");
-        } else {
-          setHistoryError(err?.detail || "Unable to load history.");
-        }
-      });
+    refreshSessions(selectedAgent);
+    loadConversation(selectedAgent, storedConversation);
   }, [selectedAgent, chatAllowed, personalMode, isAuthenticated, user?.id]);
 
   // Fetch real agent status from system live endpoint (single source of truth)
@@ -727,10 +799,15 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         agent: data.agent_name || agent?.name || AGENT_NAMES[agentId] || agentId,
         routedTo: data.routed_to || undefined,
         delegationNote: data.delegation_note || undefined,
+        inputTokens: data.input_tokens_est,
+        outputTokens: data.output_tokens_est,
+        latencyMs: data.latency_ms,
+        taskCreated: data.task_created,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
       setPendingRoute(null);
+      refreshSessions(agentId);
       if (data?.task_created && typeof window !== "undefined") {
         const title = data?.task_created?.title || "Task created";
         const due = data?.task_created?.due_date || data?.task_created?.scheduled_date;
@@ -1001,6 +1078,15 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       setMessages([]);
       setHistoryStatus("idle");
       setHistoryError(null);
+      try {
+        const created = await createAgentConversation(selectedAgent);
+        if (created?.conversation_id && typeof window !== "undefined") {
+          localStorage.setItem(convKey, created.conversation_id);
+        }
+        await refreshSessions(selectedAgent);
+      } catch {
+        // ignore
+      }
     } catch (e) {
       setHistoryStatus("error");
       setHistoryError(
@@ -1009,6 +1095,29 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
           : (e as any)?.detail || (e as Error)?.message || "Failed to clear chat history."
       );
     }
+  };
+
+  const handleNewSession = async () => {
+    if (!chatAllowed) return;
+    try {
+      const created = await createAgentConversation(selectedAgent);
+      if (created?.conversation_id && typeof window !== "undefined") {
+        localStorage.setItem(conversationKey(selectedAgent, user?.id), created.conversation_id);
+      }
+      setMessages([]);
+      setHistoryStatus("idle");
+      await refreshSessions(selectedAgent);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    if (typeof window !== "undefined") {
+      localStorage.setItem(conversationKey(selectedAgent, user?.id), sessionId);
+    }
+    await loadConversation(selectedAgent, sessionId);
   };
 
   const panelStyle = isEmbedded
@@ -1069,6 +1178,36 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                   {llmBadgeLabel}
                 </Badge>
               </Tooltip>
+              <Menu position="bottom-end" withArrow>
+                <Menu.Target>
+                  <ActionIcon variant="subtle" color="gray" size="sm">
+                    <IconHistory size={14} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item leftSection={<IconPlus size={14} />} onClick={handleNewSession}>
+                    New session
+                  </Menu.Item>
+                  <Menu.Divider />
+                  {sessionsLoading && <Menu.Item disabled>Loading sessions…</Menu.Item>}
+                  {!sessionsLoading && sessions.length === 0 && <Menu.Item disabled>No sessions yet</Menu.Item>}
+                  {sessions.map((session) => {
+                    const label = session.title
+                      || session.last_message?.slice(0, 48)
+                      || (session.updated_at ? `Session ${new Date(session.updated_at).toLocaleDateString()}` : "Session");
+                    return (
+                      <Menu.Item
+                        key={session.id}
+                        onClick={() => handleSelectSession(session.id)}
+                        rightSection={session.id === (typeof window !== "undefined" ? localStorage.getItem(conversationKey(selectedAgent, user?.id)) : null) ? <Badge size="xs">Active</Badge> : null}
+                      >
+                        <Text size="xs" lineClamp={1}>{label}</Text>
+                      </Menu.Item>
+                    );
+                  })}
+                  {sessionsError && <Menu.Item disabled>{sessionsError}</Menu.Item>}
+                </Menu.Dropdown>
+              </Menu>
               <Tooltip label="Clear chat history">
                 <ActionIcon
                   variant="subtle"
@@ -1327,25 +1466,61 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                       </Text>
                     )}
                     <Text size="sm">{message.content}</Text>
-                    {message.role === "assistant" && message.routedTo && (
-                      <Group gap={6} mt={6}>
-                        <Badge
-                          size="xs"
-                          variant="light"
-                          color="blue"
-                          leftSection={<IconArrowRight size={12} />}
-                        >
-                          Delegated
-                        </Badge>
-                        <Text size="xs" c="dimmed">
-                          {AGENT_NAMES[message.routedTo] || message.routedTo}
-                        </Text>
-                      </Group>
+                    {message.role === "assistant" && (message.routedTo || message.taskCreated) && (
+                      <Box mt={6}>
+                        {(() => {
+                          const target = message.routedTo || "maintenance";
+                          const route = handoffRouteFor(target);
+                          const label = AGENT_NAMES[target] || target;
+                          const title = message.taskCreated?.title || "Task queued";
+                          return (
+                            <Paper
+                              withBorder
+                              radius="md"
+                              p="xs"
+                              style={{
+                                background: "var(--surface-2)",
+                                borderColor: "var(--border-1)",
+                              }}
+                            >
+                              <Group justify="space-between" align="center">
+                                <Box>
+                                  <Group gap={6}>
+                                    <Badge size="xs" variant="light" color="blue" leftSection={<IconArrowRight size={12} />}>
+                                      Delegated
+                                    </Badge>
+                                    <Text size="xs" fw={600}>{label}</Text>
+                                  </Group>
+                                  <Text size="xs" c="dimmed" mt={4} lineClamp={1}>{title}</Text>
+                                </Box>
+                                {route && (
+                                  <Button size="xs" variant="light" onClick={() => router.push(route)}>
+                                    Open
+                                  </Button>
+                                )}
+                              </Group>
+                            </Paper>
+                          );
+                        })()}
+                      </Box>
                     )}
                     {message.role === "assistant" && message.delegationNote && (
                       <Text size="xs" c="dimmed" mt={4}>
                         {message.delegationNote}
                       </Text>
+                    )}
+                    {message.role === "assistant" && (message.latencyMs || message.inputTokens || message.outputTokens) && (
+                      <Group gap={6} mt={6}>
+                        {typeof message.latencyMs === "number" && (
+                          <Badge size="xs" variant="light">⏱ {message.latencyMs}ms</Badge>
+                        )}
+                        {typeof message.inputTokens === "number" && (
+                          <Badge size="xs" variant="light">⇡ {message.inputTokens} tok</Badge>
+                        )}
+                        {typeof message.outputTokens === "number" && (
+                          <Badge size="xs" variant="light">⇣ {message.outputTokens} tok</Badge>
+                        )}
+                      </Group>
                     )}
                     {mounted && message.timestamp && (
                       <Text

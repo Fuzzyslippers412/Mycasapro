@@ -198,11 +198,15 @@ export interface ChatResponse {
   routed_to?: string;
   agent_emoji?: string;
   delegation_note?: string;
+  input_tokens_est?: number;
+  output_tokens_est?: number;
+  latency_ms?: number;
   task_created?: {
     task_id?: number | string;
     title?: string;
     due_date?: string | null;
     scheduled_date?: string | null;
+    conversation_id?: string | null;
   };
 }
 
@@ -256,6 +260,24 @@ export async function getAgentChatHistory(agentId: string, conversationId?: stri
   params.set("limit", limit.toString());
   return apiFetch<{ conversation_id: string; messages: any[]; total: number }>(
     `/api/agents/${agentId}/history?${params.toString()}`
+  );
+}
+
+export async function getAgentConversations(agentId: string, limit: number = 12) {
+  const params = new URLSearchParams();
+  params.set("limit", limit.toString());
+  return apiFetch<{ agent_id: string; conversations: any[] }>(
+    `/api/agents/${agentId}/conversations?${params.toString()}`
+  );
+}
+
+export async function createAgentConversation(agentId: string, title?: string) {
+  return apiFetch<{ agent_id: string; conversation_id: string; title?: string }>(
+    `/api/agents/${agentId}/conversations`,
+    {
+      method: "POST",
+      body: JSON.stringify({ title }),
+    }
   );
 }
 

@@ -71,6 +71,7 @@ class MaintenanceTask(Base):
     category = Column(String(50))  # cleaning, yard, repair, renovation, etc.
     priority = Column(String(20), default="medium")
     status = Column(String(20), default="pending")
+    conversation_id = Column(String(36), index=True)
     
     scheduled_date = Column(Date)
     completed_date = Column(Date)

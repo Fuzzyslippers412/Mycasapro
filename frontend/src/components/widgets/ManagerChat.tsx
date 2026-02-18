@@ -41,9 +41,12 @@ import {
   IconPaperclip,
   IconFile,
   IconPhoto,
+  IconHistory,
+  IconArrowRight,
+  IconPlus,
 } from "@tabler/icons-react";
 import ReactMarkdown from "react-markdown";
-import { sendManagerChat, getAgentChatHistory } from "@/lib/api";
+import { sendManagerChat, getAgentChatHistory, getAgentConversations, createAgentConversation } from "@/lib/api";
 
 // ============ TYPES ============
 interface Message {
@@ -58,6 +61,15 @@ interface Message {
   agentEmoji?: string;
   routedTo?: string;
   delegationNote?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  latencyMs?: number;
+  taskCreated?: {
+    task_id?: number | string;
+    title?: string;
+    due_date?: string | null;
+    scheduled_date?: string | null;
+  };
 }
 
 interface AgentCommand {
@@ -65,6 +77,15 @@ interface AgentCommand {
   description: string;
   agent: string;
   emoji: string;
+}
+
+interface ConversationSummary {
+  id: string;
+  title?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+  message_count?: number;
+  last_message?: string | null;
 }
 
 // ============ AGENT COMMANDS ============
@@ -130,6 +151,9 @@ export function ManagerChat() {
   const [showCommands, setShowCommands] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<ConversationSummary[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "error">("idle");
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [personalMode, setPersonalMode] = useState(false);
@@ -165,10 +189,65 @@ export function ManagerChat() {
     ).slice(0, 6);
   }, [input]);
 
+  const refreshSessions = async () => {
+    if (!chatAllowed) return;
+    setSessionsLoading(true);
+    setSessionsError(null);
+    try {
+      const data = await getAgentConversations("manager", 12);
+      setSessions(data?.conversations || []);
+    } catch (err: any) {
+      if (isNetworkError(err)) {
+        setSessionsError(`Unable to reach backend at ${API_URL}.`);
+      } else {
+        setSessionsError(err?.detail || "Unable to load sessions");
+      }
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const loadConversation = async (targetId?: string | null) => {
+    if (!chatAllowed) return;
+    setHistoryStatus("loading");
+    setHistoryError(null);
+    setMessages([]);
+    try {
+      const data = await getAgentChatHistory("manager", targetId || undefined, 50);
+      if (data?.messages?.length) {
+        const mapped = data.messages.map((msg: any) => ({
+          id: msg.id,
+          role: (msg.role === "assistant"
+            ? "manager"
+            : msg.role === "system"
+              ? "system"
+              : "user") as Message["role"],
+          text: msg.content,
+          timestamp: msg.timestamp,
+        }));
+        setMessages(mapped);
+      }
+      if (data?.conversation_id) {
+        setConversationId(data.conversation_id);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(conversationKey(user?.id ?? null), data.conversation_id);
+        }
+      }
+      setHistoryStatus("idle");
+    } catch (err: any) {
+      setHistoryStatus("error");
+      if (isNetworkError(err)) {
+        setHistoryError(`Unable to reach backend at ${API_URL}. Start the server and try again.`);
+      } else if (err?.status === 401) {
+        setHistoryError(personalMode ? "Session unavailable. Retry shortly." : "Sign in required to load history.");
+      } else {
+        setHistoryError(err?.detail || "Unable to load history");
+      }
+    }
+  };
+
   // Load session history from backend
   useEffect(() => {
-    setMessages([]);
-
     const convoKey = conversationKey(user?.id ?? null);
     const storedConversation = typeof window !== "undefined"
       ? window.localStorage.getItem(convoKey)
@@ -180,40 +259,8 @@ export function ManagerChat() {
       setHistoryError(null);
       return;
     }
-
-    setHistoryStatus("loading");
-    setHistoryError(null);
-    getAgentChatHistory("manager", storedConversation || undefined, 50)
-      .then((data) => {
-        if (data?.messages?.length) {
-          const mapped = data.messages.map((msg: any) => ({
-            id: msg.id,
-            role: (msg.role === "assistant"
-              ? "manager"
-              : msg.role === "system"
-                ? "system"
-                : "user") as Message["role"],
-            text: msg.content,
-            timestamp: msg.timestamp,
-          }));
-          setMessages(mapped);
-        }
-        if (data?.conversation_id) {
-          setConversationId(data.conversation_id);
-          window.localStorage.setItem(convoKey, data.conversation_id);
-        }
-        setHistoryStatus("idle");
-      })
-      .catch((err) => {
-        setHistoryStatus("error");
-        if (isNetworkError(err)) {
-          setHistoryError(`Unable to reach backend at ${API_URL}. Start the server and try again.`);
-        } else if (err?.status === 401) {
-          setHistoryError(personalMode ? "Session unavailable. Retry shortly." : "Sign in required to load history.");
-        } else {
-          setHistoryError(err?.detail || "Unable to load history");
-        }
-      });
+    refreshSessions();
+    loadConversation(storedConversation || undefined);
   }, [chatAllowed, isAuthenticated, personalMode, user?.id]);
 
   // Auto-scroll
@@ -360,6 +407,10 @@ export function ManagerChat() {
             agentEmoji: data.agent_emoji,
             routedTo: data.routed_to,
             delegationNote: data.delegation_note,
+            inputTokens: data.input_tokens_est,
+            outputTokens: data.output_tokens_est,
+            latencyMs: data.latency_ms,
+            taskCreated: data.task_created,
           };
         }
         return updated;
@@ -385,6 +436,7 @@ export function ManagerChat() {
           }
         }
       }
+      refreshSessions();
     } catch (e: any) {
       let message = e?.detail || e?.message || "Connection error";
       if (e?.status === 401) {
@@ -515,7 +567,7 @@ export function ManagerChat() {
     inputRef.current?.focus();
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
     const convoKey = conversationKey(user?.id ?? null);
     const storedConversation = typeof window !== "undefined"
       ? window.localStorage.getItem(convoKey)
@@ -529,6 +581,47 @@ export function ManagerChat() {
       window.localStorage.removeItem(conversationKey(user?.id ?? null));
     }
     setConversationId(null);
+    if (chatAllowed) {
+      try {
+        const created = await createAgentConversation("manager");
+        if (created?.conversation_id) {
+          setConversationId(created.conversation_id);
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(convoKey, created.conversation_id);
+          }
+          await refreshSessions();
+        }
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const handleNewSession = async () => {
+    if (!chatAllowed) return;
+    try {
+      const created = await createAgentConversation("manager");
+      if (created?.conversation_id) {
+        setConversationId(created.conversation_id);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(conversationKey(user?.id ?? null), created.conversation_id);
+        }
+        setMessages([]);
+        setHistoryStatus("idle");
+        await refreshSessions();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    setConversationId(sessionId);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(conversationKey(user?.id ?? null), sessionId);
+    }
+    await loadConversation(sessionId);
   };
 
   const formatTime = (ts: string) => {
@@ -546,6 +639,54 @@ export function ManagerChat() {
       case "contractors_agent": return "yellow";
       case "clawdbot_cli": return "green";
       default: return "indigo";
+    }
+  };
+
+  const handoffRouteFor = (agentId?: string) => {
+    switch (agentId) {
+      case "maintenance":
+      case "maintenance_agent":
+        return "/maintenance";
+      case "finance":
+      case "finance_agent":
+        return "/finance";
+      case "contractors":
+      case "contractors_agent":
+        return "/contractors";
+      case "projects":
+        return "/projects";
+      case "mail":
+      case "mail-skill":
+        return "/inbox";
+      case "backup":
+      case "backup-recovery":
+        return "/system";
+      default:
+        return null;
+    }
+  };
+
+  const handoffLabelFor = (agentId?: string) => {
+    switch (agentId) {
+      case "maintenance":
+      case "maintenance_agent":
+        return "Maintenance";
+      case "finance":
+      case "finance_agent":
+        return "Finance";
+      case "contractors":
+      case "contractors_agent":
+        return "Contractors";
+      case "projects":
+        return "Projects";
+      case "mail":
+      case "mail-skill":
+        return "Inbox";
+      case "backup":
+      case "backup-recovery":
+        return "Backup";
+      default:
+        return "Agent";
     }
   };
 
@@ -614,6 +755,42 @@ export function ManagerChat() {
                   {routingStatus}
                 </Badge>
               )}
+              <Menu position="bottom-end" withArrow>
+                <Menu.Target>
+                  <ActionIcon variant="subtle" color="gray" size="sm">
+                    <IconHistory size={16} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item leftSection={<IconPlus size={14} />} onClick={handleNewSession}>
+                    New session
+                  </Menu.Item>
+                  <Menu.Divider />
+                  {sessionsLoading && (
+                    <Menu.Item disabled>Loading sessions…</Menu.Item>
+                  )}
+                  {!sessionsLoading && sessions.length === 0 && (
+                    <Menu.Item disabled>No sessions yet</Menu.Item>
+                  )}
+                  {sessions.map((session) => {
+                    const label = session.title
+                      || session.last_message?.slice(0, 48)
+                      || (session.updated_at ? `Session ${new Date(session.updated_at).toLocaleDateString()}` : "Session");
+                    return (
+                      <Menu.Item
+                        key={session.id}
+                        onClick={() => handleSelectSession(session.id)}
+                        rightSection={session.id === conversationId ? <Badge size="xs">Active</Badge> : null}
+                      >
+                        <Text size="xs" lineClamp={1}>{label}</Text>
+                      </Menu.Item>
+                    );
+                  })}
+                  {sessionsError && (
+                    <Menu.Item disabled>{sessionsError}</Menu.Item>
+                  )}
+                </Menu.Dropdown>
+              </Menu>
               <ActionIcon 
                 variant="subtle" 
                 color="gray" 
@@ -797,6 +974,70 @@ export function ManagerChat() {
                           </TypographyStylesProvider>
                         )}
                       </Paper>
+                      {(msg.routedTo || msg.taskCreated) && msg.role === "manager" && !msg.isStreaming && (
+                        <Box mt={6}>
+                          {(() => {
+                            const target = msg.routedTo || "maintenance";
+                            const route = handoffRouteFor(target);
+                            const label = handoffLabelFor(target);
+                            const title = msg.taskCreated?.title || "Task queued";
+                            return (
+                              <UnstyledButton
+                                onClick={() => route && router.push(route)}
+                                style={{
+                                  width: "100%",
+                                  borderRadius: 10,
+                                  border: "1px solid var(--border-1)",
+                                  background: "var(--surface-2)",
+                                  padding: "8px 10px",
+                                }}
+                              >
+                                <Group justify="space-between" align="center">
+                                  <Group gap="xs">
+                                    <Box
+                                      style={{
+                                        width: 28,
+                                        height: 28,
+                                        borderRadius: 8,
+                                        background: "var(--surface-1)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontSize: 14,
+                                      }}
+                                    >
+                                      {msg.agentEmoji || "✅"}
+                                    </Box>
+                                    <Box>
+                                      <Text size="xs" fw={600}>{label} handoff</Text>
+                                      <Text size="xs" c="dimmed" lineClamp={1}>{title}</Text>
+                                    </Box>
+                                  </Group>
+                                  {route && (
+                                    <Group gap={4}>
+                                      <Text size="xs" c="dimmed">Open</Text>
+                                      <IconArrowRight size={14} />
+                                    </Group>
+                                  )}
+                                </Group>
+                              </UnstyledButton>
+                            );
+                          })()}
+                        </Box>
+                      )}
+                      {(msg.latencyMs || msg.inputTokens || msg.outputTokens) && (
+                        <Group gap="xs" mt={4}>
+                          {typeof msg.latencyMs === "number" && (
+                            <Badge size="xs" variant="light">⏱ {msg.latencyMs}ms</Badge>
+                          )}
+                          {typeof msg.inputTokens === "number" && (
+                            <Badge size="xs" variant="light">⇡ {msg.inputTokens} tok</Badge>
+                          )}
+                          {typeof msg.outputTokens === "number" && (
+                            <Badge size="xs" variant="light">⇣ {msg.outputTokens} tok</Badge>
+                          )}
+                        </Group>
+                      )}
                       <Text 
                         size="xs" 
                         c="dimmed" 
