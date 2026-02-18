@@ -72,6 +72,7 @@ class MaintenanceTask(Base):
     priority = Column(String(20), default="medium")
     status = Column(String(20), default="pending")
     conversation_id = Column(String(36), index=True)
+    assigned_to = Column(String(64))
     
     scheduled_date = Column(Date)
     completed_date = Column(Date)

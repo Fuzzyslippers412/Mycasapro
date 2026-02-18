@@ -326,6 +326,7 @@ class MaintenanceAgent(BaseAgent):
             category="maintenance",
             priority="medium",
             due_date=due_date,
+            assigned_to="maintenance",
             conversation_id=conversation_id,
         )
         if not task or not task.get("id"):
@@ -337,6 +338,7 @@ class MaintenanceAgent(BaseAgent):
             "due_date": task.get("due_date"),
             "scheduled_date": task.get("scheduled_date"),
             "conversation_id": conversation_id,
+            "assigned_to": task.get("assigned_to"),
         }
     
     def _create_next_occurrence(self, db, task: MaintenanceTask):
@@ -440,6 +442,8 @@ class MaintenanceAgent(BaseAgent):
                     query = query.filter(MaintenanceTask.status == filters["status"])
                 if filters.get("priority"):
                     query = query.filter(MaintenanceTask.priority == filters["priority"])
+                if filters.get("assigned_to"):
+                    query = query.filter(MaintenanceTask.assigned_to == filters["assigned_to"])
             tasks = (
                 query.order_by(MaintenanceTask.created_at.desc())
                 .offset(offset)
@@ -470,6 +474,7 @@ class MaintenanceAgent(BaseAgent):
                     status="pending",
                     due_date=due_date,
                     conversation_id=conversation_id,
+                    assigned_to=assigned_to,
                 )
                 if estimated_duration_hours is not None:
                     task.notes = f"estimated_duration_hours={estimated_duration_hours}"
@@ -502,6 +507,8 @@ class MaintenanceAgent(BaseAgent):
                     task.priority = updates["priority"]
                 if updates.get("due_date") is not None:
                     task.due_date = self._coerce_date(updates["due_date"])
+                if updates.get("assigned_to") is not None:
+                    task.assigned_to = updates["assigned_to"]
                 if updates.get("status") is not None:
                     task.status = updates["status"]
                 if updates.get("estimated_duration_hours") is not None:
@@ -677,6 +684,7 @@ class MaintenanceAgent(BaseAgent):
             "priority": task.priority,
             "status": task.status,
             "conversation_id": getattr(task, "conversation_id", None),
+            "assigned_to": getattr(task, "assigned_to", None),
             "scheduled_date": task.scheduled_date.isoformat() if task.scheduled_date else None,
             "due_date": task.due_date.isoformat() if task.due_date else None,
             "completed_date": task.completed_date.isoformat() if task.completed_date else None,

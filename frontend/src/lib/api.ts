@@ -503,6 +503,22 @@ export async function getJanitorWizardHistory(limit: number = 1) {
   return apiFetch<{ runs: JanitorWizardRun[] }>(`/api/janitor/wizard/history?limit=${limit}`);
 }
 
+export interface IndicatorDiagnostic {
+  id: string;
+  label: string;
+  value: any;
+  last_updated?: string | null;
+  status: "ok" | "stale" | "missing" | "error";
+  source?: string;
+  error?: string;
+}
+
+export async function getIndicatorDiagnostics() {
+  return apiFetch<{ timestamp: string; results: IndicatorDiagnostic[] }>(
+    "/api/diagnostics/indicators"
+  );
+}
+
 // Types
 export interface StatusResponse {
   status: string;
@@ -561,7 +577,7 @@ export interface Task {
   description: string;
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   priority: 'low' | 'medium' | 'high' | 'critical';
-  assigned_to: string;
+  assigned_to?: string | null;
   created_at: string;
   updated_at: string;
   due_date?: string;

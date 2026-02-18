@@ -226,9 +226,12 @@ class ManagerAgent(BaseAgent):
     ) -> str:
         """
         Manager chat entrypoint.
-        Fast-path task/reminder requests to Maintenance (real DB), then fallback to LLM.
+        Always respond via LLM. Action results are injected as tool results.
         """
         msg_lower = message.lower()
+        context = context or {}
+        action_results = context.get("action_results")
+        tool_results = list(context.get("tool_results") or [])
         status_keywords = [
             "status",
             "overview",
@@ -241,76 +244,63 @@ class ManagerAgent(BaseAgent):
             "how is everything",
         ]
 
-        # Task/reminder creation
-        if any(k in msg_lower for k in [
-            "remind",
-            "reminder",
-            "add a task",
-            "add task",
-            "schedule",
-            "task reminder",
-            "clean",
-            "fix",
-            "repair",
-            "maintenance",
-        ]):
-            maintenance = self.maintenance
-            if maintenance and hasattr(maintenance, "create_task_from_message"):
-                try:
-                    result = maintenance.create_task_from_message(message)
-                    if result:
-                        if not result.get("success", True):
-                            return f"Sorry — I couldn’t create that task. {result.get('error', 'Please try again.')}"
-                        due = result.get("due_date")
-                        if due:
-                            return f"Task \"{result['title']}\" scheduled for {due}."
-                        return f"Task \"{result['title']}\" added."
-                except Exception as exc:
-                    self.log_action("task_create_failed", str(exc), status="error")
-                    return f"Sorry — I couldn’t create that task. {str(exc)}"
+        if action_results is None:
+            action_results = {}
 
-        if any(k in msg_lower for k in status_keywords):
-            try:
-                quick = self.quick_status()
-                facts = quick.get("facts", {})
-                tasks = facts.get("tasks", {})
-                pending = tasks.get("pending", 0)
-                upcoming = tasks.get("upcoming", []) or []
-                if pending == 0:
-                    return "Everything looks calm. No pending maintenance tasks right now."
-                lines = [f"Everything’s running smoothly. {pending} maintenance task(s) pending."]
-                for t in upcoming[:3]:
-                    title = t.get("title") or "Task"
-                    due = t.get("due_date") or t.get("scheduled_date") or "no date"
-                    lines.append(f"• {title} (due {due})")
-                return "\n".join(lines)
-            except Exception as exc:
-                self.log_action("status_check_failed", str(exc), status="error")
-
-        # Reminder checks
-        if "reminder" in msg_lower or "reminders" in msg_lower:
-            maintenance = self.maintenance
-            if not maintenance:
-                return "I can’t reach Maintenance right now. Try again in a moment."
-            try:
-                tasks = maintenance.get_pending_tasks()
-                if not tasks:
-                    return "You don’t have any scheduled maintenance tasks right now."
-                def fmt(d: Optional[str]) -> str:
-                    if not d:
-                        return "no date"
+            if any(k in msg_lower for k in [
+                "remind",
+                "reminder",
+                "add a task",
+                "add task",
+                "schedule",
+                "task reminder",
+                "clean",
+                "fix",
+                "repair",
+                "maintenance",
+            ]):
+                maintenance = self.maintenance
+                if maintenance and hasattr(maintenance, "create_task_from_message"):
                     try:
-                        return datetime.fromisoformat(d).strftime("%b %d, %Y")
-                    except Exception:
-                        return d
-                lines = ["Here are your scheduled maintenance tasks:"]
-                for t in tasks[:5]:
-                    lines.append(f"• {t.get('title')} (due {fmt(t.get('due_date'))})")
-                return "\n".join(lines)
-            except Exception as exc:
-                self.log_action("reminder_check_failed", str(exc), status="error")
+                        result = maintenance.create_task_from_message(message)
+                        if result:
+                            action_results["task"] = result
+                    except Exception as exc:
+                        self.log_action("task_create_failed", str(exc), status="error")
+                        action_results["task_error"] = str(exc)
 
-        # Fallback to LLM
+            if any(k in msg_lower for k in status_keywords):
+                try:
+                    action_results["status_snapshot"] = self.quick_status()
+                except Exception as exc:
+                    self.log_action("status_check_failed", str(exc), status="error")
+                    action_results["status_error"] = str(exc)
+
+            if "reminder" in msg_lower or "reminders" in msg_lower:
+                maintenance = self.maintenance
+                if maintenance:
+                    try:
+                        action_results["reminders"] = maintenance.get_pending_tasks()
+                    except Exception as exc:
+                        self.log_action("reminder_check_failed", str(exc), status="error")
+                        action_results["reminders_error"] = str(exc)
+                else:
+                    action_results["reminders_error"] = "maintenance_unavailable"
+
+        if action_results:
+            try:
+                import json
+                tool_results.append({
+                    "id": "manager-actions",
+                    "content": json.dumps(action_results, default=str),
+                })
+            except Exception:
+                tool_results.append({
+                    "id": "manager-actions",
+                    "content": str(action_results),
+                })
+
+        context = {**context, "tool_results": tool_results}
         return await super().chat(message, context, conversation_history=conversation_history)
     
     # ============ SYSTEM REPORTING MODES ============

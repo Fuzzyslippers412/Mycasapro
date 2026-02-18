@@ -221,6 +221,8 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
             reasoning_log.append(f"✓ Detected @mention: {AGENT_PERSONAS[agent_id]['name']} ({agent_id})")
             break
     
+    format_agent_id = "manager"
+
     if mentioned_agent_id:
         persona = AGENT_PERSONAS[mentioned_agent_id]
         reasoning_log.append(f"🔄 Routing to {persona['name']} via LLM...")
@@ -257,9 +259,10 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
                 conversation_history=conversation_history
             )
             reasoning_log.append(f"✅ {persona['name']} responded via LLM")
+            format_agent_id = mentioned_agent_id
         except Exception as e:
             reasoning_log.append(f"❌ LLM error: {str(e)}")
-            response_text = f"{persona['emoji']} **{persona['name']}** is having trouble connecting.\n\nError: {str(e)}"
+            response_text = f"{persona['name']} is having trouble connecting.\n\nError: {str(e)}"
         
         return {
             "response": response_text,
@@ -476,6 +479,12 @@ Just type naturally - I'll figure out what you need!"""
     
     reasoning_log.append(f"✅ Response generated ({len(response_text)} chars)")
     
+    try:
+        from core.response_formatting import normalize_agent_response
+        response_text = normalize_agent_response(format_agent_id, response_text)
+    except Exception:
+        pass
+
     return {
         "response": response_text,
         "actions_taken": actions_taken if actions_taken else None,

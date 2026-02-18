@@ -64,6 +64,17 @@ interface Message {
     title?: string;
     due_date?: string | null;
     scheduled_date?: string | null;
+    assigned_to?: string | null;
+  };
+  janitorReport?: {
+    okCount: number;
+    failCount: number;
+    failures: Array<{ name: string; detail: string }>;
+    options: {
+      allowDestructive: boolean;
+      useLive: boolean;
+      includeOauth: boolean;
+    };
   };
 }
 
@@ -81,6 +92,9 @@ interface AgentStatus {
   name: string;
   state: string;
   enabled: boolean;
+  skills?: string[];
+  currentRequests?: number;
+  defaultModel?: string;
 }
 
 interface LlmStatus {
@@ -328,6 +342,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   const [personalMode, setPersonalMode] = useState(false);
   const [personalModeChecked, setPersonalModeChecked] = useState(false);
   const [personalModeError, setPersonalModeError] = useState<string | null>(null);
+  const [taskActionState, setTaskActionState] = useState<Record<string, string>>({});
   const agentTheme = (() => {
     const key = selectedAgent || "manager";
     switch (key) {
@@ -354,6 +369,16 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         return { label: "Command", accent: tokens.colors.primary[500], color: "blue" as const };
     }
   })();
+  const selectedAgentMeta = agents.find((a) => a.id === selectedAgent);
+  const selectedSkills = selectedAgentMeta?.skills || [];
+  const activeAgents = agents
+    .filter((agent) => (agent.currentRequests || 0) > 0)
+    .map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      count: agent.currentRequests || 0,
+    }));
+  const assignableAgents = agents.filter((agent) => agent.enabled && agent.id !== "manager");
   const chatAllowed = !personalModeError;
   const lipTitle = !chatAllowed
     ? personalModeError || "Backend unavailable"
@@ -372,6 +397,36 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     messageIdRef.current += 1;
     return id;
   }, []);
+
+  const pushAssistantMessage = useCallback(
+    (content: string, agentName = "System") => {
+      const message: Message = {
+        id: nextMessageId(),
+        role: "assistant",
+        content,
+        timestamp: new Date().toISOString(),
+        agent: agentName,
+      };
+      setMessages((prev) => [...prev, message]);
+    },
+    [nextMessageId]
+  );
+
+  const pushJanitorReport = useCallback(
+    (report: Message["janitorReport"]) => {
+      if (!report) return;
+      const message: Message = {
+        id: nextMessageId(),
+        role: "assistant",
+        content: "Janitor preflight report",
+        timestamp: new Date().toISOString(),
+        agent: "Janitor",
+        janitorReport: report,
+      };
+      setMessages((prev) => [...prev, message]);
+    },
+    [nextMessageId]
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -492,13 +547,15 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
   // Fetch real agent status from system live endpoint (single source of truth)
   const fetchAgents = useCallback(async () => {
     try {
-      const [liveRes, enabledRes] = await Promise.all([
+      const [liveRes, enabledRes, fleetRes] = await Promise.all([
         fetch(`${API_URL}/api/system/live`),
         fetch(`${API_URL}/api/settings/agents/enabled`),
+        fetch(`${API_URL}/api/fleet/agents`),
       ]);
 
       let liveAgents: Record<string, any> = {};
       let enabledMap: Record<string, boolean> = {};
+      let fleetAgents: Record<string, any> = {};
 
       if (liveRes.ok) {
         const liveData = await liveRes.json();
@@ -507,6 +564,14 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
 
       if (enabledRes.ok) {
         enabledMap = await enabledRes.json();
+      }
+      if (fleetRes.ok) {
+        const fleetData = await fleetRes.json();
+        const items = Array.isArray(fleetData?.agents) ? fleetData.agents : [];
+        fleetAgents = items.reduce((acc: Record<string, any>, agent: any) => {
+          if (agent?.id) acc[agent.id] = agent;
+          return acc;
+        }, {});
       }
 
       const allAgentIds = new Set([
@@ -522,11 +587,16 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
             ? enabledMap[settingsId]
             : live.status && live.status !== "offline";
         const status = live.status || (enabled ? "available" : "offline");
+        const fleetId = toFleetAgentId(id);
+        const fleet = fleetAgents[fleetId] || {};
         return {
           id,
           name: AGENT_NAMES[id] || id,
           state: status,
           enabled,
+          skills: Array.isArray(fleet.skills) ? fleet.skills : [],
+          currentRequests: typeof fleet.current_requests === "number" ? fleet.current_requests : 0,
+          defaultModel: fleet.default_model,
         };
       });
 
@@ -751,6 +821,131 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
     }
   }, [fetchAgents, launching, nextMessageId]);
 
+  const setTaskAction = (taskId: string, action: string) => {
+    setTaskActionState((prev) => ({ ...prev, [taskId]: action }));
+  };
+
+  const clearTaskAction = (taskId: string) => {
+    setTaskActionState((prev) => {
+      const next = { ...prev };
+      delete next[taskId];
+      return next;
+    });
+  };
+
+  const handleTaskComplete = async (taskId: string, title?: string) => {
+    if (!taskId) return;
+    setTaskAction(taskId, "complete");
+    try {
+      await apiFetch(`/api/tasks/${taskId}/complete`, { method: "PATCH", body: JSON.stringify({}) });
+      pushAssistantMessage(`Task "${title || taskId}" marked complete.`, AGENT_NAMES[selectedAgent] || selectedAgent);
+      window.dispatchEvent(new CustomEvent("mycasa-chat-sync"));
+      window.dispatchEvent(new CustomEvent("mycasa-system-sync"));
+    } catch (err: any) {
+      pushAssistantMessage(
+        `Warning: Unable to complete task "${title || taskId}". ${err?.detail || err?.message || ""}`.trim(),
+        "System"
+      );
+    } finally {
+      clearTaskAction(taskId);
+    }
+  };
+
+  const handleTaskDelete = async (taskId: string, title?: string) => {
+    if (!taskId) return;
+    setTaskAction(taskId, "delete");
+    try {
+      await apiFetch(`/api/tasks/${taskId}`, { method: "DELETE" });
+      pushAssistantMessage(`Task "${title || taskId}" deleted.`, AGENT_NAMES[selectedAgent] || selectedAgent);
+      window.dispatchEvent(new CustomEvent("mycasa-chat-sync"));
+      window.dispatchEvent(new CustomEvent("mycasa-system-sync"));
+    } catch (err: any) {
+      pushAssistantMessage(
+        `Warning: Unable to delete task "${title || taskId}". ${err?.detail || err?.message || ""}`.trim(),
+        "System"
+      );
+    } finally {
+      clearTaskAction(taskId);
+    }
+  };
+
+  const handleTaskReassign = async (taskId: string, title: string | undefined, assigneeId: string) => {
+    if (!taskId || !assigneeId) return;
+    setTaskAction(taskId, `assign:${assigneeId}`);
+    const assigneeLabel = AGENT_NAMES[assigneeId] || assigneeId;
+    try {
+      await apiFetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ assigned_to: assigneeId }),
+      });
+      pushAssistantMessage(
+        `Task "${title || taskId}" reassigned to ${assigneeLabel}.`,
+        "Galidima"
+      );
+      window.dispatchEvent(new CustomEvent("mycasa-chat-sync"));
+      window.dispatchEvent(new CustomEvent("mycasa-system-sync"));
+    } catch (err: any) {
+      pushAssistantMessage(
+        `Warning: Unable to reassign task "${title || taskId}". ${err?.detail || err?.message || ""}`.trim(),
+        "System"
+      );
+    } finally {
+      clearTaskAction(taskId);
+    }
+  };
+
+  const runJanitorPreflight = useCallback(
+    async (optionsText: string) => {
+      const allowDestructive = /--destructive|destructive|allow-destructive/i.test(optionsText);
+      const useLive = /--live|live|use-live/i.test(optionsText);
+      const includeOauth = /--oauth|oauth/i.test(optionsText);
+      pushAssistantMessage(
+        `Running Janitor preflight (${useLive ? "live backend" : "isolated"})${allowDestructive ? " with destructive checks" : ""}...`,
+        "Janitor"
+      );
+      try {
+        const payload: any = {
+          isolated: !useLive,
+          allow_destructive: allowDestructive,
+          skip_oauth: !includeOauth,
+          open_browser: includeOauth,
+        };
+        if (useLive) {
+          payload.api_base = API_URL;
+        }
+        const result = await apiFetch<any>(
+          "/api/janitor/run-preflight",
+          { method: "POST", body: JSON.stringify(payload) },
+          120000
+        );
+        const report = result?.report;
+        const summaryItems = Array.isArray(report?.results) ? report.results : [];
+        const failures = summaryItems.filter((r: any) => !r.ok);
+        const okCount = summaryItems.length - failures.length;
+        pushJanitorReport({
+          okCount,
+          failCount: failures.length,
+          failures: failures.slice(0, 5).map((f: any) => ({
+            name: f.name || "Check",
+            detail: f.detail || "Check failed",
+          })),
+          options: {
+            allowDestructive,
+            useLive,
+            includeOauth,
+          },
+        });
+        if (failures.length === 0) {
+          pushAssistantMessage("Preflight passed. No failures detected.", "Janitor");
+        }
+      } catch (err: any) {
+        const detail = err?.detail || err?.message || "Preflight failed.";
+        pushAssistantMessage(`Warning: Janitor preflight failed: ${detail}`, "Janitor");
+      }
+    },
+    [pushAssistantMessage, pushJanitorReport]
+  );
+
   const sendToAgents = async (
     agentIds: string[],
     message: string,
@@ -822,18 +1017,6 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       setPendingRoute(null);
       refreshSessions(agentId);
       if (data?.task_created && typeof window !== "undefined") {
-        const title = data?.task_created?.title || "Task created";
-        const due = data?.task_created?.due_date || data?.task_created?.scheduled_date;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextMessageId(),
-            role: "assistant",
-            content: `Task created: ${title}${due ? ` • Due ${due}` : ""}. Open Maintenance to review.`,
-            timestamp: new Date().toISOString(),
-            agent: "System",
-          },
-        ]);
         const routed = data?.routed_to || "maintenance";
         setSelectedAgent(routed);
         window.dispatchEvent(new CustomEvent("mycasa-system-sync"));
@@ -889,47 +1072,6 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
       };
       setMessages((prev) => [...prev, localMessage]);
       setPendingRoute(null);
-    };
-
-    const runJanitorPreflight = async (optionsText: string) => {
-      const allowDestructive = /--destructive|destructive|allow-destructive/i.test(optionsText);
-      const useLive = /--live|live|use-live/i.test(optionsText);
-      const includeOauth = /--oauth|oauth/i.test(optionsText);
-      addLocalResponse(
-        `Running Janitor preflight (${useLive ? "live backend" : "isolated"})${allowDestructive ? " with destructive checks" : ""}...`,
-        "Janitor"
-      );
-      try {
-        const payload: any = {
-          isolated: !useLive,
-          allow_destructive: allowDestructive,
-          skip_oauth: !includeOauth,
-          open_browser: includeOauth,
-        };
-        if (useLive) {
-          payload.api_base = API_URL;
-        }
-        const result = await apiFetch<any>(
-          "/api/janitor/run-preflight",
-          { method: "POST", body: JSON.stringify(payload) },
-          120000
-        );
-        const report = result?.report;
-        const summaryItems = Array.isArray(report?.results) ? report.results : [];
-        const failures = summaryItems.filter((r: any) => !r.ok);
-        if (failures.length === 0) {
-          addLocalResponse("Preflight passed. No failures detected.", "Janitor");
-        } else {
-          const topFails = failures.slice(0, 5).map((f: any) => `- ${f.name}: ${f.detail}`).join("\n");
-        addLocalResponse(
-            `Warning: Preflight reported ${failures.length} failure(s):\n${topFails}`,
-            "Janitor"
-          );
-        }
-      } catch (err: any) {
-        const detail = err?.detail || err?.message || "Preflight failed.";
-        addLocalResponse(`Warning: Janitor preflight failed: ${detail}`, "Janitor");
-      }
     };
 
     try {
@@ -1158,8 +1300,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        minHeight: 560,
-        maxHeight: "calc(100vh - 140px)",
+        minHeight: 520,
       }
     : {
         marginBottom: -1,
@@ -1199,6 +1340,32 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                     ? "Galidima routes requests and logs outcomes for your home"
                     : `Focused on ${agentTheme.label.toLowerCase()} workflows`}
                 </Text>
+                <Group gap={6} mt={4} wrap="wrap">
+                  {(selectedSkills.length > 0 ? selectedSkills.slice(0, 4) : ["Skills unavailable"]).map(
+                    (skill) => (
+                      <Badge key={skill} size="xs" variant="light" color={agentTheme.color}>
+                        {skill}
+                      </Badge>
+                    )
+                  )}
+                </Group>
+                {activeAgents.length > 0 && (
+                  <Group gap={6} mt={4} wrap="wrap">
+                    <Text size="xs" c="dimmed">
+                      Active now:
+                    </Text>
+                    {activeAgents.slice(0, 3).map((agent) => (
+                      <Badge key={agent.id} size="xs" variant="light">
+                        {agent.name} {agent.count}
+                      </Badge>
+                    ))}
+                    {activeAgents.length > 3 && (
+                      <Text size="xs" c="dimmed">
+                        +{activeAgents.length - 3} more
+                      </Text>
+                    )}
+                  </Group>
+                )}
               </Stack>
             </Group>
             <Group gap="xs">
@@ -1420,6 +1587,11 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                           <Text size="10px" c="dimmed">
                             {getStatusLabel(agent.state, agent.enabled)}
                           </Text>
+                          {agent.skills && agent.skills.length > 0 && (
+                            <Text size="10px" c="dimmed">
+                              {agent.skills.slice(0, 2).join(" • ")}
+                            </Text>
+                          )}
                         </div>
                       </Group>
                       {agent.id !== "manager" ? (
@@ -1512,39 +1684,156 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                     )}
                     <Text size="sm">{message.content}</Text>
                     {message.role === "assistant" && (message.routedTo || message.taskCreated) && (
-                      <Box mt={6}>
+                      <Box mt={8}>
                         {(() => {
                           const target = message.routedTo || "maintenance";
                           const route = handoffRouteFor(target);
                           const label = AGENT_NAMES[target] || target;
                           const title = message.taskCreated?.title || "Task queued";
+                          const due = message.taskCreated?.due_date || message.taskCreated?.scheduled_date;
+                          const taskId = message.taskCreated?.task_id;
+                          const assignedTo = message.taskCreated?.assigned_to;
+                          const assignedLabel = assignedTo ? (AGENT_NAMES[assignedTo] || assignedTo) : null;
+                          const actionState = taskId ? taskActionState[String(taskId)] : undefined;
+                          const routedMeta = agents.find((agent) => agent.id === target);
                           return (
-                            <Paper
-                              withBorder
-                              radius="md"
-                              p="xs"
-                              style={{
-                                background: "var(--surface-2)",
-                                borderColor: "var(--border-1)",
-                              }}
-                            >
-                              <Group justify="space-between" align="center">
-                                <Box>
-                                  <Group gap={6}>
-                                    <Badge size="xs" variant="light" color="blue" leftSection={<IconArrowRight size={12} />}>
-                                      Delegated
-                                    </Badge>
-                                    <Text size="xs" fw={600}>{label}</Text>
+                            <Stack gap={6}>
+                              <Paper
+                                withBorder
+                                radius="md"
+                                p="xs"
+                                style={{
+                                  background: "var(--surface-2)",
+                                  borderColor: "var(--border-1)",
+                                }}
+                              >
+                                <Group justify="space-between" align="center" wrap="wrap">
+                                  <Box>
+                                    <Group gap={6} wrap="wrap">
+                                      <Badge
+                                        size="xs"
+                                        variant="light"
+                                        color="blue"
+                                        leftSection={<IconArrowRight size={12} />}
+                                      >
+                                        Routed
+                                      </Badge>
+                                      <Text size="xs" fw={600}>
+                                        {label}
+                                      </Text>
+                                      <Text size="xs" c="dimmed">
+                                        queued
+                                      </Text>
+                                    </Group>
+                                    <Text size="xs" c="dimmed" mt={4}>
+                                      Manager assigned this to {label}.
+                                    </Text>
+                                  </Box>
+                                  <Group gap="xs" wrap="wrap">
+                                    {route && (
+                                      <Button size="xs" variant="light" onClick={() => router.push(route)}>
+                                        View
+                                      </Button>
+                                    )}
+                                    {routedMeta && routedMeta.id !== "manager" && (
+                                      <Button
+                                        size="xs"
+                                        variant="light"
+                                        color={routedMeta.enabled ? "yellow" : "green"}
+                                        onClick={() => toggleAgentEnabled(routedMeta.id, routedMeta.enabled)}
+                                      >
+                                        {routedMeta.enabled ? "Pause agent" : "Resume agent"}
+                                      </Button>
+                                    )}
                                   </Group>
-                                  <Text size="xs" c="dimmed" mt={4} lineClamp={1}>{title}</Text>
-                                </Box>
-                                {route && (
-                                  <Button size="xs" variant="light" onClick={() => router.push(route)}>
-                                    Open
-                                  </Button>
-                                )}
-                              </Group>
-                            </Paper>
+                                </Group>
+                              </Paper>
+                              {message.taskCreated && (
+                                <Paper
+                                  withBorder
+                                  radius="md"
+                                  p="xs"
+                                  style={{
+                                    background: "var(--surface-2)",
+                                    borderColor: "var(--border-1)",
+                                  }}
+                                >
+                                  <Group justify="space-between" align="center" wrap="wrap">
+                                    <Box>
+                                      <Group gap={6} wrap="wrap">
+                                        <Badge size="xs" variant="light" color="green">
+                                          Created
+                                        </Badge>
+                                        <Text size="xs" fw={600} lineClamp={1}>
+                                          {title}
+                                        </Text>
+                                      </Group>
+                                      <Text size="xs" c="dimmed" mt={4}>
+                                        {due ? `Due ${due}` : "No due date set"}
+                                      </Text>
+                                      {assignedLabel && (
+                                        <Text size="xs" c="dimmed">
+                                          Assigned to {assignedLabel}
+                                        </Text>
+                                      )}
+                                    </Box>
+                                    <Group gap="xs" wrap="wrap">
+                                      {route && (
+                                        <Button size="xs" variant="light" onClick={() => router.push(route)}>
+                                          Open list
+                                        </Button>
+                                      )}
+                                      {taskId && (
+                                        <>
+                                          <Menu withinPortal position="bottom-end">
+                                            <Menu.Target>
+                                              <Button
+                                                size="xs"
+                                                variant="light"
+                                                loading={actionState?.startsWith("assign")}
+                                              >
+                                                Reassign
+                                              </Button>
+                                            </Menu.Target>
+                                            <Menu.Dropdown>
+                                              {assignableAgents.length === 0 && (
+                                                <Menu.Item disabled>No agents available</Menu.Item>
+                                              )}
+                                              {assignableAgents.map((agent) => (
+                                                <Menu.Item
+                                                  key={agent.id}
+                                                  onClick={() => handleTaskReassign(String(taskId), title, agent.id)}
+                                                >
+                                                  {agent.name}
+                                                </Menu.Item>
+                                              ))}
+                                            </Menu.Dropdown>
+                                          </Menu>
+                                          <Button
+                                            size="xs"
+                                            variant="light"
+                                            color="green"
+                                            loading={actionState === "complete"}
+                                            onClick={() => handleTaskComplete(String(taskId), title)}
+                                          >
+                                            Complete
+                                          </Button>
+                                          <Button
+                                            size="xs"
+                                            variant="light"
+                                            color="red"
+                                            loading={actionState === "delete"}
+                                            onClick={() => handleTaskDelete(String(taskId), title)}
+                                          >
+                                            Delete
+                                          </Button>
+                                        </>
+                                      )}
+                                    </Group>
+                                  </Group>
+                                </Paper>
+                              )}
+                            </Stack>
                           );
                         })()}
                       </Box>
@@ -1553,6 +1842,86 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                       <Text size="xs" c="dimmed" mt={4}>
                         {message.delegationNote}
                       </Text>
+                    )}
+                    {message.role === "assistant" && message.janitorReport && (
+                      <Box mt={8}>
+                        <Paper
+                          withBorder
+                          radius="md"
+                          p="sm"
+                          style={{
+                            background: "var(--surface-2)",
+                            borderColor: "var(--border-1)",
+                          }}
+                        >
+                          <Group justify="space-between" align="center" mb={6} wrap="wrap">
+                            <Group gap="xs">
+                              <Badge size="xs" variant="light" color={message.janitorReport.failCount > 0 ? "red" : "green"}>
+                                {message.janitorReport.failCount > 0 ? "Issues" : "All clear"}
+                              </Badge>
+                              <Text size="xs" fw={600}>Janitor preflight</Text>
+                            </Group>
+                            <Group gap="xs">
+                              <Button size="xs" variant="light" onClick={() => router.push("/janitor")}>
+                                Open Janitor
+                              </Button>
+                              <Button
+                                size="xs"
+                                variant="light"
+                                onClick={() => {
+                                  const opts = message.janitorReport?.options;
+                                  if (!opts) return;
+                                  const parts = [];
+                                  if (opts.allowDestructive) parts.push("destructive");
+                                  if (opts.useLive) parts.push("live");
+                                  if (opts.includeOauth) parts.push("oauth");
+                                  runJanitorPreflight(parts.join(" "));
+                                }}
+                              >
+                                Rerun
+                              </Button>
+                            </Group>
+                          </Group>
+                          <Group gap="xs" wrap="wrap">
+                            <Badge size="xs" variant="light">Passed {message.janitorReport.okCount}</Badge>
+                            <Badge size="xs" variant="light" color={message.janitorReport.failCount > 0 ? "red" : "green"}>
+                              Failed {message.janitorReport.failCount}
+                            </Badge>
+                            <Badge size="xs" variant="light">
+                              {message.janitorReport.options.useLive ? "Live" : "Isolated"}
+                            </Badge>
+                          </Group>
+                          {message.janitorReport.failures.length > 0 ? (
+                            <Stack gap={4} mt="sm">
+                              {message.janitorReport.failures.map((fail, index) => (
+                                <Group key={`${fail.name}-${index}`} gap="xs" wrap="nowrap">
+                                  <Box
+                                    style={{
+                                      width: 6,
+                                      height: 6,
+                                      borderRadius: 999,
+                                      background: "var(--mantine-color-red-5)",
+                                      marginTop: 4,
+                                    }}
+                                  />
+                                  <Box>
+                                    <Text size="xs" fw={600}>
+                                      {fail.name}
+                                    </Text>
+                                    <Text size="xs" c="dimmed">
+                                      {fail.detail}
+                                    </Text>
+                                  </Box>
+                                </Group>
+                              ))}
+                            </Stack>
+                          ) : (
+                            <Text size="xs" c="dimmed" mt="sm">
+                              No issues detected. System checks passed.
+                            </Text>
+                          )}
+                        </Paper>
+                      </Box>
                     )}
                     {message.role === "assistant" && (message.latencyMs || message.inputTokens || message.outputTokens) && (
                       <Group gap={6} mt={6}>
@@ -1599,18 +1968,44 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
                       radius="lg"
                       style={{ backgroundColor: "var(--chat-message-bg)" }}
                     >
-                      <Group gap="xs">
-                        <Badge size="xs" variant="light" color="blue">
-                          Coordinating
-                        </Badge>
-                        <Text size="sm" fw={600}>
-                          {AGENT_NAMES[pendingRoute] || pendingRoute}
-                        </Text>
-                        <Loader size="xs" />
-                      </Group>
-                      <Text size="xs" c="dimmed" mt={4}>
-                        Creating the task and syncing the Maintenance queue.
-                      </Text>
+                      <Stack gap={6}>
+                        <Group gap="xs">
+                          <Badge size="xs" variant="light" color="blue">
+                            Coordinating
+                          </Badge>
+                          <Text size="sm" fw={600}>
+                            {AGENT_NAMES[pendingRoute] || pendingRoute}
+                          </Text>
+                        </Group>
+                        <Stack gap={4}>
+                          <Group gap={6}>
+                            <Box
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 999,
+                                background: "var(--mantine-color-blue-5)",
+                              }}
+                            />
+                            <Text size="xs">Routing request</Text>
+                          </Group>
+                          <Group gap={6}>
+                            <Box
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 999,
+                                background: "var(--mantine-color-gray-4)",
+                              }}
+                            />
+                            <Text size="xs">Creating task</Text>
+                          </Group>
+                          <Group gap={6}>
+                            <Loader size="xs" />
+                            <Text size="xs">Syncing list</Text>
+                          </Group>
+                        </Stack>
+                      </Stack>
                     </Paper>
                   </Group>
                 ) : (
@@ -1697,6 +2092,7 @@ export function GlobalChat({ mode = "floating" }: { mode?: "floating" | "embedde
         width: isEmbedded ? "100%" : "min(560px, calc(100vw - 32px))",
         minWidth: isEmbedded ? "100%" : undefined,
         maxWidth: isEmbedded ? "100%" : undefined,
+        height: isEmbedded ? "100%" : undefined,
         alignSelf: isEmbedded ? "stretch" : undefined,
       }}
     >

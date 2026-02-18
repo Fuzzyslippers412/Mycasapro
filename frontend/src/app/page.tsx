@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ElementType } from "react";
 import { useRouter } from "next/navigation";
 import { Shell } from "@/components/layout/Shell";
@@ -14,12 +14,12 @@ import {
   Button,
   Card,
   Center,
-  Divider,
   Group,
   ScrollArea,
   SimpleGrid,
   Skeleton,
   Stack,
+  Tooltip,
   Text,
   ThemeIcon,
 } from "@mantine/core";
@@ -41,8 +41,8 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { apiFetch, getApiBaseUrl, isNetworkError } from "@/lib/api";
-import { useDashboardData, useJanitorWizardHistory, useSystemStatus } from "@/lib/hooks";
+import { apiFetch, getApiBaseUrl, isNetworkError, IndicatorDiagnostic } from "@/lib/api";
+import { useDashboardData, useIndicatorDiagnostics, useJanitorWizardHistory, useSystemStatus } from "@/lib/hooks";
 import { tokens } from "@/theme/tokens";
 
 // Types from API
@@ -67,6 +67,7 @@ function StatusHeader({
   janitorRun,
   janitorLoading,
   janitorError,
+  indicatorLookup,
   onAddTask,
   onInbox,
   onJanitor,
@@ -82,6 +83,7 @@ function StatusHeader({
   janitorRun: { health_score: number; findings_count: number; status: string; timestamp: string } | null;
   janitorLoading: boolean;
   janitorError: boolean;
+  indicatorLookup?: (id: string) => IndicatorDiagnostic | undefined;
   onAddTask: () => void;
   onInbox: () => void;
   onJanitor: () => void;
@@ -143,17 +145,44 @@ function StatusHeader({
       ? "Identity ready"
       : "Identity incomplete";
 
-  const MetricItem = ({ icon: Icon, text }: { icon: ElementType; text: string }) => (
-    <Group gap={6} wrap="nowrap">
-      <ThemeIcon variant="light" size="sm" radius="md" color="primary">
-        <Icon size={14} />
-      </ThemeIcon>
-      <Text size="sm">{text}</Text>
-    </Group>
-  );
+  const MetricItem = ({
+    icon: Icon,
+    text,
+    indicatorId,
+  }: {
+    icon: ElementType;
+    text: string;
+    indicatorId?: string;
+  }) => {
+    const meta = indicatorId && indicatorLookup ? indicatorLookup(indicatorId) : undefined;
+    const tooltip = meta
+      ? `${meta.label} • ${meta.status.toUpperCase()}${meta.last_updated ? ` • Updated ${new Date(meta.last_updated).toLocaleString()}` : ""}${meta.source ? ` • Source: ${meta.source}` : ""}`
+      : "";
+    const content = (
+      <Group gap={6} wrap="nowrap">
+        <ThemeIcon variant="light" size="sm" radius="md" color="primary">
+          <Icon size={14} />
+        </ThemeIcon>
+        <Text size="sm">{text}</Text>
+      </Group>
+    );
+    return meta ? (
+      <Tooltip label={tooltip} withArrow>
+        <Box>{content}</Box>
+      </Tooltip>
+    ) : (
+      content
+    );
+  };
 
   return (
-    <Card radius="lg" withBorder padding="md" className="status-hero">
+    <Card
+      radius="lg"
+      withBorder
+      padding="md"
+      className="status-hero"
+      style={{ minHeight: 160 }}
+    >
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <Stack gap={6} style={{ flex: 1, minWidth: 260 }}>
           <Text size="sm" c="dimmed">
@@ -183,6 +212,7 @@ function StatusHeader({
                       ? `${pendingTasks} tasks pending`
                       : "Tasks unavailable"
                   }
+                  indicatorId="dashboard.tasks.pending_count"
                 />
                 <MetricItem
                   icon={IconInbox}
@@ -191,11 +221,12 @@ function StatusHeader({
                       ? `${unreadMessages} messages unread`
                       : "Messages unavailable"
                   }
+                  indicatorId="dashboard.messages.unread_total"
                 />
-                <MetricItem icon={IconActivity} text={portfolioLabel} />
-                <MetricItem icon={IconSparkles} text={janitorLabel} />
-                <MetricItem icon={IconClock} text={heartbeatLabel} />
-                <MetricItem icon={IconShieldLock} text={identityLabel} />
+                <MetricItem icon={IconActivity} text={portfolioLabel} indicatorId="dashboard.portfolio.change_pct" />
+                <MetricItem icon={IconSparkles} text={janitorLabel} indicatorId="dashboard.janitor.last_run" />
+                <MetricItem icon={IconClock} text={heartbeatLabel} indicatorId="dashboard.heartbeat.open_findings" />
+                <MetricItem icon={IconShieldLock} text={identityLabel} indicatorId="dashboard.identity.ready" />
               </>
             )}
           </Group>
@@ -238,6 +269,7 @@ function KpiCard({
   icon: Icon,
   loading,
   color = "primary",
+  indicatorMeta,
   onClick,
 }: {
   title: string;
@@ -246,15 +278,19 @@ function KpiCard({
   icon: ElementType;
   loading: boolean;
   color?: string;
+  indicatorMeta?: IndicatorDiagnostic;
   onClick?: () => void;
 }) {
-  return (
+  const tooltip = indicatorMeta
+    ? `${indicatorMeta.label} • ${indicatorMeta.status.toUpperCase()}${indicatorMeta.last_updated ? ` • Updated ${new Date(indicatorMeta.last_updated).toLocaleString()}` : ""}${indicatorMeta.source ? ` • Source: ${indicatorMeta.source}` : ""}`
+    : "";
+  const card = (
     <Card
       radius="lg"
       withBorder
       onClick={onClick}
       className="kpi-card"
-      style={{ cursor: onClick ? "pointer" : "default" }}
+      style={{ cursor: onClick ? "pointer" : "default", minHeight: 110 }}
     >
       <Group justify="space-between" align="flex-start">
         <Stack gap={4}>
@@ -277,6 +313,13 @@ function KpiCard({
         </ThemeIcon>
       </Group>
     </Card>
+  );
+  return indicatorMeta ? (
+    <Tooltip label={tooltip} withArrow>
+      <Box>{card}</Box>
+    </Tooltip>
+  ) : (
+    card
   );
 }
 
@@ -316,7 +359,7 @@ function ActivityFeed({
   };
 
   return (
-    <Card radius="lg" withBorder padding="md" className="activity-card">
+    <Card radius="lg" withBorder padding="md" className="activity-card" style={{ minHeight: 360 }}>
       <Group justify="space-between" mb="md">
         <Group gap="xs">
           <ThemeIcon variant="light" color="primary" size="sm" radius="md">
@@ -518,7 +561,7 @@ function SystemHealthCard({
   const hasMetrics = availableMetrics.length > 0;
 
   return (
-    <Card radius="lg" withBorder padding="md" className="system-health-card">
+    <Card radius="lg" withBorder padding="md" className="system-health-card" style={{ minHeight: 240 }}>
       <Group justify="space-between" mb="md">
         <Group gap="xs">
           <ThemeIcon variant="light" color="primary" size="sm" radius="md">
@@ -590,6 +633,19 @@ export default function HomePage() {
   const janitorLoading = janitorHistory.loading;
   const janitorError = Boolean(janitorHistory.error);
   const systemStatus = useSystemStatus(30000);
+  const indicatorDiagnostics = useIndicatorDiagnostics(60000);
+  const indicatorIndex = useMemo(() => {
+    const map = new Map<string, IndicatorDiagnostic>();
+    indicatorDiagnostics.data?.results?.forEach((item) => {
+      map.set(item.id, item);
+    });
+    return map;
+  }, [indicatorDiagnostics.data]);
+  const indicatorLookup = (id: string) => indicatorIndex.get(id);
+  const indicatorOk = (id: string) => {
+    const meta = indicatorLookup(id);
+    return meta ? meta.status === "ok" : true;
+  };
   const [portfolioChange, setPortfolioChange] = useState<number | null>(null);
   const [portfolioLoading, setPortfolioLoading] = useState(true);
   const apiBase = getApiBaseUrl();
@@ -657,7 +713,7 @@ export default function HomePage() {
           }
         }
       } catch {
-        if (active) setPortfolioChange(null);
+        // Keep last known portfolio change to avoid flicker
       } finally {
         if (active) setPortfolioLoading(false);
       }
@@ -695,9 +751,13 @@ export default function HomePage() {
       }))
     : [];
 
-  const pendingTaskCount = loading || tasksError ? null : tasks?.length ?? null;
-  const unreadMessageCount = loading || unreadError ? null : unreadCount?.total ?? null;
-  const upcomingBillsTotal = loading || billsError
+  const pendingTaskCount = loading || tasksError || !indicatorOk("dashboard.tasks.pending_count")
+    ? null
+    : tasks?.length ?? null;
+  const unreadMessageCount = loading || unreadError || !indicatorOk("dashboard.messages.unread_total")
+    ? null
+    : unreadCount?.total ?? null;
+  const upcomingBillsTotal = loading || billsError || !indicatorOk("dashboard.bills.upcoming_total")
     ? null
     : bills?.reduce((sum: number, b: any) => sum + (b.amount || 0), 0) ?? null;
 
@@ -764,13 +824,13 @@ export default function HomePage() {
             </Alert>
           )}
 
-          <Box className="dashboard-book">
-            <Stack gap="lg" className="dashboard-page">
+          <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" className="dashboard-grid">
+            <Stack gap="lg" className="dashboard-left">
               <StatusHeader
                 userName={user?.display_name || user?.username || "there"}
                 pendingTasks={pendingTaskCount}
                 unreadMessages={unreadMessageCount}
-                portfolioChange={portfolioChange}
+                portfolioChange={indicatorOk("dashboard.portfolio.change_pct") ? portfolioChange : null}
                 heartbeat={statusData?.facts?.heartbeat || null}
                 identity={statusData?.facts?.identity || null}
                 loading={loading || portfolioLoading}
@@ -778,6 +838,7 @@ export default function HomePage() {
                 janitorRun={janitorRun}
                 janitorLoading={janitorLoading}
                 janitorError={janitorError}
+                indicatorLookup={indicatorLookup}
                 onAddTask={() => router.push("/maintenance")}
                 onInbox={() => router.push("/inbox")}
                 onJanitor={() => router.push("/janitor")}
@@ -787,8 +848,8 @@ export default function HomePage() {
               </Box>
             </Stack>
 
-            <Stack gap="lg" className="dashboard-page">
-              <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+            <Stack gap="lg" className="dashboard-right">
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                 <KpiCard
                   title="Open Tasks"
                   value={loading ? "..." : pendingTaskCount === null ? "N/A" : String(pendingTaskCount)}
@@ -800,6 +861,7 @@ export default function HomePage() {
                   icon={IconChecklist}
                   color="primary"
                   loading={loading}
+                  indicatorMeta={indicatorLookup("dashboard.tasks.pending_count")}
                   onClick={() => router.push("/maintenance")}
                 />
                 <KpiCard
@@ -815,6 +877,7 @@ export default function HomePage() {
                   icon={IconWallet}
                   color="warning"
                   loading={loading}
+                  indicatorMeta={indicatorLookup("dashboard.bills.upcoming_total")}
                   onClick={() => router.push("/finance")}
                 />
                 <KpiCard
@@ -828,6 +891,7 @@ export default function HomePage() {
                   icon={IconInbox}
                   color="info"
                   loading={loading}
+                  indicatorMeta={indicatorLookup("dashboard.messages.unread_total")}
                   onClick={() => router.push("/inbox")}
                 />
                 <KpiCard
@@ -843,12 +907,13 @@ export default function HomePage() {
                   icon={IconShieldLock}
                   color="success"
                   loading={loading}
+                  indicatorMeta={indicatorLookup("dashboard.system.agents_online")}
                   onClick={() => router.push("/system")}
                 />
               </SimpleGrid>
 
               <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
-                <Card radius="md" withBorder padding="md">
+                <Card radius="md" withBorder padding="md" style={{ minHeight: 360 }}>
                   <Group justify="space-between" mb="md">
                     <Group gap="xs">
                       <ThemeIcon variant="light" color="primary" size="sm" radius="md">
@@ -909,7 +974,7 @@ export default function HomePage() {
             </Stack>
 
             {/* removed marketing sections per product UI */}
-          </Box>
+          </SimpleGrid>
         </Stack>
       </Page>
     </Shell>

@@ -384,6 +384,10 @@ app.include_router(system_router, prefix="/api")
 from api.routes.system_live import router as system_live_router
 app.include_router(system_live_router, prefix="/api")
 
+# Diagnostics routes
+from api.routes.diagnostics import router as diagnostics_router
+app.include_router(diagnostics_router, prefix="/api")
+
 # Connector Marketplace routes
 from api.routes.connectors import router as connectors_router
 app.include_router(connectors_router, prefix="/api")
@@ -547,52 +551,57 @@ async def manager_chat(
             input_tokens_est = history_tokens_est + _estimate_tokens(request.message)
             add_message(db, conversation, "user", request.message)
 
-            # Fast-path: create real maintenance tasks for reminders/tasks
+            # Action-first: perform task creation/deletion, then let the LLM respond.
+            task_created = None
+            routed_to = None
+            delegation_note = None
+            action_error = None
+            action_results: Dict[str, Any] = {}
             try:
                 maintenance = manager.maintenance or manager.get_agent_by_id("maintenance")
-                if maintenance and hasattr(maintenance, "create_task_from_message"):
-                    msg_lower = (request.message or "").lower()
-                    delete_match = re.search(
-                        r"(?:delete|remove|cancel)\s+(?:task|reminder)\s*(?:#|id\s*)?(\d+)",
-                        request.message or "",
-                        re.IGNORECASE,
-                    )
-                    if delete_match:
-                        try:
-                            task_id = int(delete_match.group(1))
-                        except Exception:
-                            task_id = None
-                        if task_id is not None:
-                            removed = maintenance.remove_task(task_id)
-                            if not removed or removed.get("error"):
-                                response = f"Sorry — I couldn’t delete task #{task_id}. {removed.get('error', 'Task not found')}."
-                                add_message(db, conversation, "assistant", response)
-                                return {
-                                    "response": response,
-                                    "timestamp": datetime.now().isoformat(),
-                                    "agent": "manager",
-                                    "agent_name": "Galidima",
-                                    "conversation_id": conversation_id,
-                                    "input_tokens_est": input_tokens_est,
-                                    "output_tokens_est": _estimate_tokens(response),
-                                    "latency_ms": 0,
-                                    "error": removed.get("error", "Task not found"),
-                                }
-                            title = (removed.get("task") or {}).get("title") or f"Task #{task_id}"
-                            response = f"Task \"{title}\" removed."
-                            add_message(db, conversation, "assistant", response)
-                            return {
-                                "response": response,
-                                "timestamp": datetime.now().isoformat(),
-                                "agent": "manager",
-                                "agent_name": "Galidima",
-                                "conversation_id": conversation_id,
-                                "input_tokens_est": input_tokens_est,
-                                "output_tokens_est": _estimate_tokens(response),
-                                "latency_ms": 0,
-                                "routed_to": "maintenance",
+                msg_lower = (request.message or "").lower()
+                delete_match = re.search(
+                    r"(?:delete|remove|cancel)\s+(?:task|reminder)\s*(?:#|id\s*)?(\d+)",
+                    request.message or "",
+                    re.IGNORECASE,
+                )
+                if delete_match:
+                    try:
+                        task_id = int(delete_match.group(1))
+                    except Exception:
+                        task_id = None
+                    if not maintenance or not hasattr(maintenance, "remove_task"):
+                        action_error = "maintenance_unavailable"
+                        action_results["delete_task"] = {
+                            "success": False,
+                            "error": "Maintenance agent not available",
+                            "task_id": task_id,
+                        }
+                    elif task_id is None:
+                        action_error = "invalid_task_id"
+                        action_results["delete_task"] = {
+                            "success": False,
+                            "error": "Invalid task id",
+                            "task_id": None,
+                        }
+                    else:
+                        removed = maintenance.remove_task(task_id)
+                        if not removed or removed.get("error"):
+                            action_error = removed.get("error") or "Task not found"
+                            action_results["delete_task"] = {
+                                "success": False,
+                                "error": action_error,
+                                "task_id": task_id,
                             }
-                    if re.search(r"(?:delete|remove|cancel)\s+(?:task|reminder)", msg_lower):
+                        else:
+                            routed_to = "maintenance"
+                            action_results["delete_task"] = {
+                                "success": True,
+                                "task_id": task_id,
+                                "task": removed.get("task"),
+                            }
+                elif re.search(r"(?:delete|remove|cancel)\s+(?:task|reminder)", msg_lower):
+                    if maintenance and hasattr(maintenance, "get_pending_tasks"):
                         try:
                             tasks = maintenance.get_pending_tasks()
                         except Exception:
@@ -601,168 +610,113 @@ async def manager_chat(
                         for t in tasks:
                             title = (t.get("title") or "").lower()
                             if title and title in msg_lower:
-                                matches.append(t)
-                        if len(matches) == 1:
+                                matches.append({"id": t.get("id"), "title": t.get("title")})
+                        if len(matches) == 1 and maintenance and hasattr(maintenance, "remove_task"):
                             task_id = matches[0].get("id")
                             removed = maintenance.remove_task(int(task_id))
                             if removed and not removed.get("error"):
-                                title = (removed.get("task") or {}).get("title") or matches[0].get("title") or f"Task #{task_id}"
-                                response = f"Task \"{title}\" removed."
-                                add_message(db, conversation, "assistant", response)
-                                return {
-                                    "response": response,
-                                    "timestamp": datetime.now().isoformat(),
-                                    "agent": "manager",
-                                    "agent_name": "Galidima",
-                                    "conversation_id": conversation_id,
-                                    "input_tokens_est": input_tokens_est,
-                                    "output_tokens_est": _estimate_tokens(response),
-                                    "latency_ms": 0,
-                                    "routed_to": "maintenance",
+                                routed_to = "maintenance"
+                                action_results["delete_task"] = {
+                                    "success": True,
+                                    "task_id": task_id,
+                                    "task": removed.get("task"),
                                 }
-                        elif len(matches) > 1:
-                            response = "Multiple tasks match that description. Please specify the task id."
-                            add_message(db, conversation, "assistant", response)
-                            return {
-                                "response": response,
-                                "timestamp": datetime.now().isoformat(),
-                                "agent": "manager",
-                                "agent_name": "Galidima",
-                                "conversation_id": conversation_id,
-                                "input_tokens_est": input_tokens_est,
-                                "output_tokens_est": _estimate_tokens(response),
-                                "latency_ms": 0,
+                            else:
+                                action_error = removed.get("error") if removed else "Task not found"
+                                action_results["delete_task"] = {
+                                    "success": False,
+                                    "task_id": task_id,
+                                    "error": action_error,
+                                }
+                        else:
+                            action_error = "task_id_required"
+                            action_results["delete_task"] = {
+                                "success": False,
+                                "error": "Task id required",
+                                "matches": matches,
                             }
-                        elif "delete" in msg_lower or "remove" in msg_lower or "cancel" in msg_lower:
-                            response = "Tell me the task id to delete."
-                            add_message(db, conversation, "assistant", response)
-                            return {
-                                "response": response,
-                                "timestamp": datetime.now().isoformat(),
-                                "agent": "manager",
-                                "agent_name": "Galidima",
-                                "conversation_id": conversation_id,
-                                "input_tokens_est": input_tokens_est,
-                                "output_tokens_est": _estimate_tokens(response),
-                                "latency_ms": 0,
-                            }
-                    intent_keywords = [
-                        "remind",
-                        "reminder",
-                        "add a task",
-                        "add task",
-                        "schedule",
-                        "task reminder",
-                        "clean",
-                        "fix",
-                        "repair",
-                        "maintenance",
-                    ]
-                    is_task_intent = any(k in msg_lower for k in intent_keywords)
+                    else:
+                        action_error = "maintenance_unavailable"
+                        action_results["delete_task"] = {
+                            "success": False,
+                            "error": "Maintenance agent not available",
+                        }
+                intent_keywords = [
+                    "remind",
+                    "reminder",
+                    "add a task",
+                    "add task",
+                    "schedule",
+                    "task reminder",
+                    "clean",
+                    "fix",
+                    "repair",
+                    "maintenance",
+                ]
+                is_task_intent = any(k in msg_lower for k in intent_keywords)
+                if is_task_intent and maintenance and hasattr(maintenance, "create_task_from_message"):
                     task_result = maintenance.create_task_from_message(request.message, conversation_id=conversation_id)
                     if task_result:
                         if not task_result.get("success", True):
-                            response = f"Sorry — I couldn’t create that task. {task_result.get('error', 'Please try again.')}"
-                            add_message(db, conversation, "assistant", response)
-                            return {
-                                "response": response,
-                                "timestamp": datetime.now().isoformat(),
-                                "agent": "manager",
-                                "agent_name": "Galidima",
-                                "conversation_id": conversation_id,
-                                "input_tokens_est": input_tokens_est,
-                                "output_tokens_est": _estimate_tokens(response),
-                                "latency_ms": 0,
-                                "task_created": {
-                                    "task_id": task_result.get("task_id"),
-                                    "title": task_result.get("title"),
-                                    "due_date": task_result.get("due_date"),
-                                    "scheduled_date": task_result.get("scheduled_date"),
-                                },
-                                "error": task_result.get("error"),
+                            action_error = task_result.get("error") or "task_create_failed"
+                            action_results["task_create"] = {
+                                "success": False,
+                                "error": action_error,
+                                "task": task_result,
                             }
-                        # Verify task exists before claiming success
-                        task_id = task_result.get("task_id")
-                        if task_id and hasattr(maintenance, "get_task"):
-                            try:
-                                verified = maintenance.get_task(int(task_id))
-                                if not verified:
-                                    response = "I couldn't verify the task in the system. Please try again."
-                                    add_message(db, conversation, "assistant", response)
-                                    return {
-                                        "response": response,
-                                        "timestamp": datetime.now().isoformat(),
-                                        "agent": "manager",
-                                        "agent_name": "Galidima",
-                                        "conversation_id": conversation_id,
-                                        "input_tokens_est": input_tokens_est,
-                                        "output_tokens_est": _estimate_tokens(response),
-                                        "latency_ms": 0,
-                                        "error": "task_verification_failed",
-                                    }
-                            except Exception:
-                                pass
-
-                        response = (
-                            f"Task \"{task_result['title']}\" scheduled for {task_result.get('due_date')}."
-                            if task_result.get("due_date")
-                            else f"Task \"{task_result['title']}\" added."
-                        )
-                        add_message(db, conversation, "assistant", response)
-                        if background_tasks:
-                            background_tasks.add_task(
-                                event_broker.emit,
-                                "task_created",
-                                {"task_id": task_result.get("task_id"), "title": task_result.get("title")}
-                            )
-                        return {
-                            "response": response,
-                            "timestamp": datetime.now().isoformat(),
-                            "agent": "manager",
-                            "agent_name": "Galidima",
-                            "conversation_id": conversation_id,
-                            "input_tokens_est": input_tokens_est,
-                            "output_tokens_est": _estimate_tokens(response),
-                            "latency_ms": 0,
-                            "task_created": task_result,
-                            "routed_to": "maintenance",
-                            "delegation_note": "Maintenance queued the task. You can review it in the Maintenance list.",
-                        }
-                    if is_task_intent and not task_result:
-                        response = "I couldn’t parse that into a task. Try: “Add a task to clean the garage by Friday.”"
-                        add_message(db, conversation, "assistant", response)
-                        return {
-                            "response": response,
-                            "timestamp": datetime.now().isoformat(),
-                            "agent": "manager",
-                            "agent_name": "Galidima",
-                            "conversation_id": conversation_id,
-                            "input_tokens_est": input_tokens_est,
-                            "output_tokens_est": _estimate_tokens(response),
-                            "latency_ms": 0,
-                            "error": "task_parse_failed",
-                        }
+                        else:
+                            # Verify task exists before claiming success
+                            task_id = task_result.get("task_id")
+                            verified = True
+                            if task_id and hasattr(maintenance, "get_task"):
+                                try:
+                                    verified = bool(maintenance.get_task(int(task_id)))
+                                except Exception:
+                                    verified = True
+                            if not verified:
+                                action_error = "task_verification_failed"
+                                action_results["task_create"] = {
+                                    "success": False,
+                                    "error": action_error,
+                                    "task": task_result,
+                                }
+                            else:
+                                task_created = task_result
+                                routed_to = "maintenance"
+                                delegation_note = "Maintenance queued the task. You can review it in the Maintenance list."
+                                action_results["task_create"] = {
+                                    "success": True,
+                                    "task": task_result,
+                                }
+                                if background_tasks:
+                                    background_tasks.add_task(
+                                        event_broker.emit,
+                                        "task_created",
+                                        {"task_id": task_result.get("task_id"), "title": task_result.get("title")},
+                                    )
             except Exception as exc:
-                response = f"Sorry — I couldn’t create that task. {str(exc)}"
-                add_message(db, conversation, "assistant", response)
-                return {
-                    "response": response,
-                    "timestamp": datetime.now().isoformat(),
-                    "agent": "manager",
-                    "agent_name": "Galidima",
-                    "conversation_id": conversation_id,
-                    "input_tokens_est": input_tokens_est,
-                    "output_tokens_est": _estimate_tokens(response),
-                    "latency_ms": 0,
-                    "error": str(exc),
-                }
+                action_error = str(exc)
+                action_results["task_error"] = {"success": False, "error": action_error}
             start_time = time.perf_counter()
-            response = await manager.chat(request.message, conversation_history=history_payload)
+            context = {"history": history_payload, "request_id": request_id}
+            if action_results:
+                context["action_results"] = action_results
+            response = await manager.chat(
+                request.message,
+                context=context,
+                conversation_history=history_payload,
+            )
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             response = _strip_cot_format(response)
             error_message = _extract_llm_error(response)
             if error_message:
                 response = f"Warning: {error_message}"
+            else:
+                try:
+                    from core.response_formatting import normalize_agent_response
+                    response = normalize_agent_response("manager", response)
+                except Exception:
+                    pass
             add_message(db, conversation, "assistant", response)
         
         return {
@@ -774,7 +728,10 @@ async def manager_chat(
             "input_tokens_est": input_tokens_est,
             "output_tokens_est": _estimate_tokens(response),
             "latency_ms": latency_ms,
-            "error": error_message,
+            "error": error_message or action_error,
+            "task_created": task_created,
+            "routed_to": routed_to,
+            "delegation_note": delegation_note,
         }
     except Exception as e:
         return {

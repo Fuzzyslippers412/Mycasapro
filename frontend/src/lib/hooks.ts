@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import * as api from "./api";
 
 // Generic fetch hook
@@ -11,9 +11,12 @@ function useFetch<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const hasLoadedRef = useRef(false);
 
   const fetch = useCallback(async () => {
-    setLoading(true);
+    if (!hasLoadedRef.current) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const result = await fetcher();
@@ -22,6 +25,7 @@ function useFetch<T>(
       setError(e as Error);
     } finally {
       setLoading(false);
+      hasLoadedRef.current = true;
     }
   }, deps);
 
@@ -96,6 +100,21 @@ export function useUnreadCount() {
 
 export function useSecurityStatus() {
   return useFetch(() => api.getSecurityStatus(), []);
+}
+
+// ============ INDICATORS ============
+
+export function useIndicatorDiagnostics(refreshInterval?: number) {
+  const result = useFetch(() => api.getIndicatorDiagnostics(), []);
+
+  useEffect(() => {
+    if (refreshInterval) {
+      const interval = setInterval(() => result.refetch(), refreshInterval);
+      return () => clearInterval(interval);
+    }
+  }, [refreshInterval, result.refetch]);
+
+  return result;
 }
 
 // ============ AGENTS ============

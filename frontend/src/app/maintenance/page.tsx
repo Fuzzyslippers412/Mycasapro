@@ -30,6 +30,24 @@ interface Task {
   scheduled_date?: string;
   due_date?: string;
   created_at?: string;
+  assigned_to?: string | null;
+}
+
+const assigneeLabels: Record<string, string> = {
+  manager: "Galidima",
+  finance: "Mamadou",
+  maintenance: "Ousmane",
+  contractors: "Malik",
+  projects: "Zainab",
+  security: "Aicha",
+  janitor: "Sule",
+  mail: "Amina",
+  backup: "Backup",
+};
+
+function formatAssignee(value?: string | null): string | null {
+  if (!value) return null;
+  return assigneeLabels[value] || value;
 }
 
 // Priority configuration
@@ -121,6 +139,11 @@ function TaskCard({
           {task.description && (
             <Text size="xs" c="dimmed" lineClamp={2}>
               {task.description}
+            </Text>
+          )}
+          {task.assigned_to && (
+            <Text size="xs" c="dimmed">
+              Assigned to {formatAssignee(task.assigned_to)}
             </Text>
           )}
 
@@ -818,6 +841,11 @@ export default function MaintenancePage() {
               {selectedTask.description && (
                 <Text size="sm" c="dimmed">
                   {selectedTask.description}
+                </Text>
+              )}
+              {selectedTask.assigned_to && (
+                <Text size="sm" c="dimmed">
+                  Assigned to {formatAssignee(selectedTask.assigned_to)}
                 </Text>
               )}
               <Group gap="xs">

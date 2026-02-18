@@ -109,6 +109,8 @@ def ensure_schema():
         with engine.begin() as conn:
             if "conversation_id" not in maintenance_columns:
                 conn.execute(text("ALTER TABLE maintenance_tasks ADD COLUMN conversation_id VARCHAR(36)"))
+            if "assigned_to" not in maintenance_columns:
+                conn.execute(text("ALTER TABLE maintenance_tasks ADD COLUMN assigned_to VARCHAR(64)"))
 
 
 def seed_user_management():
