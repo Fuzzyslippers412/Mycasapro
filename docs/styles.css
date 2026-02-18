@@ -90,6 +90,18 @@ a:focus-visible {
   font-size: 1.05rem;
 }
 
+.version-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  border: 1px solid rgba(15, 118, 110, 0.3);
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.08);
+}
+
 .nav-links {
   display: flex;
   gap: 18px;
@@ -172,6 +184,12 @@ a:focus-visible {
   color: var(--muted);
   font-size: 1.05rem;
   margin-bottom: 20px;
+}
+
+.alpha-note {
+  color: var(--primary);
+  font-weight: 600;
+  margin-bottom: 16px;
 }
 
 .hero-actions {
@@ -328,6 +346,35 @@ a:focus-visible {
 
 .install-notes strong {
   color: var(--text);
+}
+
+.connector-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.connector-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+details {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: #fafaf8;
+}
+
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+
+details[open] {
+  background: var(--surface);
 }
 
 .install-list li {

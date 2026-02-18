@@ -25,10 +25,12 @@
           <div class="logo">
             <img class="logo-image" src="assets/logo.svg" alt="mycasapro logo" />
             <span class="logo-text">mycasapro</span>
+            <span class="version-tag">Alpha 1</span>
           </div>
           <nav class="nav-links">
             <a href="#overview">Overview</a>
             <a href="#agents">Agents</a>
+            <a href="#systems">Core systems</a>
             <a href="#how">How it works</a>
             <a href="#install">Install</a>
             <a href="#links">Links</a>
@@ -50,6 +52,7 @@
             <p class="subhead">
               A local home system for tasks, bills, and decisions. You stay in control.
             </p>
+            <p class="alpha-note">Alpha 1: core agents, memory vault, inbox, scheduler.</p>
             <div class="hero-actions">
               <a class="btn primary" href="#agents">Meet the agents</a>
               <a class="btn" href="#how">How it works</a>
@@ -72,9 +75,9 @@
           </div>
           <div class="card-grid">
             <article class="card">
-              <h3>Inbox Agent</h3>
+              <h3>Manager Agent</h3>
               <p>
-                Keeps email and WhatsApp in one place and flags what needs a reply.
+                Routes requests, coordinates the others, and gives status on demand.
               </p>
             </article>
             <article class="card">
@@ -102,16 +105,55 @@
               </p>
             </article>
             <article class="card">
-              <h3>Memory Agent</h3>
-              <p>
-                Saves decisions, notes, and documents so nothing gets lost.
-              </p>
-            </article>
-            <article class="card">
               <h3>Security Agent</h3>
               <p>
                 Requires your approval before actions and keeps a clear record.
               </p>
+            </article>
+            <article class="card">
+              <h3>Janitor Agent</h3>
+              <p>
+                Audits the system, checks health, and catches issues early.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Reminders Agent</h3>
+              <p>
+                Sends bill and task reminders and daily summaries.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="systems">
+          <div class="section-header">
+            <h2>Core systems in Alpha 1</h2>
+            <p>What ships in the current build, beyond the agents.</p>
+          </div>
+          <div class="card-grid">
+            <article class="card">
+              <h3>SecondBrain memory vault</h3>
+              <p>Stores decisions, notes, documents, and service history.</p>
+            </article>
+            <article class="card">
+              <h3>Unified inbox</h3>
+              <p>Gmail and WhatsApp in one place.</p>
+            </article>
+            <article class="card">
+              <h3>Scheduler</h3>
+              <p>Runs recurring checks, reminders, and daily summaries.</p>
+            </article>
+            <article class="card">
+              <h3>Live system dashboard</h3>
+              <p>See agent status, connectors, and scheduled jobs.</p>
+            </article>
+            <article class="card">
+              <h3>Setup wizard</h3>
+              <p>Guided onboarding that configures your system.</p>
+            </article>
+            <article class="card">
+              <h3>Search + graph view</h3>
+              <p>Find notes fast and explore connections.</p>
             </article>
           </div>
         </section>
@@ -156,11 +198,9 @@
             <p>Use what you already rely on. Add more only if you want to.</p>
           </div>
           <div class="badge-row">
-            <span class="badge">Email</span>
-            <span class="badge">Messaging</span>
-            <span class="badge">Calendars</span>
-            <span class="badge">Bills</span>
-            <span class="badge">Smart home</span>
+            <span class="badge">Gmail</span>
+            <span class="badge">WhatsApp</span>
+            <span class="badge">Google Calendar</span>
             <span class="badge">Your model of choice</span>
           </div>
         </section>
@@ -206,13 +246,77 @@ cp .env.example .env
               <p class="mono">http://127.0.0.1:3000</p>
             </li>
             <li>
-              <p>Optional (LAN access)</p>
-              <pre><code>MYCASA_PUBLIC_HOST=&lt;your-lan-ip&gt; MYCASA_BIND_HOST=0.0.0.0 ./start_all.sh</code></pre>
+              <p>Manual (two terminals)</p>
+              <details>
+                <summary>macOS / Linux</summary>
+                <pre><code>cd /path/to/mycasa-pro
+cp .env.example .env
+python3 -m venv .venv
+source .venv/bin/activate
+python install.py install
+
+# Backend (terminal 1)
+export MYCASA_API_BASE_URL=http://127.0.0.1:6709
+export MYCASA_BACKEND_PORT=6709
+export MYCASA_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+python -m uvicorn api.main:app --host 127.0.0.1 --port 6709
+
+# Frontend (terminal 2)
+cd frontend
+echo "NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" > .env.local
+npm install
+npm run dev</code></pre>
+              </details>
+              <details>
+                <summary>Windows PowerShell</summary>
+                <pre><code>cd C:\path\to\mycasa-pro
+copy .env.example .env
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python install.py install
+
+# Backend (terminal 1)
+$env:MYCASA_API_BASE_URL="http://127.0.0.1:6709"
+$env:MYCASA_BACKEND_PORT="6709"
+$env:MYCASA_CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
+python -m uvicorn api.main:app --host 127.0.0.1 --port 6709
+
+# Frontend (terminal 2)
+cd frontend
+"NEXT_PUBLIC_API_URL=http://127.0.0.1:6709" | Out-File -Encoding utf8 .env.local
+npm install
+npm run dev</code></pre>
+              </details>
             </li>
             <li>
-              <p>WhatsApp</p>
-              <pre><code>npm install -g @nicholasoxford/wacli
+              <p>URLs</p>
+              <p class="mono">UI: http://127.0.0.1:3000</p>
+              <p class="mono">API: http://127.0.0.1:6709</p>
+              <p class="mono">API Docs: http://127.0.0.1:6709/docs</p>
+            </li>
+            <li>
+              <p>Qwen OAuth (default)</p>
+              <pre><code>./mycasa llm qwen-login</code></pre>
+              <p class="muted">Default model: qwen3-coder-plus</p>
+            </li>
+            <li>
+              <p>Connectors (user-owned credentials)</p>
+              <div class="connector-list">
+                <div>
+                  <p class="connector-title">Gmail (gog)</p>
+                  <pre><code>brew install doitintl/tap/gog
+gog auth login</code></pre>
+                </div>
+                <div>
+                  <p class="connector-title">WhatsApp (wacli)</p>
+                  <pre><code>npm install -g @nicholasoxford/wacli
 wacli auth</code></pre>
+                </div>
+              </div>
+            </li>
+            <li>
+              <p>Optional (LAN access)</p>
+              <pre><code>MYCASA_PUBLIC_HOST=&lt;your-lan-ip&gt; MYCASA_BIND_HOST=0.0.0.0 ./start_all.sh</code></pre>
             </li>
           </ol>
         </section>
