@@ -62,11 +62,11 @@ CONNECTOR_REGISTRY: Dict[str, Dict[str, Any]] = {
     "whatsapp": {
         "id": "whatsapp",
         "name": "WhatsApp",
-        "description": "Send and receive WhatsApp messages via Clawdbot gateway",
+        "description": "Send and receive WhatsApp messages via local wacli",
         "category": ConnectorCategory.MESSAGING,
         "icon": "📱",
-        "config_required": [],  # Managed by Clawdbot
-        "docs": "Uses Clawdbot's WhatsApp plugin. No additional config needed.",
+        "config_required": [],  # Managed by local wacli auth
+        "docs": "Uses wacli auth. Run: `wacli auth`",
     },
     "gmail": {
         "id": "gmail",
@@ -138,7 +138,7 @@ def _get_connector_status(connector_id: str) -> Dict[str, Any]:
     }
     
     if connector_id == "whatsapp":
-        # Check WhatsApp via Clawdbot
+        # Check WhatsApp via local wacli
         try:
             from connectors.whatsapp import WhatsAppConnector
             wa = WhatsAppConnector()
@@ -146,7 +146,7 @@ def _get_connector_status(connector_id: str) -> Dict[str, Any]:
             status_info["status"] = ConnectorStatus.CONNECTED
             status_info["health"] = "healthy"
             status_info["stats"] = {"contacts_loaded": len(contacts)}
-            status_info["config_values"] = {"via": "Clawdbot gateway"}
+            status_info["config_values"] = {"via": "wacli"}
         except Exception as e:
             status_info["status"] = ConnectorStatus.ERROR
             status_info["health"] = str(e)
@@ -370,6 +370,26 @@ async def connectors_health() -> Dict[str, Any]:
 async def get_whatsapp_status():
     """Get WhatsApp connection status via wacli"""
     import subprocess
+    allowlist_count = 0
+    try:
+        from core.settings_typed import get_settings_store
+        settings = get_settings_store().get()
+        allowlist = set()
+        for number in getattr(settings.agents.mail, "whatsapp_allowlist", []) or []:
+            digits = "".join(c for c in str(number) if c.isdigit())
+            if digits:
+                allowlist.add(digits)
+        for contact in getattr(settings.agents.mail, "whatsapp_contacts", []) or []:
+            try:
+                phone = getattr(contact, "phone", "") or ""
+            except Exception:
+                phone = (contact or {}).get("phone") or ""
+            digits = "".join(c for c in str(phone) if c.isdigit())
+            if digits:
+                allowlist.add(digits)
+        allowlist_count = len(allowlist)
+    except Exception:
+        allowlist_count = 0
     
     try:
         result = subprocess.run(
@@ -388,12 +408,14 @@ async def get_whatsapp_status():
                 "connected": is_authenticated,
                 "phone": data.get("phone", None),
                 "status": "connected" if is_authenticated else "disconnected",
+                "allowlist_count": allowlist_count,
             }
     except FileNotFoundError:
         return {
             "connected": False,
             "phone": None,
             "status": "not_installed",
+            "allowlist_count": allowlist_count,
             "error": "wacli not installed. Run: npm install -g @nicholasoxford/wacli"
         }
     except Exception as e:
@@ -403,6 +425,7 @@ async def get_whatsapp_status():
         "connected": False,
         "phone": None,
         "status": "unknown",
+        "allowlist_count": allowlist_count,
         "error": "Could not check status"
     }
 

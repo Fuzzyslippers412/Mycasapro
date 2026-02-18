@@ -25,10 +25,9 @@ def test_janitor_audit_wizard_recommendations(monkeypatch):
     }
 
     connectors_status = {
-        "gmail": {"status": "stub", "connected": False, "using_demo": True},
-        "whatsapp": {"status": "stub", "connected": False, "using_demo": True},
+        "gmail": {"status": "disconnected", "connected": False},
+        "whatsapp": {"status": "disconnected", "connected": False},
         "any_connected": False,
-        "all_demo": True,
     }
 
     security_status = {
@@ -92,10 +91,9 @@ def test_janitor_audit_wizard_all_clear(monkeypatch):
     }
 
     connectors_status = {
-        "gmail": {"status": "connected", "connected": True, "using_demo": False},
-        "whatsapp": {"status": "connected", "connected": True, "using_demo": False},
+        "gmail": {"status": "connected", "connected": True},
+        "whatsapp": {"status": "connected", "connected": True},
         "any_connected": True,
-        "all_demo": False,
     }
 
     security_status = {
@@ -156,7 +154,7 @@ def test_janitor_wizard_persists_to_db(monkeypatch, tmp_path):
     }
 
     monkeypatch.setattr(janitor, "run_audit", lambda: audit_result)
-    monkeypatch.setattr(janitor, "check_connectors", lambda: {"any_connected": True, "all_demo": False})
+    monkeypatch.setattr(janitor, "check_connectors", lambda: {"any_connected": True})
     monkeypatch.setattr(janitor, "check_whatsapp_gateway_security", lambda: {"secure": True})
     monkeypatch.setattr(janitor, "_count_backups", lambda: 5)
     monkeypatch.setattr(

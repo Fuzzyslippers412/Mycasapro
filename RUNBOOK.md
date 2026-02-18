@@ -6,7 +6,7 @@
 
 ```bash
 # Start everything
-cd ~/clawd/apps/mycasa-pro && ./start_all.sh
+cd /path/to/mycasa-pro && ./start_all.sh
 
 # Or start individually:
 mycasa backend start
@@ -17,11 +17,11 @@ mycasa ui start
 
 ```powershell
 # Start backend
-cd ~/clawd/apps/mycasa-pro
-python -m uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
+cd C:\path\to\mycasa-pro
+python -m uvicorn api.main:app --host 127.0.0.1 --port 6709 --reload
 
 # In another terminal, start frontend
-cd ~/clawd/apps/mycasa-pro/frontend
+cd C:\path\to\mycasa-pro\frontend
 npm run dev
 ```
 
@@ -29,8 +29,8 @@ npm run dev
 
 | Service | URL |
 |---------|-----|
-| API | http://localhost:8000 |
-| API Docs | http://localhost:8000/docs |
+| API | http://localhost:6709 |
+| API Docs | http://localhost:6709/docs |
 | UI | http://localhost:3000 |
 
 ## CLI Commands
@@ -139,7 +139,7 @@ mycasa events --limit 20
 
 ```bash
 # Run all tests
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 python -m pytest backend/tests/ -v
 
 # Run specific test file
@@ -153,7 +153,7 @@ python -m pytest backend/tests/ -v --cov=backend
 
 ```bash
 # Full demo workflow
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 python -m backend.demo
 
 # This will:

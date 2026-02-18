@@ -422,6 +422,21 @@ class ContractorsAgent(BaseAgent):
             "message": f"Job scheduled for {confirmed_start}",
             "calendar_event": calendar_result
         }
+
+    def schedule_job(
+        self,
+        job_id: int,
+        confirmed_start: date,
+        confirmed_end: date = None,
+        confirmation_evidence: str = None,
+    ) -> Dict[str, Any]:
+        """Alias for confirm_scheduling (skills API expects schedule_job)."""
+        return self.confirm_scheduling(
+            job_id=job_id,
+            confirmed_start=confirmed_start,
+            confirmed_end=confirmed_end,
+            confirmation_evidence=confirmation_evidence,
+        )
     
     def _create_calendar_event(
         self, 
@@ -708,6 +723,10 @@ class ContractorsAgent(BaseAgent):
             })
         
         return tasks
+
+    def get_jobs_needing_action(self) -> List[Dict[str, Any]]:
+        """Alias for get_pending_tasks (skills API expects get_jobs_needing_action)."""
+        return self.get_pending_tasks()
     
     def execute_task(self, task_id: int) -> Dict[str, Any]:
         """Execute a pending task (for agent interface)"""

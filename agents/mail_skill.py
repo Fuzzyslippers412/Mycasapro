@@ -207,6 +207,40 @@ class MailSkillAgent(BaseAgent):
         return "medium"
     
     # ============ WHATSAPP INGESTION ============
+
+    def _normalize_whatsapp_value(self, value: str) -> str:
+        value = value or ""
+        if "@" in value:
+            value = value.split("@", 1)[0]
+        return "".join(c for c in value if c.isdigit())
+
+    def _get_whatsapp_allowlist(self) -> set:
+        from core.settings_typed import get_settings_store
+        settings = get_settings_store().get()
+        allowlist = set()
+        for number in getattr(settings.agents.mail, "whatsapp_allowlist", []) or []:
+            normalized = self._normalize_whatsapp_value(number)
+            if normalized:
+                allowlist.add(normalized)
+        for contact in getattr(settings.agents.mail, "whatsapp_contacts", []) or []:
+            try:
+                phone = getattr(contact, "phone", "") or ""
+            except Exception:
+                phone = (contact or {}).get("phone") or ""
+            normalized = self._normalize_whatsapp_value(phone)
+            if normalized:
+                allowlist.add(normalized)
+        return allowlist
+
+    def _is_whatsapp_allowed(self, jid: str, allowlist: set) -> bool:
+        if not allowlist:
+            return False
+        jid_digits = self._normalize_whatsapp_value(jid)
+        if not jid_digits:
+            return False
+        if jid_digits in allowlist:
+            return True
+        return any(jid_digits.endswith(entry) for entry in allowlist)
     
     def fetch_whatsapp(self, limit: int = 20) -> List[Dict[str, Any]]:
         """
@@ -215,6 +249,10 @@ class MailSkillAgent(BaseAgent):
         """
         try:
             self._last_whatsapp_error = None
+            allowlist = self._get_whatsapp_allowlist()
+            if not allowlist:
+                self._last_whatsapp_error = "no_whatsapp_allowlist"
+                return []
             # Get recent chats with messages
             result = subprocess.run(
                 ["wacli", "chats", "list", "--limit", str(limit), "--json"],
@@ -241,11 +279,13 @@ class MailSkillAgent(BaseAgent):
                 jid = chat.get("JID", "")
                 if jid.startswith("status@"):
                     continue
+                if not self._is_whatsapp_allowed(jid, allowlist):
+                    continue
                 
                 # Try to fetch last message for preview
-                preview = self._fetch_whatsapp_last_message(jid)
+                preview, from_me, message_id, message_ts = self._fetch_whatsapp_last_message(jid)
                 
-                normalized = self._normalize_whatsapp_chat(chat, preview)
+                normalized = self._normalize_whatsapp_chat(chat, preview, from_me, message_id, message_ts)
                 if normalized:
                     messages.append(normalized)
             
@@ -267,36 +307,69 @@ class MailSkillAgent(BaseAgent):
             self.logger.error(f"WhatsApp fetch error: {e}")
             return []
     
-    def _fetch_whatsapp_last_message(self, jid: str) -> str:
+    def _fetch_whatsapp_last_message(self, jid: str) -> tuple[str, bool, Optional[str], Optional[datetime]]:
         """Fetch the last message from a WhatsApp chat"""
         try:
             result = subprocess.run(
-                ["wacli", "messages", "list", jid, "--limit", "1", "--json"],
+                ["wacli", "messages", "list", "--chat", jid, "--limit", "1", "--json"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
             
             if result.returncode != 0:
-                return ""
+                return "", False, None, None
             
             data = json.loads(result.stdout)
             if not data.get("success"):
-                return ""
+                return "", False, None, None
             
-            messages = data.get("data", [])
+            payload = data.get("data", [])
+            if isinstance(payload, dict):
+                messages = payload.get("messages", [])
+            else:
+                messages = payload if isinstance(payload, list) else []
+
             if messages and len(messages) > 0:
-                return messages[0].get("Text", "")[:200]  # First 200 chars
+                msg = messages[0]
+                text = (msg.get("Text") or msg.get("DisplayText") or "").strip()
+                media_type = (msg.get("MediaType") or "").strip()
+                from_me = bool(
+                    msg.get("FromMe")
+                    or msg.get("fromMe")
+                    or msg.get("isFromMe")
+                    or msg.get("IsFromMe")
+                )
+                message_id = msg.get("ID") or msg.get("MessageID") or msg.get("id") or msg.get("Key")
+                timestamp = None
+                ts_value = msg.get("Timestamp") or msg.get("Time") or msg.get("MessageTimestamp")
+                if ts_value:
+                    try:
+                        timestamp = datetime.fromtimestamp(int(ts_value))
+                    except Exception:
+                        timestamp = None
+                preview = text[:200] if text else (f"[{media_type}]" if media_type else "")
+                return preview, from_me, str(message_id) if message_id else None, timestamp
             
-            return ""
+            return "", False, None, None
         except Exception:
-            return ""
+            return "", False, None, None
     
-    def _normalize_whatsapp_chat(self, chat: Dict[str, Any], preview: str = "") -> Optional[Dict[str, Any]]:
+    def _normalize_whatsapp_chat(
+        self,
+        chat: Dict[str, Any],
+        preview: str = "",
+        from_me: bool = False,
+        message_id: Optional[str] = None,
+        message_ts: Optional[datetime] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Normalize WhatsApp chat to common message schema"""
         try:
             jid = chat.get("JID", "")
-            message_id = f"whatsapp:{jid}"
+            ts_label = None
+            if message_ts:
+                ts_label = message_ts.strftime("%Y%m%d%H%M%S")
+            external_id = f"whatsapp:{jid}:{message_id or ts_label or chat.get('LastMessageTS','')}"
             
             # Parse timestamp
             last_msg_ts = chat.get("LastMessageTS", "")
@@ -312,7 +385,7 @@ class MailSkillAgent(BaseAgent):
             domain = self._infer_domain_whatsapp(sender_name, jid)
             
             return {
-                "id": message_id,
+                "id": external_id,
                 "source": "whatsapp",
                 "thread_id": jid,
                 "sender_name": sender_name,
@@ -322,9 +395,13 @@ class MailSkillAgent(BaseAgent):
                 "timestamp": timestamp,
                 "domain": domain,
                 "urgency": "medium",  # Default for WhatsApp
-                "is_unread": True,  # Assume new chats are unread
+                "is_unread": not from_me,
                 "labels": [],
-                "raw_data": chat
+                "raw_data": {
+                    **chat,
+                    "last_message_id": message_id,
+                    "last_message_from_me": from_me,
+                }
             }
         except Exception as e:
             self.logger.error(f"Failed to normalize WhatsApp chat: {e}")
@@ -355,8 +432,11 @@ class MailSkillAgent(BaseAgent):
         Fetch and ingest messages from all sources.
         Stores in database and returns summary.
         """
-        gmail_messages = self.fetch_gmail()
-        whatsapp_messages = self.fetch_whatsapp()
+        from core.settings_typed import get_settings_store
+        settings = get_settings_store().get()
+
+        gmail_messages = self.fetch_gmail() if settings.agents.mail.gmail_enabled else []
+        whatsapp_messages = self.fetch_whatsapp() if settings.agents.mail.whatsapp_enabled else []
         
         all_messages = gmail_messages + whatsapp_messages
         
@@ -451,6 +531,112 @@ class MailSkillAgent(BaseAgent):
             messages = query.limit(limit).all()
             
             return [self._message_to_dict(m) for m in messages]
+
+    def summarize_threads(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Summarize open threads (newest first) for Manager review.
+        This is a deterministic, non-LLM summary.
+        """
+        summaries: List[Dict[str, Any]] = []
+        with get_db() as db:
+            query = db.query(InboxMessage).order_by(InboxMessage.timestamp.desc())
+            messages = query.limit(200).all()
+
+        by_thread: Dict[str, List[InboxMessage]] = {}
+        for msg in messages:
+            key = msg.thread_id or msg.sender_id or f"message:{msg.id}"
+            by_thread.setdefault(key, []).append(msg)
+
+        for thread_id, items in by_thread.items():
+            items_sorted = sorted(items, key=lambda m: m.timestamp or datetime.min, reverse=True)
+            latest = items_sorted[0]
+            unread = sum(1 for m in items_sorted if not m.is_read)
+            summaries.append({
+                "thread_id": thread_id,
+                "source": latest.source,
+                "sender": latest.sender_name or latest.sender_id,
+                "subject": latest.subject or "No subject",
+                "latest_preview": (latest.preview or "")[:200],
+                "unread": unread,
+                "last_timestamp": latest.timestamp.isoformat() if latest.timestamp else None,
+                "domain": latest.domain,
+                "urgency": latest.urgency,
+            })
+
+        summaries.sort(key=lambda item: item.get("last_timestamp") or "", reverse=True)
+        return summaries[:limit]
+
+    async def respond_to_whatsapp(self, limit: int = 5) -> Dict[str, Any]:
+        """
+        Process unread WhatsApp messages and respond via Manager agent.
+        Respects settings.agents.mail.allow_whatsapp_replies.
+        """
+        from core.settings_typed import get_settings_store
+        from agents.manager import ManagerAgent
+
+        settings = get_settings_store().get()
+        if not settings.agents.mail.allow_whatsapp_replies:
+            return {"success": False, "error": "whatsapp_replies_disabled"}
+
+        allowlist = self._get_whatsapp_allowlist()
+        if not allowlist:
+            return {"success": False, "error": "whatsapp_allowlist_empty"}
+
+        manager = ManagerAgent()
+        handled = 0
+        errors = 0
+
+        with get_db() as db:
+            messages = (
+                db.query(InboxMessage)
+                .filter(InboxMessage.source == "whatsapp", InboxMessage.is_read == False)
+                .order_by(InboxMessage.timestamp.asc())
+                .limit(limit)
+                .all()
+            )
+
+            for msg in messages:
+                if msg.sender_id and not self._is_whatsapp_allowed(msg.sender_id, allowlist):
+                    continue
+                sender = msg.sender_name or msg.sender_id or "WhatsApp contact"
+                body = msg.preview or msg.subject or ""
+                if not body:
+                    msg.is_read = True
+                    msg.required_action = "empty"
+                    msg.assigned_agent = "manager"
+                    handled += 1
+                    continue
+
+                try:
+                    response = await manager.chat(
+                        body,
+                        context={
+                            "channel": "whatsapp",
+                            "sender": sender,
+                            "sender_id": msg.sender_id,
+                        },
+                    )
+
+                    recipient = msg.sender_id or sender
+                    if isinstance(recipient, str) and "@" in recipient:
+                        recipient = recipient.split("@", 1)[0]
+
+                    send_result = manager.send_whatsapp(str(recipient), response, record_in_secondbrain=True)
+                    if not send_result.get("success"):
+                        msg.required_action = "reply_failed"
+                        errors += 1
+                        continue
+
+                    msg.is_read = True
+                    msg.required_action = "replied"
+                    msg.assigned_agent = "manager"
+                    handled += 1
+                except Exception as exc:
+                    msg.required_action = "reply_failed"
+                    errors += 1
+                    self.logger.warning(f"Failed to reply to WhatsApp message {msg.id}: {exc}")
+
+        return {"success": errors == 0, "handled": handled, "errors": errors}
     
     def _message_to_dict(self, msg: InboxMessage) -> Dict[str, Any]:
         """Convert InboxMessage to dictionary (frontend-compatible format)"""

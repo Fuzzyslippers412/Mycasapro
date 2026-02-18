@@ -24,7 +24,7 @@ Integrate Moltbot's SecondBrain skill and ENSUE API to implement an Obsidian-com
 
 ### Location
 ```
-~/moltbot/vaults/<tenant_id>/secondbrain/
+$MYCASA_DATA_DIR/vaults/<tenant_id>/secondbrain/
 ```
 
 ### Directory Structure
@@ -247,7 +247,7 @@ MUST reference:
 
 ```bash
 # 1. Restore vault files
-tar -xzf vault_backup_2026_01_28.tar.gz -C ~/moltbot/vaults/
+tar -xzf vault_backup_2026_01_28.tar.gz -C $MYCASA_DATA_DIR/vaults/
 
 # 2. Restore ENSUE index
 ensue restore --backup index_backup_2026_01_28.db

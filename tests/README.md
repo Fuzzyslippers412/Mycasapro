@@ -170,7 +170,7 @@ Tests are designed to run in CI/CD pipelines. Key considerations:
 If you get import errors, ensure you're running from the project root:
 
 ```bash
-cd /Users/chefmbororo/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 pytest
 ```
 

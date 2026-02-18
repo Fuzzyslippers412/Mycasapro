@@ -3302,23 +3302,38 @@ async def get_manager_status():
 @app.get("/contacts/whitelist", tags=["Contacts"])
 async def get_whatsapp_whitelist():
     """Get WhatsApp whitelisted contacts"""
-    from ..connectors import whatsapp_connector
-    
-    return {
-        "contacts": [
-            {"phone": phone, "name": name}
-            for phone, name in whatsapp_connector.WHITELISTED_CONTACTS.items()
-        ]
-    }
+    from core.settings_typed import get_settings_store
+    settings = get_settings_store().get()
+    contacts = []
+    for contact in getattr(settings.agents.mail, "whatsapp_contacts", []) or []:
+        try:
+            name = getattr(contact, "name", "") or ""
+            phone = getattr(contact, "phone", "") or ""
+        except Exception:
+            name = (contact or {}).get("name") or ""
+            phone = (contact or {}).get("phone") or ""
+        if phone:
+            contacts.append({"phone": phone, "name": name})
+    return {"contacts": contacts}
 
 
 @app.post("/contacts/whitelist", response_model=APIResponse, tags=["Contacts"])
 async def add_to_whitelist(phone: str, name: str):
     """Add a contact to WhatsApp whitelist"""
-    from ..connectors import whatsapp_connector
+    from core.settings_typed import get_settings_store
     
     correlation_id = generate_correlation_id()
-    whatsapp_connector.add_to_whitelist(phone, name)
+    store = get_settings_store()
+    settings = store.get()
+    phone_clean = ''.join(c for c in phone if c.isdigit())
+    if phone_clean:
+        contacts = list(getattr(settings.agents.mail, "whatsapp_contacts", []) or [])
+        contacts.append({"name": name or "", "phone": phone_clean})
+        settings.agents.mail.whatsapp_contacts = contacts
+        allowlist = set(getattr(settings.agents.mail, "whatsapp_allowlist", []) or [])
+        allowlist.add(phone_clean)
+        settings.agents.mail.whatsapp_allowlist = sorted(allowlist)
+        store.save(settings)
     
     return APIResponse(
         status="success",
@@ -3330,24 +3345,31 @@ async def add_to_whitelist(phone: str, name: str):
 @app.delete("/contacts/whitelist/{phone}", response_model=APIResponse, tags=["Contacts"])
 async def remove_from_whitelist(phone: str):
     """Remove a contact from WhatsApp whitelist"""
-    from ..connectors import whatsapp_connector
+    from core.settings_typed import get_settings_store
     
     correlation_id = generate_correlation_id()
     phone_clean = ''.join(c for c in phone if c.isdigit())
-    
-    if phone_clean in whatsapp_connector.WHITELISTED_CONTACTS:
-        name = whatsapp_connector.WHITELISTED_CONTACTS.pop(phone_clean)
+    store = get_settings_store()
+    settings = store.get()
+    contacts = list(getattr(settings.agents.mail, "whatsapp_contacts", []) or [])
+    remaining = [c for c in contacts if (getattr(c, "phone", None) or (c or {}).get("phone")) != phone_clean]
+    if len(remaining) != len(contacts):
+        settings.agents.mail.whatsapp_contacts = remaining
+    allowlist = set(getattr(settings.agents.mail, "whatsapp_allowlist", []) or [])
+    if phone_clean in allowlist:
+        allowlist.discard(phone_clean)
+        settings.agents.mail.whatsapp_allowlist = sorted(allowlist)
+        store.save(settings)
         return APIResponse(
             status="success",
             correlation_id=correlation_id,
-            data={"phone": phone_clean, "name": name, "message": f"Removed {name} from whitelist"}
+            data={"phone": phone_clean, "message": "Removed from whitelist"}
         )
-    else:
-        return APIResponse(
-            status="error",
-            correlation_id=correlation_id,
-            errors=["Contact not found in whitelist"]
-        )
+    return APIResponse(
+        status="error",
+        correlation_id=correlation_id,
+        errors=["Contact not found in whitelist"]
+    )
 
 
 # Run with: uvicorn backend.api.main:app --reload --port 8000

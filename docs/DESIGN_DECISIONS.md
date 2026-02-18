@@ -20,7 +20,7 @@ mycasa-pro/
 
 ```bash
 # Full stack (recommended)
-cd ~/clawd/apps/mycasa-pro && ./start_all.sh
+cd /path/to/mycasa-pro && ./start_all.sh
 
 # Frontend only (port 3000)
 cd frontend && npm run dev

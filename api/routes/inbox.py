@@ -98,6 +98,18 @@ async def ingest_messages(user: dict = Depends(require_auth), background_tasks: 
             "gmail": result.get("gmail", 0),
             "whatsapp": result.get("whatsapp", 0),
         })
+
+    # Optional: respond to WhatsApp messages when enabled
+    try:
+        from core.settings_typed import get_settings_store
+        settings = get_settings_store().get()
+        if settings.agents.mail.allow_whatsapp_replies:
+            if background_tasks is not None:
+                background_tasks.add_task(mail_skill.respond_to_whatsapp)
+            else:
+                await mail_skill.respond_to_whatsapp()
+    except Exception:
+        pass
     
     return result
 

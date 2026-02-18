@@ -296,11 +296,14 @@ export default function SettingsPage() {
     allowEmailReplies: false,
     gmailEnabled: true,
     whatsappEnabled: true,
+    whatsappContacts: [] as Array<{ name: string; phone: string }>,
   });
+  const [whatsappContactName, setWhatsappContactName] = useState("");
+  const [whatsappContactPhone, setWhatsappContactPhone] = useState("");
   const [mailSettingsSaving, setMailSettingsSaving] = useState(false);
   const [mailSettingsError, setMailSettingsError] = useState<string | null>(null);
   const [connectorStatus, setConnectorStatus] = useState<{
-    whatsapp?: { connected: boolean; phone?: string | null; status?: string; error?: string };
+    whatsapp?: { connected: boolean; phone?: string | null; status?: string; error?: string; allowlistCount?: number };
     gmail?: { connected: boolean; accounts: string[]; status?: string };
   }>({});
   
@@ -634,6 +637,12 @@ export default function SettingsPage() {
         allowEmailReplies: Boolean(data.allow_email_replies),
         gmailEnabled: Boolean(data.gmail_enabled),
         whatsappEnabled: Boolean(data.whatsapp_enabled),
+        whatsappContacts: Array.isArray(data.whatsapp_contacts)
+          ? data.whatsapp_contacts.map((c: any) => ({
+              name: c?.name || "",
+              phone: c?.phone || "",
+            }))
+          : [],
       });
     } catch (e) {
       setMailSettingsError(getErrorMessage(e, "Failed to load inbox reply settings"));
@@ -652,6 +661,7 @@ export default function SettingsPage() {
           phone: wa?.phone || null,
           status: wa?.status,
           error: wa?.error,
+          allowlistCount: typeof wa?.allowlist_count === "number" ? wa.allowlist_count : undefined,
         },
         gmail: {
           connected: Boolean(google?.accounts?.length),
@@ -1409,16 +1419,23 @@ export default function SettingsPage() {
           allow_email_replies: patch.allowEmailReplies ?? mailSettings.allowEmailReplies,
           gmail_enabled: patch.gmailEnabled ?? mailSettings.gmailEnabled,
           whatsapp_enabled: patch.whatsappEnabled ?? mailSettings.whatsappEnabled,
+          whatsapp_contacts: patch.whatsappContacts ?? mailSettings.whatsappContacts,
         }),
       });
       if (res?.settings) {
-        setMailSettings({
-          allowAgentReplies: Boolean(res.settings.allow_agent_replies),
-          allowWhatsappReplies: Boolean(res.settings.allow_whatsapp_replies),
-          allowEmailReplies: Boolean(res.settings.allow_email_replies),
-          gmailEnabled: Boolean(res.settings.gmail_enabled),
-          whatsappEnabled: Boolean(res.settings.whatsapp_enabled),
-        });
+      setMailSettings({
+        allowAgentReplies: Boolean(res.settings.allow_agent_replies),
+        allowWhatsappReplies: Boolean(res.settings.allow_whatsapp_replies),
+        allowEmailReplies: Boolean(res.settings.allow_email_replies),
+        gmailEnabled: Boolean(res.settings.gmail_enabled),
+        whatsappEnabled: Boolean(res.settings.whatsapp_enabled),
+        whatsappContacts: Array.isArray(res.settings.whatsapp_contacts)
+          ? res.settings.whatsapp_contacts.map((c: any) => ({
+              name: c?.name || "",
+              phone: c?.phone || "",
+            }))
+          : [],
+      });
       } else {
         setMailSettings((prev) => ({ ...prev, ...patch }));
       }
@@ -1438,6 +1455,24 @@ export default function SettingsPage() {
     } finally {
       setMailSettingsSaving(false);
     }
+  };
+
+  const addWhatsappContact = async () => {
+    const name = whatsappContactName.trim();
+    const phone = whatsappContactPhone.trim();
+    if (!phone) return;
+    const updated = [
+      ...mailSettings.whatsappContacts,
+      { name, phone },
+    ];
+    await updateMailSetting({ whatsappContacts: updated });
+    setWhatsappContactName("");
+    setWhatsappContactPhone("");
+  };
+
+  const removeWhatsappContact = async (phone: string) => {
+    const updated = mailSettings.whatsappContacts.filter((c) => c.phone !== phone);
+    await updateMailSetting({ whatsappContacts: updated });
   };
 
   const handleContextSave = async () => {
@@ -2835,6 +2870,62 @@ export default function SettingsPage() {
                 </Stack>
               </Card>
 
+              <Card withBorder p="lg" radius="md">
+                <Stack gap="sm">
+                  <div>
+                    <Text fw={600}>WhatsApp allowlist</Text>
+                    <Text size="xs" c="dimmed">
+                      Only messages from these numbers are ingested and eligible for replies.
+                    </Text>
+                  </div>
+                  <Group align="flex-end" gap="sm">
+                    <TextInput
+                      label="Name"
+                      placeholder="Amina"
+                      value={whatsappContactName}
+                      onChange={(e) => setWhatsappContactName(e.currentTarget.value)}
+                      w={200}
+                    />
+                    <TextInput
+                      label="Phone"
+                      placeholder="+1 555 555 5555"
+                      value={whatsappContactPhone}
+                      onChange={(e) => setWhatsappContactPhone(e.currentTarget.value)}
+                      w={220}
+                    />
+                    <Button
+                      onClick={addWhatsappContact}
+                      disabled={mailSettingsSaving || !whatsappContactPhone.trim()}
+                    >
+                      Add
+                    </Button>
+                  </Group>
+                  {mailSettings.whatsappContacts.length === 0 ? (
+                    <Text size="xs" c="dimmed">
+                      No allowlisted contacts yet.
+                    </Text>
+                  ) : (
+                    <Stack gap="xs">
+                      {mailSettings.whatsappContacts.map((contact) => (
+                        <Group key={`${contact.phone}-${contact.name}`} justify="space-between">
+                          <div>
+                            <Text fw={500}>{contact.name || "Contact"}</Text>
+                            <Text size="xs" c="dimmed">{contact.phone}</Text>
+                          </div>
+                          <ActionIcon
+                            variant="subtle"
+                            color="red"
+                            onClick={() => removeWhatsappContact(contact.phone)}
+                          >
+                            <IconTrash size={16} />
+                          </ActionIcon>
+                        </Group>
+                      ))}
+                    </Stack>
+                  )}
+                </Stack>
+              </Card>
+
               <Divider />
               
               <Text fw={600}>Connected Accounts</Text>
@@ -2843,13 +2934,23 @@ export default function SettingsPage() {
                 icon={IconBrandWhatsapp}
                 color="green"
                 connected={Boolean(connectorStatus.whatsapp?.connected)}
-                account={
-                  connectorStatus.whatsapp?.phone
-                    ? connectorStatus.whatsapp.phone
-                    : connectorStatus.whatsapp?.connected
-                      ? "Connected"
-                      : "Not connected"
-                }
+                account={() => {
+                  const wa = connectorStatus.whatsapp;
+                  const allowlistCount = wa?.allowlistCount;
+                  const allowlistLabel =
+                    typeof allowlistCount === "number"
+                      ? allowlistCount > 0
+                        ? `${allowlistCount} allowlisted`
+                        : "Allowlist required"
+                      : "Allowlist unknown";
+                  if (wa?.phone) {
+                    return `${wa.phone} • ${allowlistLabel}`;
+                  }
+                  if (wa?.connected) {
+                    return allowlistLabel;
+                  }
+                  return "Not connected";
+                })()}
                 lastSync={connectorStatus.whatsapp?.status || "Unknown"}
                 onConnect={() => {}}
                 onDisconnect={() => {}}

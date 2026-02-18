@@ -322,7 +322,7 @@ async def check_connectors():
     
     Shows whether each connector is:
     - connected (real data flowing)
-    - stub (using demo data - CLI not configured)
+    - not configured (CLI missing)
     - disconnected (CLI installed but not authenticated)
     - error (something wrong)
     """

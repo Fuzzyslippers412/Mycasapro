@@ -1,6 +1,6 @@
 """
 MyCasa Pro Connectors
-Gmail and WhatsApp integration (stubs + real implementations)
+Gmail and WhatsApp integration (real implementations).
 """
 from .gmail import GmailConnector
 from .whatsapp import WhatsAppConnector

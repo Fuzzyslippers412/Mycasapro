@@ -97,7 +97,7 @@
 ### SecondBrain (Knowledge Vault)
 - **Status**: ✅ WORKING
 - **Notes**: 50 notes in vault
-- **Path**: `/Users/chefmbororo/moltbot/vaults/tenkiang_household/secondbrain`
+- **Path**: `$MYCASA_DATA_DIR/vaults/tenkiang_household/secondbrain`
 - **Endpoints**: `/api/secondbrain/notes`, `/api/secondbrain/stats`, `/api/secondbrain/search`
 
 ---
@@ -168,7 +168,7 @@
 
 ### Backend
 ```bash
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 source .venv/bin/activate
 export VENICE_API_KEY=VENICE-ADMIN-KEY-...
 uvicorn api.main:app --host 0.0.0.0 --port 8000
@@ -176,7 +176,7 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 ### Frontend
 ```bash
-cd ~/clawd/apps/mycasa-pro/frontend
+cd /path/to/mycasa-pro/frontend
 npm run dev
 ```
 
@@ -184,7 +184,7 @@ npm run dev
 - Backend: http://localhost:8000
 - Frontend: http://localhost:3000
 - API Docs: http://localhost:8000/docs
-- Debug Report: ~/clawd/apps/mycasa-pro/debug_report.html
+- Debug Report: /path/to/mycasa-pro/debug_report.html
 
 ---
 

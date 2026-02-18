@@ -267,19 +267,13 @@ class GmailConnector:
 ### WhatsAppConnector
 ```python
 class WhatsAppConnector:
-    WHITELISTED_CONTACTS = {
-        "12675474854": "Erika Tenkiang",
-        "13027501982": "Jessie Tenkiang",
-        # ... etc
-    }
-    
     def fetch_messages(self, limit=20) -> List[dict]:
         # Uses: wacli messages list "{contact}" --limit {limit} --json
-        # Only fetches from whitelisted contacts
+        # Only fetches from allowlisted contacts in settings
         # Returns normalized message dicts
-    
-    def add_to_whitelist(self, phone, name):
-        # Adds contact to WHITELISTED_CONTACTS
+ 
+    def get_allowlist(self):
+        # Loaded from settings.agents.mail.whatsapp_allowlist/whatsapp_contacts
 ```
 
 ---
@@ -377,14 +371,14 @@ export async function stopInbox() {
 
 ```bash
 # Full stack
-cd ~/clawd/apps/mycasa-pro && ./start_all.sh
+cd /path/to/mycasa-pro && ./start_all.sh
 
 # Backend only
-cd ~/clawd/apps/mycasa-pro && source venv/bin/activate
+cd /path/to/mycasa-pro && source venv/bin/activate
 python -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
 
 # Frontend only
-cd ~/clawd/apps/mycasa-pro/frontend && npm run dev
+cd /path/to/mycasa-pro/frontend && npm run dev
 ```
 
 ---

@@ -137,7 +137,7 @@ Anything you want me to handle?"
 
 **Step 1:** Copy templates to tenant directory
 ```bash
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 mkdir -p data/tenants/default
 
 # Copy templates

@@ -228,31 +228,6 @@ def ensure_env_file() -> bool:
         return True
 
 
-def register_with_clawdbot() -> bool:
-    """Register skill with Clawdbot (if available)"""
-    try:
-        # Check if running under Clawdbot
-        clawdbot_home = os.environ.get("CLAWDBOT_HOME")
-        if not clawdbot_home:
-            print_info("Clawdbot not detected (standalone mode)")
-            return True
-        
-        # Register skill
-        skills_dir = Path(clawdbot_home) / "skills"
-        skill_link = skills_dir / "mycasa-pro"
-        
-        if not skill_link.exists():
-            skill_link.symlink_to(BASE_DIR)
-            print_success("Registered with Clawdbot")
-        else:
-            print_success("Already registered with Clawdbot")
-        
-        return True
-    except Exception as e:
-        print_warning(f"Could not register with Clawdbot: {e}")
-        return True  # Non-fatal
-
-
 def write_install_marker() -> bool:
     """Write installation marker file"""
     try:
@@ -275,7 +250,7 @@ def install(auto_install_deps: bool = True) -> bool:
     """Run full installation"""
     print_banner()
     
-    total_steps = 8
+    total_steps = 7
     
     # Step 1: Validate Python
     print_step(1, total_steps, "Checking Python version...")
@@ -310,10 +285,6 @@ def install(auto_install_deps: bool = True) -> bool:
     print_step(7, total_steps, "Seeding default configuration...")
     if not seed_defaults():
         return False
-    
-    # Step 8: Register with Clawdbot
-    print_step(8, total_steps, "Registering with Clawdbot...")
-    register_with_clawdbot()
     
     # Write marker
     write_install_marker()

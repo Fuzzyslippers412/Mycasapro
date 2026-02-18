@@ -189,7 +189,7 @@ I've transformed your MyCasa Pro UI to feel like a true **Operating System** ins
 
 ### 1. Start Backend:
 ```bash
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 python -m uvicorn backend.api.main:app --reload --port 8000
 ```
 

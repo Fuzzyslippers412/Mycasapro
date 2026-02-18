@@ -51,7 +51,7 @@ Pre-configured agent groups for complex tasks.
 
 ### 2. SecondBrain Integration
 
-Obsidian-compatible knowledge vault at `~/moltbot/vaults/tenkiang_household/secondbrain/`
+Obsidian-compatible knowledge vault at `$MYCASA_DATA_DIR/vaults/tenkiang_household/secondbrain/`
 
 #### Vault Structure
 ```
@@ -342,7 +342,7 @@ Track investment holdings.
 
 ```bash
 # Backend
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 source .venv/bin/activate
 uvicorn api.main:app --reload --port 8000
 

@@ -15,7 +15,7 @@ import {
   IconBrandWhatsapp, IconMail, IconCalendar, IconShield, IconSettings,
   IconChevronRight, IconCircleCheck, IconAlertCircle, IconPlus, IconTrash,
   IconPhone, IconQrcode, IconUserPlus, IconBrandGoogle, IconUpload,
-  IconExternalLink, IconRefresh, IconDownload, IconRobot, IconTerminal2
+  IconExternalLink, IconRefresh, IconTerminal2
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 
@@ -36,41 +36,41 @@ interface WhatsAppContact {
 
 // Setup data interface
 interface SetupData {
-  // Step 1: Welcome (Tenant Setup)
+  // Welcome (Tenant Setup)
   householdName: string;
   timezone: string;
   locale: string;
   
-  // Step 2: Income Source (REQUIRED per spec)
+  // Income Source (REQUIRED per spec)
   primaryIncomeSource: string;
   incomeFrequency: string;
   
-  // Step 3: Budgets
+  // Budgets
   monthlyBudget: number;
   systemCostCap: number;
   approvalThreshold: number;
   investmentStyle: string;
   
-  // Step 4: Contractors
+  // Contractors
   contractors: Contractor[];
   
-  // Step 5: WhatsApp
+  // WhatsApp
   enableWhatsapp: boolean;
   whatsappNumber: string;
   whatsappContacts: WhatsAppContact[];
   whatsappLinked: boolean;
   
-  // Step 6: Google OAuth (gog)
+  // Google OAuth (gog)
   googleCredentialsConfigured: boolean;
   googleAccountEmail: string;
   googleAuthenticated: boolean;
   
-  // Step 7: Connectors (optional)
+  // Connectors (optional)
   enableGmail: boolean;
   gmailAccount: string;
   enableCalendar: boolean;
   
-  // Step 8: Notifications
+  // Notifications
   enableInApp: boolean;
   enablePush: boolean;
   enableEmail: boolean;
@@ -189,193 +189,6 @@ function WelcomeStep({ data, setData }: { data: SetupData; setData: (d: SetupDat
             ]}
           />
         </Stack>
-      </Paper>
-    </Stack>
-  );
-}
-
-function ClawdbotImportStep({ data, setData }: { data: SetupData; setData: (d: SetupData) => void }) {
-  const [loading, setLoading] = useState(false);
-  const [clawdbotPrefs, setClawdbotPrefs] = useState<any>(null);
-  const [imported, setImported] = useState(false);
-  
-  // Detect Clawdbot on mount
-  useEffect(() => {
-    detectClawdbot();
-  }, []);
-  
-  const detectClawdbot = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/api/clawdbot-import/detect`);
-      if (res.ok) {
-        const prefs = await res.json();
-        setClawdbotPrefs(prefs);
-      }
-    } catch (e) {
-      console.error("Failed to detect Clawdbot:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const importPreferences = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/api/clawdbot-import/import`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          import_contacts: true,
-          import_model: true,
-          import_whatsapp: true,
-        }),
-      });
-      
-      if (res.ok) {
-        const result = await res.json();
-        
-        // Apply imported preferences to wizard data
-        if (result.imported.contacts) {
-          const whatsappContacts = result.imported.contacts.map((c: any) => ({
-            id: `imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            name: c.name,
-            phone: c.phone,
-          }));
-          setData({ ...data, whatsappContacts });
-        }
-        
-        if (result.imported.timezone) {
-          setData({ ...data, timezone: result.imported.timezone });
-        }
-        
-        setImported(true);
-        notifications.show({
-          title: "✅ Preferences Imported!",
-          message: `Imported ${result.imported.contact_count || 0} contacts and settings from Clawdbot`,
-          color: "green",
-        });
-      }
-    } catch (e) {
-      notifications.show({
-        title: "Import Failed",
-        message: "Could not import Clawdbot preferences",
-        color: "red",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  return (
-    <Stack gap="xl" align="center">
-      <Center>
-        <ThemeIcon size={60} radius="xl" variant="light" color="violet">
-          <IconRobot size={30} />
-        </ThemeIcon>
-      </Center>
-      
-      <div style={{ textAlign: "center" }}>
-        <Title order={3}>Import from Clawdbot</Title>
-        <Text c="dimmed">Bring your existing preferences and contacts</Text>
-      </div>
-      
-      <Paper withBorder p="xl" radius="md" w="100%" maw={550}>
-        {loading && !clawdbotPrefs ? (
-          <Center py="xl">
-            <Loader />
-            <Text ml="md">Detecting Clawdbot...</Text>
-          </Center>
-        ) : clawdbotPrefs?.detected ? (
-          <Stack gap="lg">
-            <Alert icon={<IconCheck size={16} />} color="green" variant="light">
-              <Text fw={500}>Clawdbot detected!</Text>
-              <Text size="sm">Found configuration at {clawdbotPrefs.config_path}</Text>
-            </Alert>
-            
-            {/* What can be imported */}
-            <div>
-              <Text fw={500} mb="sm">Available to import:</Text>
-              <Stack gap="xs">
-                {clawdbotPrefs.contacts?.length > 0 && (
-                  <Group gap="xs">
-                    <Badge color="blue" variant="light">
-                      {clawdbotPrefs.contacts.length} Contacts
-                    </Badge>
-                    <Text size="xs" c="dimmed">
-                      {clawdbotPrefs.contacts.slice(0, 3).map((c: any) => c.name).join(", ")}
-                      {clawdbotPrefs.contacts.length > 3 && "..."}
-                    </Text>
-                  </Group>
-                )}
-                
-                {clawdbotPrefs.primary_model && (
-                  <Group gap="xs">
-                    <Badge color="violet" variant="light">Model</Badge>
-                    <Text size="xs" c="dimmed">{clawdbotPrefs.primary_model}</Text>
-                  </Group>
-                )}
-                
-                {clawdbotPrefs.whatsapp_enabled && (
-                  <Group gap="xs">
-                    <Badge color="green" variant="light">WhatsApp</Badge>
-                    <Text size="xs" c="dimmed">
-                      {clawdbotPrefs.whatsapp_allow_from?.length || 0} allowed numbers
-                    </Text>
-                  </Group>
-                )}
-                
-                {clawdbotPrefs.timezone && (
-                  <Group gap="xs">
-                    <Badge color="orange" variant="light">Timezone</Badge>
-                    <Text size="xs" c="dimmed">{clawdbotPrefs.timezone}</Text>
-                  </Group>
-                )}
-                
-                {clawdbotPrefs.enabled_skills?.length > 0 && (
-                  <Group gap="xs">
-                    <Badge color="cyan" variant="light">
-                      {clawdbotPrefs.enabled_skills.length} Skills
-                    </Badge>
-                  </Group>
-                )}
-              </Stack>
-            </div>
-            
-            <Divider />
-            
-            {imported ? (
-              <Alert icon={<IconCircleCheck size={16} />} color="green">
-                Preferences imported successfully! Continue to customize further.
-              </Alert>
-            ) : (
-              <Button
-                leftSection={<IconDownload size={18} />}
-                onClick={importPreferences}
-                loading={loading}
-                fullWidth
-                size="md"
-              >
-                Import Clawdbot Preferences
-              </Button>
-            )}
-          </Stack>
-        ) : (
-          <Stack gap="md" align="center" py="md">
-            <ThemeIcon size={50} radius="xl" variant="light" color="gray">
-              <IconRobot size={24} />
-            </ThemeIcon>
-            <Text c="dimmed" ta="center">
-              No Clawdbot installation detected.
-              <br />
-              You can configure everything manually in the next steps.
-            </Text>
-          </Stack>
-        )}
-        
-        <Text size="sm" c="dimmed" ta="center" mt="md">
-          You can skip this step and configure everything manually.
-        </Text>
       </Paper>
     </Stack>
   );
@@ -1464,7 +1277,7 @@ export function SetupWizard({ opened, onClose, onComplete, canSkip = true }: Set
         
         if (savedStep) {
           const step = parseInt(savedStep, 10);
-          if (!isNaN(step) && step >= 0 && step < 10) {
+          if (!isNaN(step) && step >= 0 && step < 9) {
             setActive(step);
           }
         }
@@ -1510,7 +1323,6 @@ export function SetupWizard({ opened, onClose, onComplete, canSkip = true }: Set
   
   const steps = [
     { label: "Welcome", icon: IconHome },
-    { label: "Import", icon: IconDownload },
     { label: "Income", icon: IconCoin },
     { label: "Budgets", icon: IconCoin },
     { label: "Contractors", icon: IconTool },
@@ -1525,8 +1337,8 @@ export function SetupWizard({ opened, onClose, onComplete, canSkip = true }: Set
   const progress = ((active + 1) / totalSteps) * 100;
   
   const stepNames = [
-    "Welcome", "Import", "Income Source", "Budgets", 
-    "Contractors", "WhatsApp", "Google Auth", "Connectors", 
+    "Welcome", "Income Source", "Budgets",
+    "Contractors", "WhatsApp", "Google Auth", "Connectors",
     "Notifications", "Launch"
   ];
 
@@ -1607,15 +1419,14 @@ export function SetupWizard({ opened, onClose, onComplete, canSkip = true }: Set
   const renderStep = () => {
     switch (active) {
       case 0: return <WelcomeStep data={data} setData={setData} />;
-      case 1: return <ClawdbotImportStep data={data} setData={setData} />;
-      case 2: return <IncomeSourceStep data={data} setData={setData} />;
-      case 3: return <BudgetsStep data={data} setData={setData} />;
-      case 4: return <ContractorsStep data={data} setData={setData} />;
-      case 5: return <WhatsAppStep data={data} setData={setData} />;
-      case 6: return <GoogleAuthStep data={data} setData={setData} />;
-      case 7: return <ConnectorsStep data={data} setData={setData} />;
-      case 8: return <NotificationsStep data={data} setData={setData} />;
-      case 9: return <LaunchStep data={data} onLaunch={handleFinish} launching={saving} />;
+      case 1: return <IncomeSourceStep data={data} setData={setData} />;
+      case 2: return <BudgetsStep data={data} setData={setData} />;
+      case 3: return <ContractorsStep data={data} setData={setData} />;
+      case 4: return <WhatsAppStep data={data} setData={setData} />;
+      case 5: return <GoogleAuthStep data={data} setData={setData} />;
+      case 6: return <ConnectorsStep data={data} setData={setData} />;
+      case 7: return <NotificationsStep data={data} setData={setData} />;
+      case 8: return <LaunchStep data={data} onLaunch={handleFinish} launching={saving} />;
       default: return null;
     }
   };

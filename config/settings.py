@@ -15,10 +15,10 @@ DATA_DIR.mkdir(exist_ok=True)
 BACKUP_DIR = DATA_DIR / "backups"
 BACKUP_DIR.mkdir(exist_ok=True)
 
-# SecondBrain Vault Path
+# SecondBrain Vault Path (MyCasa-local by default)
 LEGACY_VAULT_BASE = Path.home() / "moltbot" / "vaults"
 VAULT_BASE = DATA_DIR / "vaults"
-if (LEGACY_VAULT_BASE / DEFAULT_TENANT_ID / "secondbrain").exists():
+if os.environ.get("MYCASA_USE_LEGACY_VAULT") == "1":
     VAULT_BASE = LEGACY_VAULT_BASE
 VAULT_BASE.mkdir(parents=True, exist_ok=True)
 VAULT_PATH = VAULT_BASE / DEFAULT_TENANT_ID / "secondbrain"

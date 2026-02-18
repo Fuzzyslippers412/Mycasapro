@@ -229,7 +229,7 @@ Agent Action
            │
            ▼
 ┌─────────────────────┐
-│  ~/moltbot/vaults/  │
+│  $MYCASA_DATA_DIR/vaults/  │
 │  tenkiang_household/│
 │  secondbrain/       │
 │  └── memory/        │
@@ -338,7 +338,7 @@ Each page follows:
 
 ```bash
 # Backend
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 source .venv/bin/activate
 uvicorn api.main:app --reload --port 8000
 

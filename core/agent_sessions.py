@@ -1,6 +1,6 @@
 """
-Clawdbot session cleanup helpers.
-Used to avoid context sharing between MyCasaPro and Clawdbot sessions.
+Session cleanup helpers.
+Used to avoid context sharing between MyCasaPro sessions.
 """
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from typing import Any, Dict, Tuple
 
 
 def _session_store_path() -> Path:
-    return Path.home() / ".clawdbot" / "agents" / "main" / "sessions" / "sessions.json"
+    from config.settings import DATA_DIR
+    return DATA_DIR / "sessions" / "sessions.json"
 
 
 def _extract_session_id(item: Any) -> str | None:
@@ -25,14 +26,14 @@ def _extract_session_id(item: Any) -> str | None:
 
 def clear_sessions(prefix: str = "mycasa_", clear_all: bool = False) -> Dict[str, Any]:
     """
-    Remove Clawdbot sessions by prefix (safe default).
+    Remove session entries by prefix (safe default).
     If clear_all=True, removes all sessions in the store.
     """
     store_path = _session_store_path()
     if not store_path.exists():
         return {
             "success": False,
-            "message": "Clawdbot session store not found",
+            "message": "Session store not found",
             "path": str(store_path),
             "removed": 0,
             "total": 0,
@@ -107,6 +108,7 @@ def clear_sessions(prefix: str = "mycasa_", clear_all: bool = False) -> Dict[str
             "total": 0,
         }
 
+    store_path.parent.mkdir(parents=True, exist_ok=True)
     backup_path = store_path.with_suffix(f".bak.{datetime.now().strftime('%Y%m%d_%H%M%S')}")
     try:
         backup_path.write_text(original_dump)

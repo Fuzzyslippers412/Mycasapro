@@ -89,7 +89,7 @@ def check_database() -> List[Dict[str, Any]]:
 
 
 def check_shared_context() -> List[Dict[str, Any]]:
-    """Check SharedContext sync with Clawdbot"""
+    """Check SharedContext sync with recent sessions"""
     issues = []
     
     try:
@@ -104,7 +104,7 @@ def check_shared_context() -> List[Dict[str, Any]]:
         # Check session sync
         messages = ctx.get_recent_session_messages(limit=5)
         if not messages:
-            issues.append({"level": WARNING, "area": "shared_context", "message": "No Clawdbot session messages synced"})
+            issues.append({"level": WARNING, "area": "shared_context", "message": "No recent session messages synced"})
         
         # Check memory files
         user_profile = ctx.get_user_profile()
@@ -174,29 +174,27 @@ def check_security() -> List[Dict[str, Any]]:
     """Check security configurations"""
     issues = []
     
-    # Check Clawdbot allowlist
-    clawdbot_config = Path.home() / ".clawdbot" / "clawdbot.json"
-    if clawdbot_config.exists():
-        try:
-            config = json.loads(clawdbot_config.read_text())
-            allow_from = config.get("channels", {}).get("whatsapp", {}).get("allowFrom", [])
-            
-            if len(allow_from) > 1:
-                issues.append({
-                    "level": WARNING,
-                    "area": "security",
-                    "message": f"WhatsApp allowFrom has {len(allow_from)} numbers - verify all are owner numbers"
-                })
-        except Exception as e:
-            issues.append({"level": INFO, "area": "security", "message": f"Could not read Clawdbot config: {e}"})
+    # Check MyCasa WhatsApp allowlist
+    try:
+        from core.settings_typed import get_settings_store
+        settings = get_settings_store().get()
+        allow_from = list(getattr(settings.agents.mail, "whatsapp_allow_from", []) or [])
+        if len(allow_from) > 1:
+            issues.append({
+                "level": WARNING,
+                "area": "security",
+                "message": f"WhatsApp allowlist has {len(allow_from)} numbers - verify all are owner numbers"
+            })
+    except Exception as e:
+        issues.append({"level": INFO, "area": "security", "message": f"Could not read WhatsApp allowlist: {e}"})
     
     # Check SECURITY.md exists
-    security_md = Path.home() / "clawd" / "SECURITY.md"
+    security_md = PROJECT_ROOT / "SECURITY.md"
     if not security_md.exists():
-        issues.append({"level": CRITICAL, "area": "security", "message": "SECURITY.md not found"})
+        issues.append({"level": WARNING, "area": "security", "message": "SECURITY.md not found"})
     
     # Check OUTBOUND_ALLOWLIST.md exists
-    outbound_list = Path.home() / "clawd" / "OUTBOUND_ALLOWLIST.md"
+    outbound_list = PROJECT_ROOT / "OUTBOUND_ALLOWLIST.md"
     if not outbound_list.exists():
         issues.append({"level": WARNING, "area": "security", "message": "OUTBOUND_ALLOWLIST.md not found"})
     

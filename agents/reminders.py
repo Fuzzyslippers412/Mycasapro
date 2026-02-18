@@ -2,7 +2,7 @@
 MyCasa Pro - Bill & Task Reminders
 ==================================
 
-Sends reminders via WhatsApp through Clawdbot gateway.
+Sends reminders via WhatsApp through wacli.
 """
 
 import subprocess
@@ -19,7 +19,7 @@ from database.models import Bill, MaintenanceTask, Notification
 class ReminderAgent:
     """
     Handles sending reminders for bills and tasks.
-    Uses Clawdbot's message tool for WhatsApp delivery.
+    Uses local wacli for WhatsApp delivery.
     """
     
     # Default reminder settings
@@ -31,15 +31,13 @@ class ReminderAgent:
         self._last_check: Optional[datetime] = None
     
     def _send_whatsapp(self, message: str) -> bool:
-        """Send WhatsApp message via Clawdbot gateway"""
+        """Send WhatsApp message via wacli"""
         try:
-            # Use clawdbot CLI to send message
             result = subprocess.run(
                 [
-                    "clawdbot", "message", "send",
-                    "--channel", "whatsapp",
+                    "wacli", "send", "text",
                     "--to", self.owner_phone,
-                    "--message", message
+                    "--message", message,
                 ],
                 capture_output=True,
                 text=True,
@@ -57,7 +55,7 @@ class ReminderAgent:
             print("[Reminders] WhatsApp timeout")
             return False
         except FileNotFoundError:
-            print("[Reminders] clawdbot CLI not found")
+            print("[Reminders] wacli not found")
             return False
         except Exception as e:
             print(f"[Reminders] WhatsApp error: {e}")

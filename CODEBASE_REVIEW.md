@@ -157,7 +157,7 @@ Latest audit: 65 findings (0 critical, 4 high)
 
 ```bash
 # Backend
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 source .venv/bin/activate
 export VENICE_API_KEY=...
 uvicorn api.main:app --port 8000

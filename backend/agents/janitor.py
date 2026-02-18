@@ -27,7 +27,7 @@ class JanitorAgent(BaseAgent):
             agent_id="janitor",
             name="Salimata",
             description="Janitor - System health, audits, safe editing",
-            emoji="✨"
+            emoji="J"
         )
         self.last_audit: Dict[str, Any] = {}
         self.last_wizard: Dict[str, Any] = {}
@@ -174,7 +174,7 @@ class JanitorAgent(BaseAgent):
                 findings.append({
                     "severity": "P3",
                     "domain": "connectors",
-                    "finding": "Gmail: gog CLI not configured (using demo data)",
+                    "finding": "Gmail: gog CLI not configured",
                 })
             else:
                 connectors_ok = False
@@ -189,9 +189,9 @@ class JanitorAgent(BaseAgent):
                 pass  # Good
             elif whatsapp_status == ConnectorStatus.STUB:
                 findings.append({
-                    "severity": "P3",
+                    "severity": "P2",
                     "domain": "connectors",
-                    "finding": "WhatsApp: wacli not configured (using demo data)",
+                    "finding": "WhatsApp: wacli not configured",
                 })
             elif whatsapp_status == ConnectorStatus.DISCONNECTED:
                 findings.append({
@@ -207,11 +207,9 @@ class JanitorAgent(BaseAgent):
                     "finding": f"WhatsApp connector error: {whatsapp_status.value}",
                 })
             
-            # Pass if at least one connector works, or both are just stub (optional)
+            # Pass if at least one connector works
             if gmail_status == ConnectorStatus.CONNECTED or whatsapp_status == ConnectorStatus.CONNECTED:
                 checks_passed += 1
-            elif gmail_status == ConnectorStatus.STUB and whatsapp_status == ConnectorStatus.STUB:
-                checks_passed += 1  # Both stub is OK - connectors are optional
             # else: at least one has an error
             
         except Exception as e:
@@ -399,16 +397,7 @@ class JanitorAgent(BaseAgent):
             })
 
         # Connectors
-        if connectors.get("all_demo"):
-            add({
-                "id": "configure_connectors",
-                "severity": "P3",
-                "title": "Connect real data sources",
-                "description": "Gmail and WhatsApp are running in demo mode. Configure gog/wacli to unlock live data.",
-                "action": "configure_connectors",
-                "can_auto_fix": False,
-            })
-        elif not connectors.get("any_connected"):
+        if not connectors.get("any_connected"):
             add({
                 "id": "restore_connectors",
                 "severity": "P2",
@@ -958,12 +947,9 @@ class JanitorAgent(BaseAgent):
     
     def check_whatsapp_gateway_security(self) -> Dict[str, Any]:
         """
-        Check Clawdbot gateway WhatsApp security configuration.
+        Check MyCasa WhatsApp reply security configuration.
         
-        CRITICAL: Ensures dmPolicy is NOT set to "pairing" which would
-        automatically send messages to strangers who text the number.
-        
-        Incident: 2026-01-30 - Pairing mode sent auto-responses to contacts.
+        Ensures replies are only possible when an allowlist is configured.
         
         Returns:
             {
@@ -973,79 +959,38 @@ class JanitorAgent(BaseAgent):
                 "issue": str or None
             }
         """
-        import subprocess
-        import json
-        
         try:
-            # Get gateway config via clawdbot CLI
-            result = subprocess.run(
-                ["clawdbot", "config", "get", "--json"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode != 0:
-                # Try reading config file directly
-                config_path = Path.home() / ".clawdbot" / "clawdbot.json"
-                if config_path.exists():
-                    with open(config_path) as f:
-                        config = json.load(f)
-                else:
-                    return {
-                        "secure": True,  # Assume secure if can't check
-                        "dm_policy": "unknown",
-                        "allow_from": [],
-                        "issue": None,
-                        "note": "Could not read gateway config"
-                    }
-            else:
-                config = json.loads(result.stdout)
-            
-            # Check WhatsApp channel config
-            whatsapp_config = config.get("channels", {}).get("whatsapp", {})
-            dm_policy = whatsapp_config.get("dmPolicy", "pairing")  # Default is dangerous!
-            allow_from = whatsapp_config.get("allowFrom", [])
-            
-            # Security checks
+            from core.settings_typed import get_settings_store
+            settings = get_settings_store().get()
+
+            allow_from = []
+            for number in getattr(settings.agents.mail, "whatsapp_allowlist", []) or []:
+                digits = "".join(c for c in str(number) if c.isdigit())
+                if digits:
+                    allow_from.append(digits)
+            for contact in getattr(settings.agents.mail, "whatsapp_contacts", []) or []:
+                try:
+                    phone = getattr(contact, "phone", "") or ""
+                except Exception:
+                    phone = (contact or {}).get("phone") or ""
+                digits = "".join(c for c in str(phone) if c.isdigit())
+                if digits:
+                    allow_from.append(digits)
+            allow_from = sorted(set(allow_from))
+
+            allow_replies = bool(settings.agents.mail.allow_whatsapp_replies)
+            dm_policy = "allowlist" if allow_replies else "manual"
+
             issues = []
-            
-            # CRITICAL: "pairing" mode sends auto-responses to strangers
-            if dm_policy == "pairing":
-                issues.append(
-                    "CRITICAL: dmPolicy='pairing' auto-sends messages to strangers! "
-                    "Change to 'allowlist' in ~/.clawdbot/clawdbot.json"
-                )
-            
-            # Warning: "open" mode responds to everyone
-            if dm_policy == "open":
-                issues.append(
-                    "WARNING: dmPolicy='open' responds to everyone. "
-                    "Consider 'allowlist' for better security."
-                )
-            
-            # Check allowlist is properly set
-            if dm_policy == "allowlist" and not allow_from:
-                issues.append(
-                    "WARNING: dmPolicy='allowlist' but allowFrom is empty. "
-                    "Bot won't respond to anyone."
-                )
-            
+            if allow_replies and not allow_from:
+                issues.append("WhatsApp replies enabled but allowlist is empty.")
+
             return {
                 "secure": len(issues) == 0,
                 "dm_policy": dm_policy,
                 "allow_from": allow_from,
                 "issue": issues[0] if issues else None,
                 "all_issues": issues,
-            }
-            
-        except subprocess.TimeoutExpired:
-            return {
-                "secure": True,
-                "dm_policy": "unknown",
-                "allow_from": [],
-                "issue": None,
-                "note": "Config check timed out"
             }
         except Exception as e:
             return {
@@ -1072,17 +1017,14 @@ class JanitorAgent(BaseAgent):
             "gmail": {
                 "status": gmail_status.value,
                 "connected": gmail_status == ConnectorStatus.CONNECTED,
-                "using_demo": gmail_status == ConnectorStatus.STUB,
                 "message": self._connector_message(gmail_status, "Gmail", "gog"),
             },
             "whatsapp": {
                 "status": whatsapp_status.value,
                 "connected": whatsapp_status == ConnectorStatus.CONNECTED,
-                "using_demo": whatsapp_status == ConnectorStatus.STUB,
                 "message": self._connector_message(whatsapp_status, "WhatsApp", "wacli"),
             },
             "any_connected": gmail_status == ConnectorStatus.CONNECTED or whatsapp_status == ConnectorStatus.CONNECTED,
-            "all_demo": gmail_status == ConnectorStatus.STUB and whatsapp_status == ConnectorStatus.STUB,
         }
         
         self.log_action("connectors_checked", f"Gmail: {gmail_status.value}, WhatsApp: {whatsapp_status.value}")
@@ -1093,15 +1035,15 @@ class JanitorAgent(BaseAgent):
         from ..core.schemas import ConnectorStatus
         
         if status == ConnectorStatus.CONNECTED:
-            return f"✅ {name} connected via {cli} CLI"
+            return f"{name} connected via {cli} CLI"
         elif status == ConnectorStatus.STUB:
-            return f"📋 {name} using demo data ({cli} not configured)"
+            return f"{name} not configured ({cli} not configured)"
         elif status == ConnectorStatus.DISCONNECTED:
-            return f"⚠️ {name} {cli} installed but not authenticated"
+            return f"{name} {cli} installed but not authenticated"
         elif status == ConnectorStatus.ERROR:
-            return f"❌ {name} connector error"
+            return f"{name} connector error"
         else:
-            return f"❓ {name} status unknown"
+            return f"{name} status unknown"
     
     async def chat(self, message: str, conversation_history: List[Dict[str, str]] = None) -> str:
         """Handle janitor-related chat"""
@@ -1113,75 +1055,69 @@ class JanitorAgent(BaseAgent):
             recs = wizard["recommendations"]
 
             lines = [
-                f"✨ **Audit Wizard Complete** ({summary['health_score']}% health)",
+                f"Audit Wizard Complete ({summary['health_score']}% health)",
                 f"Checks: {summary['checks_passed']}/{summary['checks_total']} passed",
                 f"Findings: {summary['findings_count']}",
             ]
 
             if recs:
-                lines.append("\n**Top Recommendations:**")
+                lines.append("\nTop Recommendations:")
                 for rec in recs[:5]:
                     lines.append(f"  • [{rec['severity']}] {rec['title']}")
             else:
-                lines.append("\n✅ No remediation actions required.")
+                lines.append("\nNo remediation actions required.")
 
-            return "\n".join(lines) + "\n\n— Salimata ✨"
+            return "\n".join(lines) + "\n\n- Salimata"
         
         # Security check (highest priority)
         if "security" in msg_lower or "gateway" in msg_lower or "dmpolicy" in msg_lower:
             security = self.check_whatsapp_gateway_security()
             
-            lines = ["✨ **WhatsApp Gateway Security:**"]
+            lines = ["WhatsApp Reply Security:"]
             if security["secure"]:
-                lines.append(f"  ✅ Secure (dmPolicy: {security['dm_policy']})")
+                lines.append(f"  Secure (policy: {security['dm_policy']})")
                 if security["allow_from"]:
-                    lines.append(f"  📋 Allowlist: {', '.join(security['allow_from'])}")
+                    lines.append(f"  Allowlist: {', '.join(security['allow_from'])}")
             else:
-                lines.append(f"  🔴 **INSECURE** - {security['issue']}")
-                lines.append("\n  **Fix:** Update ~/.clawdbot/clawdbot.json:")
-                lines.append('  ```')
-                lines.append('  "channels": { "whatsapp": { "dmPolicy": "allowlist", "allowFrom": ["+1..."] } }')
-                lines.append('  ```')
+                lines.append(f"  INSECURE - {security['issue']}")
+                lines.append("\n  Fix: Add allowlisted numbers in Settings → Connectors → WhatsApp allowlist.")
             
             if security.get("note"):
-                lines.append(f"\n  ℹ️ {security['note']}")
+                lines.append(f"\n  Note: {security['note']}")
             
-            return "\n".join(lines) + "\n\n— Salimata ✨"
+            return "\n".join(lines) + "\n\n- Salimata"
         
         # Check connectors (more specific)
         if "connector" in msg_lower or "gmail" in msg_lower or ("whatsapp" in msg_lower and "security" not in msg_lower):
             status = self.check_connectors()
             
-            lines = ["✨ **Connector Status:**"]
+            lines = ["Connector Status:"]
             lines.append(f"  {status['gmail']['message']}")
             lines.append(f"  {status['whatsapp']['message']}")
             
             if status['any_connected']:
-                lines.append("\n✅ Real data flowing through connected services")
-            elif status['all_demo']:
-                lines.append("\n📋 All connectors using demo data (configure via Settings)")
+                lines.append("\nReal data flowing through connected services")
             
-            return "\n".join(lines) + "\n\n— Salimata ✨"
+            return "\n".join(lines) + "\n\n- Salimata"
         
         if "audit" in msg_lower or "health" in msg_lower or "system check" in msg_lower or msg_lower == "check":
             audit = self.run_audit()
             
-            lines = [f"✨ **System Audit** (Score: {audit['health_score']}%)"]
+            lines = [f"System Audit (Score: {audit['health_score']}%)"]
             lines.append(f"Checks: {audit['checks_passed']}/{audit['checks_total']} passed")
             
             if audit["findings"]:
-                lines.append("\n**Findings:**")
+                lines.append("\nFindings:")
                 for f in audit["findings"][:5]:
-                    icon = "🔴" if f["severity"] == "P1" else "🟡" if f["severity"] == "P2" else "🟢"
-                    lines.append(f"  {icon} [{f['domain']}] {f['finding']}")
+                    lines.append(f"  [{f['domain']}] {f['finding']}")
             else:
-                lines.append("\n✅ No issues found!")
+                lines.append("\nNo issues found.")
             
-            return "\n".join(lines) + "\n\n— Salimata ✨"
+            return "\n".join(lines) + "\n\n- Salimata"
         
         if "cleanup" in msg_lower or "clean" in msg_lower:
             result = self.cleanup_old_backups()
-            return f"✨ Cleanup complete: {result['deleted']} old backups removed, {result['kept']} kept.\n\n— Salimata ✨"
+            return f"Cleanup complete: {result['deleted']} old backups removed, {result['kept']} kept.\n\n- Salimata"
         
         if "history" in msg_lower or "edits" in msg_lower:
             from .coordination import get_coordinator
@@ -1189,12 +1125,12 @@ class JanitorAgent(BaseAgent):
             history = coordinator.get_edit_history(5)
             
             if history:
-                lines = ["✨ **Recent Edits:**"]
+                lines = ["Recent Edits:"]
                 for edit in history:
-                    status = "✅" if edit.get("success") else "❌"
+                    status = "OK" if edit.get("success") else "FAIL"
                     lines.append(f"  {status} {edit.get('file', 'unknown')} by {edit.get('agent', '?')}")
-                return "\n".join(lines) + "\n\n— Salimata ✨"
+                return "\n".join(lines) + "\n\n- Salimata"
             else:
-                return "✨ No recent edits in history.\n\n— Salimata ✨"
+                return "No recent edits in history.\n\n- Salimata"
         
         return await super().chat(message)

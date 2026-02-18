@@ -59,6 +59,19 @@ class SecuritySettingsUpdate(BaseModel):
     credential_rotation_days: Optional[int] = None
 
 
+class MailSettingsUpdate(BaseModel):
+    """Mail/Inbox agent settings update"""
+    gmail_enabled: Optional[bool] = None
+    whatsapp_enabled: Optional[bool] = None
+    sync_interval_minutes: Optional[int] = None
+    auto_triage: Optional[bool] = None
+    allow_agent_replies: Optional[bool] = None
+    allow_whatsapp_replies: Optional[bool] = None
+    allow_email_replies: Optional[bool] = None
+    whatsapp_allowlist: Optional[List[str]] = None
+    whatsapp_contacts: Optional[List[Dict[str, Any]]] = None
+
+
 # ============ ROUTES ============
 
 @router.get("")
@@ -181,6 +194,58 @@ async def update_notification_settings(update: NotificationSettingsUpdate):
     store.save(settings)
     return {"success": True, "settings": settings.notifications.model_dump()}
 
+
+@router.get("/agent/mail")
+async def get_mail_agent_settings():
+    """Get mail agent settings"""
+    from core.settings_typed import get_settings_store
+
+    store = get_settings_store()
+    settings = store.get()
+    return settings.agents.mail.model_dump()
+
+
+@router.put("/agent/mail")
+async def update_mail_agent_settings(update: MailSettingsUpdate):
+    """Update mail agent settings"""
+    from core.settings_typed import get_settings_store
+
+    def normalize_phone(value: str) -> str:
+        if not value:
+            return ""
+        digits = "".join(c for c in value if c.isdigit())
+        return digits
+
+    store = get_settings_store()
+    settings = store.get()
+
+    update_dict = update.model_dump(exclude_none=True)
+    for key, value in update_dict.items():
+        if hasattr(settings.agents.mail, key):
+            setattr(settings.agents.mail, key, value)
+
+    # Normalize allowlist/contacts if provided
+    if update_dict.get("whatsapp_allowlist") is not None:
+        normalized = [normalize_phone(v) for v in update_dict["whatsapp_allowlist"] or []]
+        normalized = [v for v in normalized if v]
+        settings.agents.mail.whatsapp_allowlist = sorted(set(normalized))
+
+    if update_dict.get("whatsapp_contacts") is not None:
+        contacts = []
+        allowlist = set(settings.agents.mail.whatsapp_allowlist or [])
+        for contact in update_dict["whatsapp_contacts"] or []:
+            name = (contact or {}).get("name") or ""
+            phone_raw = (contact or {}).get("phone") or ""
+            phone = normalize_phone(phone_raw)
+            if not phone:
+                continue
+            contacts.append({"name": name, "phone": phone})
+            allowlist.add(phone)
+        settings.agents.mail.whatsapp_contacts = contacts
+        settings.agents.mail.whatsapp_allowlist = sorted(allowlist)
+
+    store.save(settings)
+    return {"success": True, "settings": settings.agents.mail.model_dump()}
 
 @router.get("/agent/security")
 async def get_security_agent_settings():
@@ -499,8 +564,8 @@ class WizardData(BaseModel):
     enableWhatsapp: bool = False
     whatsappNumber: str = ""
     whatsappLinked: bool = False
-    whatsappContacts: List[str] = []
     enableCalendar: bool = False
+    whatsappContacts: List[Dict[str, Any]] = []
     
     # Step 4b: Contractors (optional)
     contractors: List[Dict[str, Any]] = []
@@ -548,6 +613,10 @@ async def get_wizard_settings():
                 "gmailAccount": "",
                 "enableWhatsapp": False,
                 "whatsappNumber": "",
+                "whatsappContacts": [
+                    {"id": f"wa_{idx}", "name": getattr(c, "name", ""), "phone": getattr(c, "phone", "")}
+                    for idx, c in enumerate(getattr(settings.agents.mail, "whatsapp_contacts", []) or [])
+                ],
                 "enableCalendar": False,
                 
                 # Step 5: Notifications
@@ -600,6 +669,26 @@ async def save_wizard_settings(data: WizardData):
         settings.system.approval_threshold = data.approvalThreshold
         settings.agents.finance.monthly_spend_cap = data.monthlyBudget
         settings.agents.finance.daily_spend_cap = data.monthlyBudget / 30
+
+        # Step 4: Connectors
+        settings.agents.mail.gmail_enabled = data.enableGmail
+        settings.agents.mail.whatsapp_enabled = data.enableWhatsapp
+
+        # Store WhatsApp contacts + allowlist
+        def normalize_phone(value: str) -> str:
+            return "".join(c for c in (value or "") if c.isdigit())
+
+        contacts = []
+        allowlist = set()
+        for contact in data.whatsappContacts or []:
+            name = (contact or {}).get("name") or ""
+            phone = normalize_phone((contact or {}).get("phone") or "")
+            if not phone:
+                continue
+            contacts.append({"name": name, "phone": phone})
+            allowlist.add(phone)
+        settings.agents.mail.whatsapp_contacts = contacts
+        settings.agents.mail.whatsapp_allowlist = sorted(allowlist)
         
         # Map investment style
         style_map = {

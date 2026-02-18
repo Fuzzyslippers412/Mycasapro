@@ -12,7 +12,6 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 import sys
-import subprocess
 import time
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -203,21 +202,6 @@ class ManagerAgent(BaseAgent):
     def backup_recovery(self):
         return self._get_agent("backup-recovery")
     
-    def _check_galidima(self) -> bool:
-        """Check if Galidima (Clawdbot) is available - lazy"""
-        if self._galidima_available is None:
-            try:
-                result = subprocess.run(
-                    ["clawdbot", "status"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                self._galidima_available = result.returncode == 0
-            except Exception:
-                self._galidima_available = False
-        return self._galidima_available
-
     async def chat(
         self,
         message: str,

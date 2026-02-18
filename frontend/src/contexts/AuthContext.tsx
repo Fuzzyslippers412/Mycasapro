@@ -83,7 +83,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         localStorage.setItem("token", token);
       }
       try {
-        await apiFetch("/api/clawdbot/sessions/cleanup", {
+        await apiFetch("/api/agents/sessions/cleanup", {
           method: "POST",
           body: JSON.stringify({ prefix: "mycasa_" }),
         });
@@ -114,7 +114,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         localStorage.setItem("token", token);
       }
       try {
-        await apiFetch("/api/clawdbot/sessions/cleanup", {
+        await apiFetch("/api/agents/sessions/cleanup", {
           method: "POST",
           body: JSON.stringify({ prefix: "mycasa_" }),
         });
@@ -136,7 +136,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Ignore backup errors; logout should still proceed
     }
     try {
-      await apiFetch("/api/clawdbot/sessions/cleanup", {
+      await apiFetch("/api/agents/sessions/cleanup", {
         method: "POST",
         body: JSON.stringify({ prefix: "mycasa_" }),
       });

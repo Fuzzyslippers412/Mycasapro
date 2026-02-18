@@ -19,7 +19,7 @@ Browser extension for extracting Polymarket BTC 15-minute market data and analyz
 3. Click **"Load unpacked"**
 4. Navigate to and select:
    ```
-   /Users/chefmbororo/clawd/apps/mycasa-pro/browser-extension/polymarket-analyzer
+   /path/to/mycasa-pro/browser-extension/polymarket-analyzer
    ```
 5. Extension should appear in your Chrome toolbar
 

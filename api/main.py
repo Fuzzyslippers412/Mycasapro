@@ -219,12 +219,32 @@ def get_security() -> SecurityManagerAgent:
 
 
 _mail_skill: Optional[MailSkillAgent] = None
+_inbox_sync_task: Optional[asyncio.Task] = None
 
 def get_mail_skill() -> MailSkillAgent:
     global _mail_skill
     if _mail_skill is None:
         _mail_skill = MailSkillAgent()
     return _mail_skill
+
+
+async def _periodic_inbox_sync() -> None:
+    """Periodic inbox sync loop honoring mail settings."""
+    from core.settings_typed import get_settings_store
+
+    while True:
+        try:
+            settings = get_settings_store().get()
+            interval_minutes = max(5, int(settings.agents.mail.sync_interval_minutes))
+            mail_skill = get_mail_skill()
+
+            if settings.agents.mail.gmail_enabled or settings.agents.mail.whatsapp_enabled:
+                mail_skill.ingest_all()
+                if settings.agents.mail.allow_whatsapp_replies:
+                    await mail_skill.respond_to_whatsapp()
+            await asyncio.sleep(interval_minutes * 60)
+        except Exception:
+            await asyncio.sleep(60)
 
 
 def _ensure_scheduler_job(scheduler, name: str, **kwargs):
@@ -253,6 +273,17 @@ async def _run_scheduled_agent(agent: str, task: str, config: Optional[Dict[str,
     if action == "memory_consolidation":
         checker = HouseholdHeartbeatChecker(manager.tenant_id)
         return await checker.run_memory_consolidation()
+    if action == "inbox_sync":
+        mail_skill = get_mail_skill()
+        result = mail_skill.ingest_all()
+        try:
+            from core.settings_typed import get_settings_store
+            settings = get_settings_store().get()
+            if settings.agents.mail.allow_whatsapp_replies:
+                await mail_skill.respond_to_whatsapp()
+        except Exception:
+            pass
+        return result
 
     alias_map = {
         "security": "security_manager",
@@ -275,6 +306,7 @@ async def lifespan(app: FastAPI):
     # Startup
     print("[API] Starting MyCasa Pro API...")
     get_manager()  # Initialize manager
+    global _inbox_sync_task
     
     # Auto-start lifecycle manager so agents show as active
     from core.lifecycle import get_lifecycle_manager
@@ -316,6 +348,11 @@ async def lifespan(app: FastAPI):
         scheduler.start()
     except Exception as exc:
         print(f"[API] Scheduler init failed: {exc}")
+
+    try:
+        _inbox_sync_task = asyncio.create_task(_periodic_inbox_sync())
+    except Exception as exc:
+        print(f"[API] Inbox sync loop failed to start: {exc}")
     
     await event_broker.emit("system", {"status": "api_started"})
     
@@ -324,6 +361,12 @@ async def lifespan(app: FastAPI):
     # Shutdown
     print("[API] Shutting down MyCasa Pro API...")
     lifecycle.shutdown()
+    if _inbox_sync_task:
+        _inbox_sync_task.cancel()
+        try:
+            await _inbox_sync_task
+        except asyncio.CancelledError:
+            pass
     await event_broker.emit("system", {"status": "api_stopped"})
 
 
@@ -416,9 +459,9 @@ app.include_router(contractors_router, prefix="/api")
 from api.routes.janitor import router as janitor_router
 app.include_router(janitor_router, prefix="/api")
 
-# Clawdbot session routes
-from api.routes.clawdbot import router as clawdbot_router
-app.include_router(clawdbot_router, prefix="/api")
+# Agent session cleanup routes
+from api.routes.agent_sessions import router as agent_sessions_router
+app.include_router(agent_sessions_router, prefix="/api")
 
 # Telemetry routes
 from api.routes.telemetry import router as telemetry_router
@@ -436,9 +479,6 @@ app.include_router(scheduler_router, prefix="/api")
 from api.routes.google import router as google_router
 app.include_router(google_router, prefix="/api")
 
-# Clawdbot import routes
-from api.routes.clawdbot_import import router as clawdbot_import_router
-app.include_router(clawdbot_import_router, prefix="/api")
 
 # Reminders routes (bill & task alerts)
 from api.routes.reminders import router as reminders_router
@@ -1213,6 +1253,14 @@ async def ingest_messages(background_tasks: BackgroundTasks):
             "messages_ingested",
             {"new": result.get("new_messages")}
         )
+
+    try:
+        from core.settings_typed import get_settings_store
+        settings = get_settings_store().get()
+        if settings.agents.mail.allow_whatsapp_replies:
+            background_tasks.add_task(mail_skill.respond_to_whatsapp)
+    except Exception:
+        pass
     
     return result
 

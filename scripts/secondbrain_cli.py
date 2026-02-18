@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.secondbrain import SecondBrain
+from config.settings import get_vault_path
 from core.secondbrain.models import NoteType, AgentType, SourceType, Confidence
 
 
@@ -86,7 +87,7 @@ async def cmd_search(args):
 
 async def cmd_list(args):
     """List notes in a folder"""
-    vault_path = Path.home() / "moltbot" / "vaults" / args.tenant / "secondbrain"
+    vault_path = get_vault_path(args.tenant)
     
     if args.folder:
         folders = [vault_path / args.folder]

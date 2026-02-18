@@ -13,7 +13,7 @@
 - ✅ **Backup-Recovery** - Full implementation created
 - ✅ **Mail-Skill** - SOUL written, defined as attached capability to Manager
 - ✅ **Supervisor** - Removed (was redundant with Manager)
-- 🟡 **Security-Manager** - Partial implementation (scanning methods still stubs)
+- 🟡 **Security-Manager** - Partial implementation (scanning methods incomplete)
 
 ---
 

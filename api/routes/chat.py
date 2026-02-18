@@ -3,7 +3,7 @@ MyCasa Pro API - Chat Routes
 Chat interface with the Manager agent.
 
 This enables conversational interaction with the Manager,
-similar to chatting with Galidima via WhatsApp/Clawdbot.
+similar to chatting with Galidima via WhatsApp.
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -181,7 +181,7 @@ def _process_with_manager(user_message: str, conversation_history: List[Dict]) -
     reasoning_log.append(f"📥 Received message: \"{user_message[:50]}{'...' if len(user_message) > 50 else ''}\"")
     
     # Get shared context for relevant responses
-    context = shared_ctx.get_full_context(include_session=True)  # Sync with Clawdbot session history
+    context = shared_ctx.get_full_context(include_session=True)  # Include recent session history
     reasoning_log.append(f"Loaded context: {len(context.get('contacts', []))} contacts, {len(context.get('long_term_memory', ''))} chars memory")
     
     # Lowercase for pattern matching

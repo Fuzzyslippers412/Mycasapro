@@ -49,14 +49,36 @@ class WhatsAppConnector(BaseConnector):
         self._load_contacts()
     
     def _load_contacts(self) -> None:
-        """Load contacts from tenant TOOLS.md (or legacy clawd/TOOLS.md)."""
+        """Load contacts from settings or tenant TOOLS.md."""
         tools_paths = []
         try:
             from config.settings import DATA_DIR, DEFAULT_TENANT_ID
             tools_paths.append(DATA_DIR / "tenants" / DEFAULT_TENANT_ID / "TOOLS.md")
         except Exception:
             pass
-        tools_paths.append(Path.home() / "clawd" / "TOOLS.md")
+
+        try:
+            from core.settings_typed import get_settings_store
+            settings = get_settings_store().get()
+            contacts = getattr(settings.agents.mail, "whatsapp_contacts", []) or []
+            for contact in contacts:
+                try:
+                    name = (getattr(contact, "name", "") or "").strip()
+                    phone = (getattr(contact, "phone", "") or "").strip()
+                except Exception:
+                    name = (contact or {}).get("name") or ""
+                    phone = (contact or {}).get("phone") or ""
+                if name and phone:
+                    self._contacts[name.lower()] = {
+                        "name": name,
+                        "relation": "",
+                        "phone": phone,
+                        "jid": ""
+                    }
+            if self._contacts:
+                return
+        except Exception:
+            pass
 
         tools_path = next((p for p in tools_paths if p.exists()), None)
         if not tools_path:

@@ -23,8 +23,8 @@ TENANT_DIR = DATA_DIR / "tenants" / DEFAULT_TENANT_ID
 
 class SharedContext:
     """
-    Provides shared context between Clawdbot (Galidima) and MyCasa Pro Manager.
-    
+    Provides shared context for the MyCasa Pro Manager.
+
     The Manager should have access to:
     - Who the user is (USER.md)
     - Long-term memories (MEMORY.md)

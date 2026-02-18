@@ -446,7 +446,7 @@ echo "=== MyCasa Pro Acceptance Tests ==="
 
 # 1. Backend starts
 echo "1. Starting backend..."
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 source .venv/bin/activate
 uvicorn api.main_v2:app --port 8000 &
 BACKEND_PID=$!

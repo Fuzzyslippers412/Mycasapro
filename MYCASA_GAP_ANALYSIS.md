@@ -24,7 +24,7 @@ MyCasaPro has **excellent infrastructure** (agents, database, UI, connectors) bu
 
 ### What Galidima Has
 ```
-clawd/
+local data folder
 ├── SOUL.md           # Who I am, my vibe, boundaries
 ├── USER.md           # About Lamido (my human)
 ├── SECURITY.md       # Trust boundaries, injection protection

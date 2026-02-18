@@ -400,8 +400,8 @@ export function ManagerChat() {
             finance_agent: "Finance",
             maintenance_agent: "Maintenance", 
             contractors_agent: "Contractors",
-            clawdbot_agent: "Clawdbot",
-            clawdbot_cli: "CLI",
+            clawdbot_agent: "System",
+            clawdbot_cli: "Command",
           };
           setRoutingStatus(labels[data.routed_to] || data.routed_to);
         }

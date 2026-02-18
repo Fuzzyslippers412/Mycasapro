@@ -1,6 +1,6 @@
 """
 Gmail Connector
-Uses gog CLI for real Gmail integration, falls back to stub
+Uses gog CLI for real Gmail integration (no stub data).
 """
 import subprocess
 import json
@@ -16,7 +16,7 @@ class GmailConnector:
     def __init__(self):
         import os
         self.account = os.getenv("MYCASA_GMAIL_ACCOUNT", "")
-        self._status = ConnectorStatus.STUB
+        self._status = ConnectorStatus.DISCONNECTED
         self._check_availability()
     
     def _check_availability(self):
@@ -33,15 +33,15 @@ class GmailConnector:
             else:
                 self._status = ConnectorStatus.ERROR
         except (FileNotFoundError, subprocess.TimeoutExpired):
-            self._status = ConnectorStatus.STUB
+            self._status = ConnectorStatus.DISCONNECTED
     
     def get_status(self) -> ConnectorStatus:
         return self._status
     
     def fetch_messages(self, days_back: int = 3, max_results: int = 20, unread_only: bool = True) -> List[Dict[str, Any]]:
         """Fetch recent Gmail messages (unread by default)"""
-        if self._status == ConnectorStatus.STUB:
-            return self._get_stub_messages()
+        if self._status != ConnectorStatus.CONNECTED:
+            return []
         
         try:
             # Build search query - only unread if specified
@@ -57,7 +57,7 @@ class GmailConnector:
             )
             
             if result.returncode != 0:
-                return self._get_stub_messages()
+                return []
             
             data = json.loads(result.stdout)
             threads = data.get("threads", [])
@@ -72,7 +72,7 @@ class GmailConnector:
             
         except Exception as e:
             print(f"[Gmail] Fetch error: {e}")
-            return self._get_stub_messages()
+            return []
     
     def _normalize_message(self, thread: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Normalize Gmail thread to common format"""
@@ -120,41 +120,9 @@ class GmailConnector:
         
         return "unknown"
     
-    def _get_stub_messages(self) -> List[Dict[str, Any]]:
-        """Return demo messages when gog CLI is not configured"""
-        return [
-            {
-                "external_id": "gmail:stub1",
-                "source": "gmail",
-                "thread_id": "stub1",
-                "sender_name": "Chase Bank",
-                "sender_id": "alerts@chase.com",
-                "subject": "Your account statement is ready",
-                "body": "Your monthly statement for January is now available.",
-                "timestamp": datetime.utcnow(),
-                "domain": "finance",
-                "urgency": "medium",
-                "is_read": False
-            },
-            {
-                "external_id": "gmail:stub2",
-                "source": "gmail",
-                "thread_id": "stub2",
-                "sender_name": "HVAC Service Co",
-                "sender_id": "service@hvac.com",
-                "subject": "Annual maintenance reminder",
-                "body": "Your HVAC system is due for annual maintenance.",
-                "timestamp": datetime.utcnow(),
-                "domain": "maintenance",
-                "urgency": "low",
-                "is_read": True
-            }
-        ]
-    
     def send_message(self, to: str, subject: str, body: str) -> Dict[str, Any]:
-        """Send email (stub - not implemented)"""
+        """Send email (not implemented)"""
         return {
             "success": False,
-            "error": "Email sending not implemented",
-            "stub": True
+            "error": "Email sending not implemented"
         }

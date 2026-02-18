@@ -125,7 +125,7 @@ polymarket = AdapterRegistry.get("polymarket")
 
 ```bash
 # Test adapter imports
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 source .venv/bin/activate
 python -c "from backend.edgelab.adapters import BrowserAdapter, PolymarketAdapter; print('OK')"
 

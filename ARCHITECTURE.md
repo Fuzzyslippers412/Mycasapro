@@ -337,10 +337,7 @@ class TenantQuota(Base):
 
 ```bash
 # From Clawdbot
-clawdbot skill install mycasa-pro
-
-# Or from ClawdHub
-clawdhub install mycasa-pro
+mycasa setup
 ```
 
 ### install.py
@@ -362,7 +359,6 @@ def install():
     
     # 4. Seed defaults
     seed_default_settings()
-    seed_connector_stubs()
     
     # 5. Register with Clawdbot
     register_skill()

@@ -1385,8 +1385,6 @@ def janitor_connectors():
         
         if result.get("any_connected"):
             click.echo("\n✅ Real data flowing through connected services")
-        elif result.get("all_demo"):
-            click.echo("\n📋 All connectors using demo data (configure via Settings)")
     else:
         click.echo(f"Error: {result}")
 

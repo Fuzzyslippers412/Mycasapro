@@ -191,7 +191,6 @@ Janitor Audit:
 | `docs/SECONDBRAIN_INTEGRATION.md` | 7,236 bytes | ✅ Complete |
 | `docs/API_ARCHITECTURE.md` | 11,052 bytes | ✅ Complete |
 | `docs/LOBEHUB_ANALYSIS.md` | 6,752 bytes | ✅ Complete |
-| `docs/MASTER_BUILD_BIBLE.md` | 19,838 bytes | ✅ Complete |
 | `CHANGELOG.md` | 4,197 bytes | ✅ Complete |
 | `STATUS.md` | This file | ✅ Complete |
 
@@ -201,7 +200,7 @@ Janitor Audit:
 
 ```bash
 # Backend
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 source .venv/bin/activate
 uvicorn api.main:app --reload --port 8000
 

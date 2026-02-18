@@ -43,7 +43,7 @@ Deleted hardcoded `chat()` methods from all agents:
 
 ### 1. Install Dependencies
 ```bash
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 pip install anthropic
 ```
 
@@ -53,7 +53,7 @@ Add to `.env` file or export:
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-Or add to `~/clawd/apps/mycasa-pro/.env`:
+Or add to `/path/to/mycasa-pro/.env`:
 ```
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```

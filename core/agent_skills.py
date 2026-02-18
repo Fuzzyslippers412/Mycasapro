@@ -4,32 +4,32 @@ from typing import Dict, List
 AGENT_SKILLS: Dict[str, List[str]] = {
     "manager": [
         "Route requests to the right agent",
-        "Summarize system status and decisions",
-        "Coordinate approvals and handoffs",
+        "Coordinate handoffs and approvals",
+        "Provide on-demand system status and decisions",
     ],
     "maintenance": [
         "Intake and triage maintenance requests",
-        "Schedule and track maintenance tasks",
-        "Log service history and reminders",
+        "Schedule reminders and seasonal tasks",
+        "Track service history and task status",
     ],
     "finance": [
-        "Track bills, budgets, and cash flow",
-        "Summarize portfolio and spending",
+        "Keep bills, budgets, and spending visible",
+        "Summarize portfolio and cash flow",
         "Flag due dates and anomalies",
     ],
     "contractors": [
-        "Source and track service providers",
-        "Manage quotes, scheduling, and follow-ups",
-        "Maintain vendor notes and history",
+        "Store contractor contacts and quotes",
+        "Manage scheduling and follow-ups",
+        "Track job status and outcomes",
     ],
     "projects": [
-        "Plan projects into milestones",
+        "Break projects into milestones and steps",
         "Track timelines, dependencies, and scope",
         "Document decisions and progress",
     ],
     "security-manager": [
-        "Monitor security signals and alerts",
-        "Run checks and incident triage",
+        "Require approval before sensitive actions",
+        "Maintain a clear audit trail",
         "Report risks and mitigation steps",
     ],
     "janitor": [
@@ -43,9 +43,9 @@ AGENT_SKILLS: Dict[str, List[str]] = {
         "Coordinate recovery drills",
     ],
     "mail-skill": [
-        "Triage inbox and flag priorities",
+        "Ingest Gmail and WhatsApp into the inbox",
         "Summarize threads and open loops",
-        "Draft replies for approval",
+        "Tag messages by domain and urgency",
     ],
 }
 

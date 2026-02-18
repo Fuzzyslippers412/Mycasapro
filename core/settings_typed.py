@@ -258,6 +258,12 @@ class BackupSettings(AgentSettings):
     include_state: bool = True
 
 
+class WhatsAppContact(BaseModel):
+    """Whitelisted WhatsApp contact"""
+    name: str = ""
+    phone: str = ""
+
+
 class MailSettings(AgentSettings):
     """Mail/Inbox agent settings"""
     gmail_enabled: bool = True
@@ -267,6 +273,8 @@ class MailSettings(AgentSettings):
     allow_agent_replies: bool = False
     allow_whatsapp_replies: bool = False
     allow_email_replies: bool = False
+    whatsapp_allowlist: List[str] = Field(default_factory=list)
+    whatsapp_contacts: List[WhatsAppContact] = Field(default_factory=list)
 
 
 class ManagerSettings(AgentSettings):

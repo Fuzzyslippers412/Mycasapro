@@ -84,7 +84,7 @@ APIFY_TOKEN=apify_api_xxxxx
 
 ### Step 1: Create .env file
 ```bash
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 cp .env.example .env
 ```
 
@@ -131,7 +131,7 @@ After setup, verify everything works:
 
 ```bash
 # Check Anthropic
-cd ~/clawd/apps/mycasa-pro
+cd /path/to/mycasa-pro
 source .venv/bin/activate
 python -c "import anthropic; print('Anthropic OK')"
 
@@ -142,20 +142,20 @@ gog gmail profile
 gog calendar list
 
 # Check WhatsApp (via Clawdbot)
-clawdbot status --json | jq '.whatsapp'
+wacli auth status --json
 ```
 
 ---
 
 ## 📝 Notes
 
-1. **Anthropic is the only hard requirement** - everything else is optional or uses existing Clawdbot infrastructure
+1. **Anthropic is the only hard requirement** - everything else is optional
 
 2. **Google OAuth via gog** - The `gog` CLI is the easiest way to authenticate. It handles token refresh automatically.
 
 3. **No database setup needed** - MyCasa Pro uses SQLite by default (data stored in `data/mycasa.db`)
 
-4. **SecondBrain vault** - Automatically created at `~/moltbot/vaults/tenkiang_household/secondbrain/`
+4. **SecondBrain vault** - Automatically created in your configured data directory
 
 ---
 
@@ -170,5 +170,5 @@ clawdbot status --json | jq '.whatsapp'
 - Check Google Cloud Console for correct OAuth scopes
 
 **"WhatsApp not connected"**
-- Run `clawdbot status` to check gateway status
-- Restart Clawdbot if needed: `clawdbot gateway restart`
+- Run `wacli auth status --json` to check status
+- Re-auth with `wacli auth` if needed
