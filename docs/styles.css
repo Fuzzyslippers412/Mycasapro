@@ -1,13 +1,17 @@
 :root {
-  --bg: #f7f7f4;
-  --text: #111827;
-  --muted: #4b5563;
+  --bg: #f6f4ef;
+  --bg-strong: #ede9e0;
+  --text: #0f172a;
+  --muted: #475569;
   --primary: #0f766e;
-  --primary-dark: #115e59;
+  --primary-dark: #0b5f57;
+  --primary-soft: rgba(15, 118, 110, 0.12);
   --surface: #ffffff;
-  --border: #e5e7eb;
-  --radius: 14px;
-  --max-width: 1080px;
+  --surface-alt: #fcfbf7;
+  --border: #e4dfd6;
+  --radius: 16px;
+  --shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+  --max-width: 1120px;
 }
 
 * {
@@ -23,13 +27,17 @@ html {
 body {
   font-family: "IBM Plex Sans", "Space Grotesk", sans-serif;
   color: var(--text);
-  background: linear-gradient(180deg, #fafaf8 0%, #f3f4f2 100%);
+  background:
+    radial-gradient(circle at 10% 10%, rgba(15, 118, 110, 0.08), transparent 40%),
+    radial-gradient(circle at 90% 15%, rgba(15, 118, 110, 0.06), transparent 45%),
+    linear-gradient(180deg, #fbfaf6 0%, #f1efe8 100%);
   line-height: 1.6;
   font-size: 16px;
 }
 
 h1,
-h2 {
+h2,
+h3 {
   font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
   letter-spacing: -0.02em;
 }
@@ -57,10 +65,15 @@ a:focus-visible {
 .page {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 24px 20px 64px;
+  padding: 24px 20px 72px;
 }
 
 .nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(246, 244, 239, 0.92);
+  backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--border);
 }
 
@@ -96,15 +109,15 @@ a:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--primary);
-  border: 1px solid rgba(15, 118, 110, 0.3);
-  padding: 4px 8px;
+  border: 1px solid rgba(15, 118, 110, 0.35);
+  padding: 4px 10px;
   border-radius: 999px;
   background: rgba(15, 118, 110, 0.08);
 }
 
 .nav-links {
   display: flex;
-  gap: 18px;
+  gap: 16px;
   font-weight: 500;
   color: var(--muted);
   flex-wrap: wrap;
@@ -125,17 +138,13 @@ a:focus-visible {
   font-weight: 600;
   background: var(--surface);
   color: var(--text);
-  transition: border 0.2s ease, color 0.2s ease, background 0.2s ease;
-}
-
-.nav .btn {
-  padding: 8px 14px;
-  font-size: 0.92rem;
+  transition: border 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
 .btn:hover {
   border-color: var(--primary);
   color: var(--primary);
+  transform: translateY(-1px);
 }
 
 .btn.primary {
@@ -153,30 +162,40 @@ a:focus-visible {
   background: transparent;
 }
 
+.btn.small {
+  padding: 8px 14px;
+  font-size: 0.92rem;
+}
+
+.nav .btn {
+  padding: 8px 14px;
+  font-size: 0.92rem;
+}
+
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 32px;
   align-items: center;
-  padding: 52px 0 36px;
+  padding: 56px 0 40px;
   border-bottom: 1px solid var(--border);
 }
 
 .hero-copy {
-  max-width: 680px;
+  max-width: 640px;
 }
 
 .eyebrow {
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  font-size: 0.68rem;
   color: var(--muted);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .hero-copy h1 {
-  font-size: clamp(2.2rem, 3vw, 3rem);
-  line-height: 1.1;
+  font-size: clamp(2.4rem, 3vw, 3.2rem);
+  line-height: 1.05;
   margin-bottom: 16px;
 }
 
@@ -189,7 +208,7 @@ a:focus-visible {
 .alpha-note {
   color: var(--primary);
   font-weight: 600;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .hero-actions {
@@ -199,12 +218,60 @@ a:focus-visible {
   margin-bottom: 20px;
 }
 
-.hero-list {
-  list-style: disc;
-  margin-left: 20px;
-  color: var(--muted);
+.hero-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  padding: 22px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+}
+
+.panel-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--primary);
+  border: 1px solid rgba(15, 118, 110, 0.3);
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.08);
+  width: fit-content;
+}
+
+.panel-list {
+  list-style: none;
   display: grid;
   gap: 8px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.panel-list li {
+  position: relative;
+  padding-left: 18px;
+}
+
+.panel-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.panel-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .section-tight {
@@ -235,7 +302,7 @@ a:focus-visible {
 }
 
 .section {
-  padding: 36px 0;
+  padding: 40px 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -244,7 +311,7 @@ a:focus-visible {
 }
 
 .section-header {
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .section-header h2 {
@@ -259,7 +326,7 @@ a:focus-visible {
 
 .two-col {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 20px;
 }
 
@@ -275,6 +342,7 @@ a:focus-visible {
   border-radius: var(--radius);
   padding: 20px;
   min-height: 140px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
 }
 
 .card h3 {
@@ -327,6 +395,7 @@ a:focus-visible {
 .clean-list {
   list-style: disc;
   margin-left: 20px;
+  margin-top: 12px;
   color: var(--muted);
   display: grid;
   gap: 8px;
@@ -364,7 +433,7 @@ details {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
-  background: #fafaf8;
+  background: var(--surface-alt);
 }
 
 details summary {
@@ -420,6 +489,12 @@ code {
   color: var(--muted);
 }
 
+.footnote {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
 .link-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -452,6 +527,12 @@ code {
 
 .footer strong {
   color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {

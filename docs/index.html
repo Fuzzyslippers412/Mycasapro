@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#0f766e" />
     <meta
       name="description"
-      content="MyCasaPro runs locally to track home tasks, bills, and decisions in one place."
+      content="MyCasa Pro is a local-first home operations system with specialized agents, a SecondBrain vault, and approval-gated actions."
     />
-    <title>mycasapro - stop keeping your home in your head</title>
+    <title>MyCasa Pro - local-first home operations</title>
     <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -23,15 +23,16 @@
       <header class="nav">
         <div class="nav-inner">
           <div class="logo">
-            <img class="logo-image" src="assets/logo.svg" alt="mycasapro logo" />
-            <span class="logo-text">mycasapro</span>
-            <span class="version-tag">Alpha 2</span>
+            <img class="logo-image" src="assets/logo.svg" alt="MyCasa Pro logo" />
+            <span class="logo-text">MyCasa Pro</span>
+            <span class="version-tag">Alpha 5</span>
           </div>
           <nav class="nav-links">
             <a href="#overview">Overview</a>
+            <a href="#alpha5">Alpha 5</a>
             <a href="#agents">Agents</a>
-            <a href="#alpha2">Alpha 2</a>
             <a href="#systems">Core systems</a>
+            <a href="#business">Business workflows</a>
             <a href="#how">How it works</a>
             <a href="#install">Install</a>
             <a href="#links">Links</a>
@@ -49,55 +50,75 @@
       <main>
         <section class="hero" id="overview">
           <div class="hero-copy">
+            <p class="eyebrow">Local-first home operations</p>
             <h1>Stop keeping your home in your head.</h1>
             <p class="subhead">
-              A local home system for tasks, bills, and decisions. You stay in control.
+              A local-first system with specialized agents, a SecondBrain vault, and approval-gated actions.
             </p>
-            <p class="alpha-note">Alpha 2: coordination teams, semantic search, reminders, mobile-ready UI.</p>
+            <p class="alpha-note">
+              Alpha 5 focus: agent teams, SecondBrain vault, approvals, live system dashboard, contracts and payments.
+            </p>
             <div class="hero-actions">
-              <a class="btn primary" href="#agents">Meet the agents</a>
-              <a class="btn" href="#how">How it works</a>
+              <a class="btn primary" href="#alpha5">See Alpha 5</a>
+              <a class="btn" href="#install">Install locally</a>
+            </div>
+          </div>
+          <div class="hero-panel">
+            <div class="panel-tag">Alpha 5 release</div>
+            <h3>Built for real operations</h3>
+            <p class="muted">
+              The current build ships core systems and approval gates for day-to-day home coordination.
+            </p>
+            <ul class="panel-list">
+              <li>SecondBrain vault with memory graph</li>
+              <li>Agent teams + scheduler templates</li>
+              <li>Approval queue + prompt security</li>
+              <li>Contracts, invoices, payments (business)</li>
+            </ul>
+            <div class="panel-actions">
+              <a class="btn small" href="#systems">Core systems</a>
+              <a class="btn ghost small" href="#roadmap">Roadmap</a>
             </div>
           </div>
         </section>
 
         <section class="section section-tight" id="proof">
           <div class="proof-row">
-            <p>Remembers decisions, preferences, and past work</p>
-            <p>Surfaces what needs attention now</p>
-            <p>Acts only with your approval</p>
+            <p>Runs locally. No signup required.</p>
+            <p>Every action is approval-gated.</p>
+            <p>SecondBrain keeps decisions and history.</p>
           </div>
         </section>
 
-        <section class="section" id="alpha2">
+        <section class="section" id="alpha5">
           <div class="section-header">
-            <h2>What's new in Alpha 2</h2>
-            <p>Real upgrades that change how the system works day to day.</p>
+            <h2>What is new in Alpha 5</h2>
+            <p>Highlights from the current codebase.</p>
           </div>
           <div class="card-grid">
             <article class="card">
               <h3>Agent coordination teams</h3>
-              <p>Pre-built teams for finance, maintenance, security, and projects.</p>
+              <p>Pre-built teams for finance review, maintenance dispatch, security response, and project planning.</p>
             </article>
             <article class="card">
-              <h3>Semantic search</h3>
-              <p>Find decisions and documents by meaning, not just keywords.</p>
+              <h3>SecondBrain vault + memory graph</h3>
+              <p>Decisions, documents, and logs stored in an Obsidian-compatible vault with graph view.</p>
             </article>
             <article class="card">
-              <h3>Bill reminders</h3>
-              <p>Automatic reminders and daily summaries via WhatsApp.</p>
+              <h3>Manager chat with reasoning</h3>
+              <p>Talk to the Manager, see the reasoning trace, and issue quick commands.</p>
             </article>
             <article class="card">
-              <h3>Mobile-ready UI</h3>
-              <p>Improved touch targets and responsive layouts.</p>
+              <h3>Scheduler + job templates</h3>
+              <p>Daily and weekly runs with templates for finance reviews, maintenance checks, and security audits.</p>
             </article>
             <article class="card">
-              <h3>Chat branching</h3>
-              <p>Fork conversations to explore options without losing history.</p>
+              <h3>Live system dashboard</h3>
+              <p>Current status for agents, connectors, memory, and scheduled jobs.</p>
             </article>
             <article class="card">
-              <h3>Connector upgrades</h3>
-              <p>Calendar sync for contractor jobs and more templates.</p>
+              <h3>Connector marketplace</h3>
+              <p>Configure Gmail, WhatsApp, and Google Calendar with user-owned credentials.</p>
             </article>
           </div>
         </section>
@@ -105,70 +126,48 @@
         <section class="section" id="agents">
           <div class="section-header">
             <h2>Agents that handle the work</h2>
-            <p>Each agent focuses on one part of your home so nothing falls through.</p>
+            <p>Eight specialized agents cover the core areas of home operations.</p>
           </div>
           <div class="card-grid">
             <article class="card">
               <h3>Manager Agent (Galidima)</h3>
-              <p>
-                Routes requests, coordinates the others, and gives status on demand.
-              </p>
+              <p>Routes requests, coordinates the others, and reports system status.</p>
             </article>
             <article class="card">
-              <h3>Inbox Agent (Amina)</h3>
-              <p>
-                Triage for Gmail and WhatsApp, with summaries and follow-ups.
-              </p>
+              <h3>Finance Agent</h3>
+              <p>Tracks bills, budgets, portfolio holdings, and cash flow.</p>
             </article>
             <article class="card">
-              <h3>Maintenance Agent (Ousmane)</h3>
-              <p>
-                Tracks service history, reminders, and seasonal tasks.
-              </p>
+              <h3>Maintenance Agent</h3>
+              <p>Tracks service history, seasonal tasks, and maintenance schedules.</p>
             </article>
             <article class="card">
-              <h3>Finance Manager (Mamadou)</h3>
-              <p>
-                Keeps bills, budgets, and spending visible.
-              </p>
+              <h3>Contractors Agent</h3>
+              <p>Stores providers, quotes, and follow-ups for external work.</p>
             </article>
             <article class="card">
-              <h3>Projects Agent (Zainab)</h3>
-              <p>
-                Breaks home projects into steps and timelines you can follow.
-              </p>
+              <h3>Projects Agent</h3>
+              <p>Breaks home projects into steps, timelines, and dependencies.</p>
             </article>
             <article class="card">
-              <h3>Contractors Agent (Malik)</h3>
-              <p>
-                Stores contacts, quotes, and follow-ups in one place.
-              </p>
+              <h3>Security Manager</h3>
+              <p>Tracks incidents and enforces approval gates on sensitive actions.</p>
             </article>
             <article class="card">
-              <h3>Security Manager (Aicha)</h3>
-              <p>
-                Requires your approval before actions and keeps a clear record.
-              </p>
+              <h3>Janitor Agent</h3>
+              <p>Audits system health, specs, and data integrity.</p>
             </article>
             <article class="card">
-              <h3>Janitor (Sule)</h3>
-              <p>
-                Audits the system, checks health, and catches issues early.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Backup &amp; Recovery (Backup)</h3>
-              <p>
-                Protects your data and restores it when needed.
-              </p>
+              <h3>Backup and Recovery</h3>
+              <p>Creates backups and restores data when needed.</p>
             </article>
           </div>
         </section>
 
         <section class="section" id="systems">
           <div class="section-header">
-            <h2>Core systems in Alpha 1</h2>
-            <p>What ships in the current build, beyond the agents.</p>
+            <h2>Core systems shipping now</h2>
+            <p>The foundational systems in the current build.</p>
           </div>
           <div class="card-grid">
             <article class="card">
@@ -177,57 +176,76 @@
             </article>
             <article class="card">
               <h3>Unified inbox</h3>
-              <p>Gmail and WhatsApp in one place.</p>
+              <p>Gmail + WhatsApp ingestion with normalization and deduplication.</p>
             </article>
             <article class="card">
-              <h3>Scheduler</h3>
-              <p>Runs recurring checks, reminders, and daily summaries.</p>
+              <h3>Agent scheduler</h3>
+              <p>Create recurring jobs and run templates on demand.</p>
             </article>
             <article class="card">
               <h3>Live system dashboard</h3>
-              <p>See agent status, connectors, and scheduled jobs.</p>
+              <p>Agent activity, connector health, and job status in one view.</p>
+            </article>
+            <article class="card">
+              <h3>Memory graph view</h3>
+              <p>Explore SecondBrain connections with filters and search.</p>
             </article>
             <article class="card">
               <h3>Setup wizard</h3>
-              <p>Guided onboarding that configures your system.</p>
-            </article>
-            <article class="card">
-              <h3>Search + graph view</h3>
-              <p>Find notes fast and explore connections.</p>
+              <p>Guided onboarding for budgets, connectors, and notifications.</p>
             </article>
           </div>
         </section>
 
-        <section class="section" id="roles">
+        <section class="section" id="business">
           <div class="section-header">
-            <h2>One system. No confusion.</h2>
-              <p>
-                Information is stored, plans are reviewed, and actions are executed separately. That separation keeps mistakes from compounding.
-              </p>
+            <h2>Business workflows</h2>
+            <p>Structured agreements, payments, and proofs for professional operations.</p>
           </div>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Relationships</h3>
+              <p>Manage counterparties, roles, and permissions for shared work.</p>
+            </article>
+            <article class="card">
+              <h3>Contracts + milestones</h3>
+              <p>Define scope, acceptance criteria, and evidence for work delivery.</p>
+            </article>
+            <article class="card">
+              <h3>Invoices (business edition)</h3>
+              <p>Create invoices, line items, and payment status tracking.</p>
+            </article>
+            <article class="card">
+              <h3>Payments + receipts</h3>
+              <p>Approval-gated payment requests, receipts, and optional chain anchors.</p>
+            </article>
+          </div>
+          <p class="footnote">
+            Note: invoice tooling is available in the business edition.
+          </p>
         </section>
 
         <section class="section" id="how">
           <div class="section-header">
             <h2>How it works</h2>
-            <p>Tell it what you need, the agents organize it, and you approve the next steps.</p>
+            <p>Ingest updates, let the agents organize, and approve the next steps.</p>
           </div>
           <div class="steps">
             <div class="step">
-              <h3>Tell it</h3>
-              <p>Share updates by chat, email, or connected tools.</p>
+              <h3>Collect</h3>
+              <p>Chat, email, and WhatsApp updates are ingested into the system.</p>
             </div>
             <div class="step">
               <h3>Agents organize</h3>
-              <p>Each agent files the work to the right place.</p>
+              <p>Agents route the work into SecondBrain, tasks, budgets, and schedules.</p>
             </div>
             <div class="step">
-              <h3>You review</h3>
-              <p>See what is planned before anything happens.</p>
+              <h3>You approve</h3>
+              <p>Review actions in the approval queue before anything changes.</p>
             </div>
             <div class="step">
               <h3>It acts</h3>
-              <p>Only what you approve gets scheduled or sent.</p>
+              <p>Only approved actions get scheduled or sent.</p>
             </div>
           </div>
         </section>
@@ -241,28 +259,37 @@
             <span class="badge">Gmail</span>
             <span class="badge">WhatsApp</span>
             <span class="badge">Google Calendar</span>
-            <span class="badge">Your model of choice</span>
+            <span class="badge">Qwen / OpenAI / Anthropic</span>
+            <span class="badge">Optional chain anchors</span>
           </div>
         </section>
 
-        <section class="section" id="security">
+        <section class="section" id="roadmap">
           <div class="section-header">
-            <h2>Nothing happens without you.</h2>
-            <p>Control is the default, not a setting you hunt for.</p>
+            <h2>Roadmap</h2>
+            <p>Tracked in the repo but not fully shipped yet.</p>
           </div>
-          <div class="card-grid">
-            <article class="card">
-              <h3>Permission by permission</h3>
-              <p>Each connection and action is explicitly approved and logged.</p>
-            </article>
-            <article class="card">
-              <h3>Reviewable decisions</h3>
-              <p>You can see what was planned, why, and what actually happened.</p>
-            </article>
-            <article class="card">
-              <h3>Model flexibility</h3>
-              <p>Use the built-in model or connect one that fits your privacy and cost needs.</p>
-            </article>
+          <div class="two-col">
+            <div class="card">
+              <h3>In progress</h3>
+              <ul class="clean-list">
+                <li>Bank connector (CSV/OFX import)</li>
+                <li>Home Assistant integration</li>
+                <li>Ring Doorbell integration</li>
+                <li>Semantic search for SecondBrain</li>
+                <li>Scheduler notifications (WhatsApp/email)</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h3>Planned</h3>
+              <ul class="clean-list">
+                <li>Conversation branching UI</li>
+                <li>Bill tracking and reminders</li>
+                <li>Voice interface</li>
+                <li>Mobile app</li>
+                <li>Multi-tenant support</li>
+              </ul>
+            </div>
           </div>
         </section>
 
@@ -335,15 +362,15 @@ npm run dev</code></pre>
               <p class="mono">API Docs: http://127.0.0.1:6709/docs</p>
             </li>
             <li>
-              <p>Qwen OAuth (default)</p>
+              <p>LLM provider (default Qwen)</p>
               <pre><code>./mycasa llm qwen-login</code></pre>
-              <p class="muted">Default model: qwen3-coder-plus</p>
+              <p class="muted">Default model: qwen3-coder-plus. OpenAI/Anthropic keys can be added in Settings.</p>
             </li>
             <li>
               <p>Connectors (user-owned credentials)</p>
               <div class="connector-list">
                 <div>
-                  <p class="connector-title">Gmail (gog)</p>
+                  <p class="connector-title">Gmail + Google Calendar (gog)</p>
                   <pre><code>brew install doitintl/tap/gog
 gog auth login</code></pre>
                 </div>
@@ -393,6 +420,22 @@ wacli auth</code></pre>
             </a>
             <a
               class="link-card"
+              href="https://github.com/Fuzzyslippers412/Mycasapro/blob/main/docs/FEATURES.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Feature documentation
+            </a>
+            <a
+              class="link-card"
+              href="https://github.com/Fuzzyslippers412/Mycasapro/blob/main/STATUS.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Status report
+            </a>
+            <a
+              class="link-card"
               href="https://github.com/Fuzzyslippers412/Mycasapro"
               target="_blank"
               rel="noreferrer"
@@ -413,8 +456,8 @@ wacli auth</code></pre>
 
       <footer class="footer">
         <div>
-          <strong>mycasapro</strong>
-          <p>Local home system for tasks, bills, and decisions.</p>
+          <strong>MyCasa Pro</strong>
+          <p>Local-first home operations system for tasks, bills, and decisions.</p>
         </div>
       </footer>
     </div>
