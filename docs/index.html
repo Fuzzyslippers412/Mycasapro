@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0f766e" />
     <meta
       name="description"
-      content="MyCasa Pro is a local-first home operations system with specialized agents, a SecondBrain vault, and approval-gated actions."
+      content="MyCasa Pro is a local-first home operations system with specialized agents, a SecondBrain vault, and approval-gated actions with signed contract events and hash-only anchors."
     />
     <title>MyCasa Pro - local-first home operations</title>
     <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
@@ -32,9 +32,9 @@
             <a href="#alpha5">Alpha 5</a>
             <a href="#agents">Agents</a>
             <a href="#systems">Core systems</a>
+            <a href="#integrity">Integrity and ZK</a>
             <a href="#business">Business workflows</a>
-            <a href="#integrity">Integrity</a>
-            <a href="#how">How it works</a>
+            <a href="#roadmap">Roadmap</a>
             <a href="#install">Install</a>
             <a href="#links">Links</a>
           </nav>
@@ -57,7 +57,7 @@
               A local-first system with specialized agents, a SecondBrain vault, and approval-gated actions.
             </p>
             <p class="alpha-note">
-              Alpha 5 focus: agent teams, SecondBrain vault, approvals, proof anchors, contracts and payments.
+              Alpha 5 (current): agent teams, SecondBrain, approvals, signed contract events, hash-only anchors, Railgun linkage metadata.
             </p>
             <div class="hero-actions">
               <a class="btn primary" href="#alpha5">See Alpha 5</a>
@@ -65,20 +65,21 @@
             </div>
           </div>
           <div class="hero-panel">
-            <div class="panel-tag">Alpha 5 release</div>
+            <div class="panel-tag">Current release</div>
             <h3>Built for real operations</h3>
             <p class="muted">
-              The current build ships core systems and approval gates for day-to-day home coordination.
+              Alpha 5 ships coordination plus signed contract events and optional chain anchors.
             </p>
             <ul class="panel-list">
               <li>SecondBrain vault with memory graph</li>
               <li>Agent teams + scheduler templates</li>
-              <li>Approval queue + proof anchors</li>
-              <li>Contracts, invoices, payments (business)</li>
+              <li>Approval queue + signed contract event ledger</li>
+              <li>Hash-only anchors (Polygon or Sonic)</li>
+              <li>ZK linkage metadata (Railgun nullifier/commitment)</li>
             </ul>
             <div class="panel-actions">
               <a class="btn small" href="#systems">Core systems</a>
-              <a class="btn ghost small" href="#roadmap">Roadmap</a>
+              <a class="btn ghost small" href="#integrity">Integrity</a>
             </div>
           </div>
         </section>
@@ -87,14 +88,14 @@
           <div class="proof-row">
             <p>Runs locally. No signup required.</p>
             <p>Every action is approval-gated.</p>
-            <p>SecondBrain keeps decisions and history.</p>
+            <p>Proofs are hash-only and stay private.</p>
           </div>
         </section>
 
         <section class="section" id="alpha5">
           <div class="section-header">
-            <h2>What is new in Alpha 5</h2>
-            <p>Highlights from the current codebase.</p>
+            <h2>Alpha 5 release summary</h2>
+            <p>The current version focuses on coordination, proofs, and operational depth.</p>
           </div>
           <div class="card-grid">
             <article class="card">
@@ -122,8 +123,8 @@
               <p>Configure Gmail, WhatsApp, and Google Calendar with user-owned credentials.</p>
             </article>
             <article class="card">
-              <h3>Integrity proofs</h3>
-              <p>Hash-only anchors, signed events, and Railgun linkage fields for payment verification.</p>
+              <h3>Proof layer + Railgun linkage</h3>
+              <p>Signed contract events + hash-only anchors, plus payment linkage records (acceptance hash, nullifier, commitment).</p>
             </article>
           </div>
         </section>
@@ -202,6 +203,39 @@
           </div>
         </section>
 
+        <section class="section" id="integrity">
+          <div class="section-header">
+            <h2>Integrity and ZK linkage</h2>
+            <p>Proofs are local-first with optional on-chain anchors and ZK linkage metadata.</p>
+          </div>
+          <div class="two-col">
+            <div class="card">
+              <h3>What is proven</h3>
+              <ul class="clean-list">
+                <li>Approvals and decisions</li>
+                <li>Contracts, milestones, change orders, evidence</li>
+                <li>Payment requests, intents, receipts</li>
+                <li>Invoices and invoice payments (business)</li>
+                <li>Maintenance completions and backups</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h3>How proofs work</h3>
+              <ul class="clean-list">
+                <li>Canonical JSON hashing (SHA-256)</li>
+                <li>Signed contract events with local identity keys</li>
+                <li>Hash-only anchors to Polygon or Sonic (optional)</li>
+                <li>ZK linkage fields: acceptance hash, nullifier, commitment</li>
+                <li>Payment linkage can be anchored as payment_linkage events</li>
+                <li>Diagnostics show anchor status and Railgun health</li>
+              </ul>
+            </div>
+          </div>
+          <p class="footnote">
+            Anchors store hashes only; payloads remain local. Railgun linkage is recorded and can be anchored when enabled.
+          </p>
+        </section>
+
         <section class="section" id="business">
           <div class="section-header">
             <h2>Business workflows</h2>
@@ -228,77 +262,6 @@
           <p class="footnote">
             Note: invoice tooling is available in the business edition.
           </p>
-        </section>
-
-        <section class="section" id="integrity">
-          <div class="section-header">
-            <h2>Integrity and proof layer</h2>
-            <p>Local-first proofs with optional chain anchors and payment linkage fields.</p>
-          </div>
-          <div class="two-col">
-            <div class="card">
-              <h3>What gets anchored</h3>
-              <ul class="clean-list">
-                <li>Approvals and decisions</li>
-                <li>Contracts, milestones, change orders, evidence</li>
-                <li>Payment requests, intents, receipts</li>
-                <li>Invoices and invoice payments (business)</li>
-                <li>Maintenance completions and backups</li>
-              </ul>
-            </div>
-            <div class="card">
-              <h3>Proof stack</h3>
-              <ul class="clean-list">
-                <li>Canonical JSON hashing (SHA-256)</li>
-                <li>Signed contract events with local identity keys</li>
-                <li>Optional Polygon anchors (hash-only)</li>
-                <li>Railgun linkage fields: acceptance hash, nullifier, commitment</li>
-                <li>Diagnostics surface anchor status and Railgun health</li>
-              </ul>
-            </div>
-          </div>
-          <p class="footnote">
-            Anchors store hashes only; payloads remain local. Railgun relayer settings are configurable.
-          </p>
-        </section>
-
-        <section class="section" id="how">
-          <div class="section-header">
-            <h2>How it works</h2>
-            <p>Ingest updates, let the agents organize, and approve the next steps.</p>
-          </div>
-          <div class="steps">
-            <div class="step">
-              <h3>Collect</h3>
-              <p>Chat, email, and WhatsApp updates are ingested into the system.</p>
-            </div>
-            <div class="step">
-              <h3>Agents organize</h3>
-              <p>Agents route the work into SecondBrain, tasks, budgets, and schedules.</p>
-            </div>
-            <div class="step">
-              <h3>You approve</h3>
-              <p>Review actions in the approval queue before anything changes.</p>
-            </div>
-            <div class="step">
-              <h3>It acts</h3>
-              <p>Only approved actions get scheduled or sent.</p>
-            </div>
-          </div>
-        </section>
-
-        <section class="section" id="integrations">
-          <div class="section-header">
-            <h2>Fits into your existing tools</h2>
-            <p>Use what you already rely on. Add more only if you want to.</p>
-          </div>
-          <div class="badge-row">
-            <span class="badge">Gmail</span>
-            <span class="badge">WhatsApp</span>
-            <span class="badge">Google Calendar</span>
-            <span class="badge">Qwen / OpenAI / Anthropic</span>
-            <span class="badge">Optional chain anchors</span>
-          </div>
         </section>
 
         <section class="section" id="roadmap">

@@ -1,7 +1,7 @@
 {
   "items": [
     {
-      "title": "Alpha 5: agents, SecondBrain, approvals, proof anchors, contracts, and payments.",
+      "title": "Alpha 5: coordination core, signed contract events, hash-only anchors, and Railgun linkage metadata.",
       "date": "2026-02-22",
       "url": "https://mycasapro.com/#alpha5"
     }
