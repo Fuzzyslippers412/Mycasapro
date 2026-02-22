@@ -33,6 +33,7 @@
             <a href="#agents">Agents</a>
             <a href="#systems">Core systems</a>
             <a href="#business">Business workflows</a>
+            <a href="#integrity">Integrity</a>
             <a href="#how">How it works</a>
             <a href="#install">Install</a>
             <a href="#links">Links</a>
@@ -56,7 +57,7 @@
               A local-first system with specialized agents, a SecondBrain vault, and approval-gated actions.
             </p>
             <p class="alpha-note">
-              Alpha 5 focus: agent teams, SecondBrain vault, approvals, live system dashboard, contracts and payments.
+              Alpha 5 focus: agent teams, SecondBrain vault, approvals, proof anchors, contracts and payments.
             </p>
             <div class="hero-actions">
               <a class="btn primary" href="#alpha5">See Alpha 5</a>
@@ -72,7 +73,7 @@
             <ul class="panel-list">
               <li>SecondBrain vault with memory graph</li>
               <li>Agent teams + scheduler templates</li>
-              <li>Approval queue + prompt security</li>
+              <li>Approval queue + proof anchors</li>
               <li>Contracts, invoices, payments (business)</li>
             </ul>
             <div class="panel-actions">
@@ -119,6 +120,10 @@
             <article class="card">
               <h3>Connector marketplace</h3>
               <p>Configure Gmail, WhatsApp, and Google Calendar with user-owned credentials.</p>
+            </article>
+            <article class="card">
+              <h3>Integrity proofs</h3>
+              <p>Hash-only anchors, signed events, and Railgun linkage fields for payment verification.</p>
             </article>
           </div>
         </section>
@@ -222,6 +227,38 @@
           </div>
           <p class="footnote">
             Note: invoice tooling is available in the business edition.
+          </p>
+        </section>
+
+        <section class="section" id="integrity">
+          <div class="section-header">
+            <h2>Integrity and proof layer</h2>
+            <p>Local-first proofs with optional chain anchors and payment linkage fields.</p>
+          </div>
+          <div class="two-col">
+            <div class="card">
+              <h3>What gets anchored</h3>
+              <ul class="clean-list">
+                <li>Approvals and decisions</li>
+                <li>Contracts, milestones, change orders, evidence</li>
+                <li>Payment requests, intents, receipts</li>
+                <li>Invoices and invoice payments (business)</li>
+                <li>Maintenance completions and backups</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h3>Proof stack</h3>
+              <ul class="clean-list">
+                <li>Canonical JSON hashing (SHA-256)</li>
+                <li>Signed contract events with local identity keys</li>
+                <li>Optional Polygon or Sonic anchors (hash-only)</li>
+                <li>Railgun linkage fields: acceptance hash, nullifier, commitment</li>
+                <li>Diagnostics surface anchor status and Railgun health</li>
+              </ul>
+            </div>
+          </div>
+          <p class="footnote">
+            Anchors store hashes only; payloads remain local. Railgun relayer settings are configurable.
           </p>
         </section>
 
