@@ -30,10 +30,10 @@
           <nav class="nav-links">
             <a href="#overview">Overview</a>
             <a href="#alpha5">Alpha 5</a>
-            <a href="#agents">Agents</a>
             <a href="#systems">Core systems</a>
             <a href="#integrity">Integrity and ZK</a>
             <a href="#business">Business workflows</a>
+            <a href="#agents">Agents</a>
             <a href="#roadmap">Roadmap</a>
             <a href="#install">Install</a>
             <a href="#links">Links</a>
@@ -74,7 +74,7 @@
               <li>SecondBrain vault with memory graph</li>
               <li>Agent teams + scheduler templates</li>
               <li>Approval queue + signed contract event ledger</li>
-              <li>Hash-only anchors (Polygon or Sonic)</li>
+              <li>Hash-only anchors (Polygon default, Sonic supported)</li>
               <li>ZK linkage metadata (Railgun nullifier/commitment)</li>
             </ul>
             <div class="panel-actions">
@@ -88,7 +88,7 @@
           <div class="proof-row">
             <p>Runs locally. No signup required.</p>
             <p>Every action is approval-gated.</p>
-            <p>Proofs are hash-only and stay private.</p>
+            <p>Proofs are hash-only; payloads stay private.</p>
           </div>
         </section>
 
@@ -116,17 +116,111 @@
             </article>
             <article class="card">
               <h3>Live system dashboard</h3>
-              <p>Current status for agents, connectors, memory, and scheduled jobs.</p>
-            </article>
-            <article class="card">
-              <h3>Connector marketplace</h3>
-              <p>Configure Gmail, WhatsApp, and Google Calendar with user-owned credentials.</p>
+              <p>Current status for agents, connectors, memory, anchor queue, and scheduled jobs.</p>
             </article>
             <article class="card">
               <h3>Proof layer + Railgun linkage</h3>
               <p>Signed contract events + hash-only anchors, plus payment linkage records (acceptance hash, nullifier, commitment).</p>
             </article>
+            <article class="card">
+              <h3>Business workflows</h3>
+              <p>Relationships, contracts, invoices, and payment approvals built into the core app.</p>
+            </article>
           </div>
+        </section>
+
+        <section class="section" id="systems">
+          <div class="section-header">
+            <h2>Core systems shipping now</h2>
+            <p>The foundational systems in the current build.</p>
+          </div>
+          <div class="card-grid">
+            <article class="card">
+              <h3>SecondBrain memory vault</h3>
+              <p>Stores decisions, notes, documents, and service history.</p>
+            </article>
+            <article class="card">
+              <h3>Unified inbox</h3>
+              <p>Gmail + WhatsApp ingestion with normalization and deduplication.</p>
+            </article>
+            <article class="card">
+              <h3>Agent scheduler</h3>
+              <p>Create recurring jobs and run templates on demand.</p>
+            </article>
+            <article class="card">
+              <h3>Live system dashboard</h3>
+              <p>Agent activity, connector health, and job status in one view.</p>
+            </article>
+            <article class="card">
+              <h3>Memory graph view</h3>
+              <p>Explore SecondBrain connections with filters and search.</p>
+            </article>
+            <article class="card">
+              <h3>Setup wizard</h3>
+              <p>Guided onboarding for budgets, connectors, and notifications.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="integrity">
+          <div class="section-header">
+            <h2>Integrity and ZK linkage</h2>
+            <p>Local-first proofs with optional on-chain anchors and ZK linkage metadata.</p>
+          </div>
+          <div class="two-col">
+            <div class="card">
+              <h3>What is proven</h3>
+              <ul class="clean-list">
+                <li>Approvals and decisions</li>
+                <li>Contracts, milestones, change orders, evidence</li>
+                <li>Payment requests, intents, receipts, linkages</li>
+                <li>Invoices and invoice payments (business)</li>
+                <li>Maintenance completions and backups</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h3>How proofs work</h3>
+              <ul class="clean-list">
+                <li>Canonical JSON hashing (SHA-256)</li>
+                <li>Signed contract events with local identity keys (Ed25519)</li>
+                <li>Hash-only anchors to Polygon (default) or Sonic</li>
+                <li>ZK linkage fields: acceptance hash, nullifier, commitment</li>
+                <li>Payment linkage can be anchored as payment_linkage events</li>
+                <li>Diagnostics show anchor status and Railgun health</li>
+              </ul>
+            </div>
+          </div>
+          <p class="footnote">
+            Anchors store hashes only; payloads remain local. Railgun linkage metadata is recorded and configurable in Settings.
+          </p>
+        </section>
+
+        <section class="section" id="business">
+          <div class="section-header">
+            <h2>Business workflows</h2>
+            <p>Structured agreements, payments, and proofs for professional operations.</p>
+          </div>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Relationships</h3>
+              <p>Manage counterparties, roles, and permissions for shared work.</p>
+            </article>
+            <article class="card">
+              <h3>Contracts + milestones</h3>
+              <p>Define scope, acceptance criteria, and evidence for work delivery.</p>
+            </article>
+            <article class="card">
+              <h3>Invoices (business edition)</h3>
+              <p>Create invoices, line items, and payment status tracking.</p>
+            </article>
+            <article class="card">
+              <h3>Payments + receipts</h3>
+              <p>Approval-gated payment requests, receipts, and optional chain anchors.</p>
+            </article>
+          </div>
+          <p class="footnote">
+            Note: invoice tooling is available in the business edition.
+          </p>
         </section>
 
         <section class="section" id="agents">
@@ -168,100 +262,6 @@
               <p>Creates backups and restores data when needed.</p>
             </article>
           </div>
-        </section>
-
-        <section class="section" id="systems">
-          <div class="section-header">
-            <h2>Core systems shipping now</h2>
-            <p>The foundational systems in the current build.</p>
-          </div>
-          <div class="card-grid">
-            <article class="card">
-              <h3>SecondBrain memory vault</h3>
-              <p>Stores decisions, notes, documents, and service history.</p>
-            </article>
-            <article class="card">
-              <h3>Unified inbox</h3>
-              <p>Gmail + WhatsApp ingestion with normalization and deduplication.</p>
-            </article>
-            <article class="card">
-              <h3>Agent scheduler</h3>
-              <p>Create recurring jobs and run templates on demand.</p>
-            </article>
-            <article class="card">
-              <h3>Live system dashboard</h3>
-              <p>Agent activity, connector health, and job status in one view.</p>
-            </article>
-            <article class="card">
-              <h3>Memory graph view</h3>
-              <p>Explore SecondBrain connections with filters and search.</p>
-            </article>
-            <article class="card">
-              <h3>Setup wizard</h3>
-              <p>Guided onboarding for budgets, connectors, and notifications.</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="section" id="integrity">
-          <div class="section-header">
-            <h2>Integrity and ZK linkage</h2>
-            <p>Proofs are local-first with optional on-chain anchors and ZK linkage metadata.</p>
-          </div>
-          <div class="two-col">
-            <div class="card">
-              <h3>What is proven</h3>
-              <ul class="clean-list">
-                <li>Approvals and decisions</li>
-                <li>Contracts, milestones, change orders, evidence</li>
-                <li>Payment requests, intents, receipts</li>
-                <li>Invoices and invoice payments (business)</li>
-                <li>Maintenance completions and backups</li>
-              </ul>
-            </div>
-            <div class="card">
-              <h3>How proofs work</h3>
-              <ul class="clean-list">
-                <li>Canonical JSON hashing (SHA-256)</li>
-                <li>Signed contract events with local identity keys</li>
-                <li>Hash-only anchors to Polygon or Sonic (optional)</li>
-                <li>ZK linkage fields: acceptance hash, nullifier, commitment</li>
-                <li>Payment linkage can be anchored as payment_linkage events</li>
-                <li>Diagnostics show anchor status and Railgun health</li>
-              </ul>
-            </div>
-          </div>
-          <p class="footnote">
-            Anchors store hashes only; payloads remain local. Railgun linkage is recorded and can be anchored when enabled.
-          </p>
-        </section>
-
-        <section class="section" id="business">
-          <div class="section-header">
-            <h2>Business workflows</h2>
-            <p>Structured agreements, payments, and proofs for professional operations.</p>
-          </div>
-          <div class="card-grid">
-            <article class="card">
-              <h3>Relationships</h3>
-              <p>Manage counterparties, roles, and permissions for shared work.</p>
-            </article>
-            <article class="card">
-              <h3>Contracts + milestones</h3>
-              <p>Define scope, acceptance criteria, and evidence for work delivery.</p>
-            </article>
-            <article class="card">
-              <h3>Invoices (business edition)</h3>
-              <p>Create invoices, line items, and payment status tracking.</p>
-            </article>
-            <article class="card">
-              <h3>Payments + receipts</h3>
-              <p>Approval-gated payment requests, receipts, and optional chain anchors.</p>
-            </article>
-          </div>
-          <p class="footnote">
-            Note: invoice tooling is available in the business edition.
-          </p>
         </section>
 
         <section class="section" id="roadmap">
