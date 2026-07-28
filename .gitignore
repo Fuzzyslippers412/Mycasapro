@@ -1,0 +1,24 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+/go.work.sum
+
+# Next.js
+/web/node_modules/
+/web/.next/
+/web/.vercel/
+/web/.env.local
+*.tsbuildinfo
+
+# Runtime data and secrets
+/app/.env
+/.env
+/var/
+/.local-run/
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MyCasaPro keeps home repairs, contractor estimates, visits, and payments in one private record.">
+  <title>MyCasaPro — Home repair, clearly documented</title>
+  <style>
+    :root { --paper:#f5f2eb; --ink:#24251f; --muted:#68675e; --line:#c9c3b7; --green:#365747; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--ink); background:var(--paper); font-family:Georgia,"Times New Roman",serif; }
+    header, main, footer { width:min(1180px,calc(100% - 3rem)); margin:auto; }
+    header { min-height:7rem; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); }
+    .brand { font-size:1.35rem; font-weight:700; letter-spacing:-.04em; }
+    .brand span { margin-left:.15rem; color:var(--green); font:700 .58rem Arial,sans-serif; letter-spacing:.14em; text-transform:uppercase; }
+    header small, footer { color:var(--muted); font:700 .65rem Arial,sans-serif; letter-spacing:.12em; text-transform:uppercase; }
+    main { min-height:calc(100vh - 13rem); display:grid; grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr); align-items:center; gap:8vw; padding:5rem 0; }
+    .kicker { margin:0 0 1rem; color:var(--green); font:700 .68rem Arial,sans-serif; letter-spacing:.13em; text-transform:uppercase; }
+    h1 { max-width:9ch; margin:0; font-size:clamp(4rem,8vw,8rem); font-weight:400; line-height:.86; letter-spacing:-.06em; }
+    .lead { max-width:35rem; margin:2rem 0 0; color:var(--muted); font:400 1rem/1.75 Arial,sans-serif; }
+    aside { padding-left:2rem; border-left:1px solid var(--line); }
+    aside p { margin:0; color:var(--muted); font:400 .9rem/1.7 Arial,sans-serif; }
+    aside a { display:inline-block; margin-top:1.5rem; padding:.85rem 1rem; color:white; background:var(--green); font:700 .8rem Arial,sans-serif; text-decoration:none; }
+    footer { min-height:6rem; display:flex; align-items:center; border-top:1px solid var(--line); }
+    @media (max-width:760px) { header small{display:none} main{grid-template-columns:1fr;gap:3rem;padding:4rem 0} aside{padding:2rem 0 0;border-left:0;border-top:1px solid var(--line)} h1{font-size:4.2rem} }
+  </style>
+</head>
+<body>
+  <header><div class="brand">MyCasa<span>Pro</span></div><small>Home repair, clearly documented</small></header>
+  <main>
+    <section><p class="kicker">A private home register</p><h1>Care for the place that is yours.</h1><p class="lead">MyCasaPro keeps repairs, contractor estimates, visits, documents, and payment history with the home—not scattered across messages and folders.</p></section>
+    <aside><p>The homeowner and contractor application is under active development. The source, architecture, and current implementation are public on GitHub.</p><a href="https://github.com/Fuzzyslippers412/Mycasapro">View the project</a></aside>
+  </main>
+  <footer>Private by default. Shared only when the work requires it.</footer>
+</body>
+</html>

@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: mycasapro-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mycasapro
+      POSTGRES_USER: mycasapro
+      POSTGRES_PASSWORD: mycasapro_local
+    ports:
+      - "5432:5432"
+    volumes:
+      - mycasapro-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  mycasapro-postgres-data:
