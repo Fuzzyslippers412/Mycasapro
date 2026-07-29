@@ -10,31 +10,56 @@ import (
 )
 
 func (s *MemoryStore) CreateWorkRequestInvite(_ context.Context, input CreateWorkRequestInviteInput) (domain.WorkRequestInvite, error) {
-	homeownerID := strings.TrimSpace(input.HomeownerUserID)
-	workRequestID := strings.TrimSpace(input.WorkRequestID)
-	tokenHash := strings.TrimSpace(input.TokenHash)
-	if homeownerID == "" || workRequestID == "" || len(tokenHash) != 64 || !input.ExpiresAt.After(time.Now().UTC()) {
+	input, ok := normalizeWorkRequestInviteInput(input)
+	createdAt := time.Now().UTC()
+	if !ok || !input.ExpiresAt.After(createdAt) {
 		return domain.WorkRequestInvite{}, ErrInvalidInput
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	request, ok := s.workRequestByIDLocked(workRequestID)
-	if !ok || request.RequestedByUserID != homeownerID {
+	request, found := s.workRequestByIDLocked(input.WorkRequestID)
+	if !found || request.RequestedByUserID != input.HomeownerUserID {
 		return domain.WorkRequestInvite{}, ErrWorkRequestNotFound
 	}
 	for _, existing := range s.invites {
-		if existing.TokenHash == tokenHash {
+		if existing.TokenHash == input.TokenHash {
 			return domain.WorkRequestInvite{}, ErrInvalidInput
 		}
 	}
+	if input.RecipientEmail != "" {
+		recentEmailInvites := 0
+		windowStart := createdAt.Add(-time.Hour)
+		for _, existing := range s.invites {
+			if existing.Invite.HomeownerUserID == input.HomeownerUserID && existing.Invite.RecipientEmail != "" && !existing.Invite.CreatedAt.Before(windowStart) {
+				recentEmailInvites++
+			}
+		}
+		if recentEmailInvites >= maxEmailInvitesPerHour {
+			return domain.WorkRequestInvite{}, ErrInviteRateLimited
+		}
+	}
+	deliveryStatus := domain.EmailDeliveryLinkCreated
+	if input.RecipientEmail != "" {
+		deliveryStatus = domain.EmailDeliveryQueued
+	}
 	invite := domain.WorkRequestInvite{
 		ID:              newID("inv"),
-		WorkRequestID:   workRequestID,
-		HomeownerUserID: homeownerID,
+		WorkRequestID:   input.WorkRequestID,
+		HomeownerUserID: input.HomeownerUserID,
+		RecipientName:   input.RecipientName,
+		RecipientEmail:  input.RecipientEmail,
+		DeliveryStatus:  deliveryStatus,
 		ExpiresAt:       input.ExpiresAt.UTC(),
-		CreatedAt:       time.Now().UTC(),
+		CreatedAt:       createdAt,
 	}
-	s.invites = append(s.invites, memoryWorkRequestInvite{Invite: invite, TokenHash: tokenHash})
+	s.invites = append(s.invites, memoryWorkRequestInvite{Invite: invite, TokenHash: input.TokenHash})
+	if input.RecipientEmail != "" {
+		s.emailOutbox = append(s.emailOutbox, domain.EmailNotification{
+			ID: newID("mail"), Kind: "work_request_invite", AggregateID: invite.ID,
+			RecipientEmail: input.RecipientEmail, Subject: input.EmailSubject, TextBody: input.EmailTextBody, HTMLBody: input.EmailHTMLBody,
+			DeliveryStatus: domain.EmailDeliveryQueued, NextAttemptAt: createdAt, CreatedAt: createdAt,
+		})
+	}
 	return invite, nil
 }
 
@@ -67,6 +92,19 @@ func (s *MemoryStore) RevokeWorkRequestInvite(_ context.Context, homeownerUserID
 		if invite.ID == strings.TrimSpace(inviteID) && invite.WorkRequestID == request.ID {
 			revokedAt := now.UTC()
 			invite.RevokedAt = &revokedAt
+			if invite.DeliveryStatus == domain.EmailDeliveryQueued || invite.DeliveryStatus == domain.EmailDeliveryProcessing {
+				invite.DeliveryStatus = domain.EmailDeliveryCanceled
+				for outboxIndex := range s.emailOutbox {
+					notification := &s.emailOutbox[outboxIndex]
+					if notification.AggregateID == invite.ID && (notification.DeliveryStatus == domain.EmailDeliveryQueued || notification.DeliveryStatus == domain.EmailDeliveryProcessing) {
+						notification.DeliveryStatus = domain.EmailDeliveryCanceled
+						notification.LockedUntil = nil
+						notification.LastError = "invitation revoked before delivery"
+						notification.TextBody = ""
+						notification.HTMLBody = ""
+					}
+				}
+			}
 			return *invite, nil
 		}
 	}

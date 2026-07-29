@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -43,6 +44,8 @@ func NewServerWithFileStore(cfg config.Config, repo store.Store, files filestore
 		Addr:              cfg.Addr,
 		Handler:           api.withMiddleware(api.mux),
 		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 }
 
@@ -90,30 +93,41 @@ func (s *Server) routes() {
 
 func (s *Server) handleRoot(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"name":          s.cfg.AppName,
-		"product":       "home-maintenance",
-		"status":        "ok",
-		"web_url":       s.cfg.WebURL,
-		"store_backend": s.cfg.StoreBackend,
+		"name":           s.cfg.AppName,
+		"product":        "home-maintenance",
+		"status":         "ok",
+		"web_url":        s.cfg.WebURL,
+		"store_backend":  s.cfg.StoreBackend,
+		"email_delivery": s.cfg.EmailDeliveryEnabled(),
 	})
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	healthCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := s.store.Ping(healthCtx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"ok": false, "service": "mycasapro-app", "env": s.cfg.Env, "store_backend": s.cfg.StoreBackend,
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":            true,
-		"service":       "mycasapro-app",
-		"env":           s.cfg.Env,
-		"database":      strings.TrimSpace(s.cfg.DatabaseURL) != "",
-		"store_backend": s.cfg.StoreBackend,
-		"time":          time.Now().UTC().Format(time.RFC3339),
+		"ok":             true,
+		"service":        "mycasapro-app",
+		"env":            s.cfg.Env,
+		"database":       strings.TrimSpace(s.cfg.DatabaseURL) != "",
+		"store_backend":  s.cfg.StoreBackend,
+		"email_delivery": s.cfg.EmailDeliveryEnabled(),
+		"time":           time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
 func (s *Server) handleMeta(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"name":          s.cfg.AppName,
-		"product":       "home-maintenance",
-		"store_backend": s.cfg.StoreBackend,
+		"name":           s.cfg.AppName,
+		"product":        "home-maintenance",
+		"store_backend":  s.cfg.StoreBackend,
+		"email_delivery": s.cfg.EmailDeliveryEnabled(),
 		"roles": []string{
 			"homeowner",
 			"contractor",

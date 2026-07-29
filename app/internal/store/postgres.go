@@ -18,6 +18,10 @@ func NewPostgresStore(db *sql.DB) *PostgresStore {
 	return &PostgresStore{db: db}
 }
 
+func (s *PostgresStore) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
 func (s *PostgresStore) CreateProperty(ctx context.Context, input CreatePropertyInput) (domain.Property, error) {
 	if strings.TrimSpace(input.HomeownerUserID) == "" ||
 		strings.TrimSpace(input.Label) == "" ||

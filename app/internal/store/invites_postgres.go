@@ -11,23 +11,48 @@ import (
 )
 
 func (s *PostgresStore) CreateWorkRequestInvite(ctx context.Context, input CreateWorkRequestInviteInput) (domain.WorkRequestInvite, error) {
-	homeownerID := strings.TrimSpace(input.HomeownerUserID)
-	workRequestID := strings.TrimSpace(input.WorkRequestID)
-	tokenHash := strings.TrimSpace(input.TokenHash)
+	input, ok := normalizeWorkRequestInviteInput(input)
 	createdAt := time.Now().UTC()
-	if homeownerID == "" || workRequestID == "" || len(tokenHash) != 64 || !input.ExpiresAt.After(createdAt) {
+	if !ok || !input.ExpiresAt.After(createdAt) {
 		return domain.WorkRequestInvite{}, ErrInvalidInput
 	}
+	deliveryStatus := domain.EmailDeliveryLinkCreated
+	if input.RecipientEmail != "" {
+		deliveryStatus = domain.EmailDeliveryQueued
+	}
 	invite := domain.WorkRequestInvite{
-		ID: newID("inv"), WorkRequestID: workRequestID, HomeownerUserID: homeownerID,
+		ID: newID("inv"), WorkRequestID: input.WorkRequestID, HomeownerUserID: input.HomeownerUserID,
+		RecipientName: input.RecipientName, RecipientEmail: input.RecipientEmail, DeliveryStatus: deliveryStatus,
 		ExpiresAt: input.ExpiresAt.UTC(), CreatedAt: createdAt,
 	}
-	result, err := s.db.ExecContext(ctx, `
-		insert into work_request_invites (id, work_request_id, homeowner_user_id, token_hash, expires_at, created_at)
-		select $1, wr.id, wr.requested_by_user_id, $4, $5, $6
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return domain.WorkRequestInvite{}, err
+	}
+	defer rollback(tx)
+	if input.RecipientEmail != "" {
+		if _, err := tx.ExecContext(ctx, `select pg_advisory_xact_lock(hashtextextended($1, 17))`, input.HomeownerUserID); err != nil {
+			return domain.WorkRequestInvite{}, err
+		}
+		var recentEmailInvites int
+		if err := tx.QueryRowContext(ctx, `
+			select count(*) from work_request_invites
+			where homeowner_user_id=$1 and recipient_email <> '' and created_at >= $2
+		`, input.HomeownerUserID, createdAt.Add(-time.Hour)).Scan(&recentEmailInvites); err != nil {
+			return domain.WorkRequestInvite{}, err
+		}
+		if recentEmailInvites >= maxEmailInvitesPerHour {
+			return domain.WorkRequestInvite{}, ErrInviteRateLimited
+		}
+	}
+	result, err := tx.ExecContext(ctx, `
+		insert into work_request_invites
+			(id, work_request_id, homeowner_user_id, token_hash, recipient_name, recipient_email, delivery_status, expires_at, created_at)
+		select $1, wr.id, wr.requested_by_user_id, $4, $5, $6, $7, $8, $9
 		from work_requests wr
 		where wr.id = $2 and wr.requested_by_user_id = $3
-	`, invite.ID, workRequestID, homeownerID, tokenHash, invite.ExpiresAt, invite.CreatedAt)
+	`, invite.ID, input.WorkRequestID, input.HomeownerUserID, input.TokenHash, invite.RecipientName, invite.RecipientEmail,
+		string(invite.DeliveryStatus), invite.ExpiresAt, invite.CreatedAt)
 	if err != nil {
 		return domain.WorkRequestInvite{}, err
 	}
@@ -37,6 +62,18 @@ func (s *PostgresStore) CreateWorkRequestInvite(ctx context.Context, input Creat
 	}
 	if rows != 1 {
 		return domain.WorkRequestInvite{}, ErrWorkRequestNotFound
+	}
+	if input.RecipientEmail != "" {
+		if _, err := tx.ExecContext(ctx, `
+			insert into email_outbox
+				(id, kind, aggregate_id, recipient_email, subject, text_body, html_body, status, attempts, next_attempt_at, created_at)
+			values ($1,'work_request_invite',$2,$3,$4,$5,$6,'queued',0,$7,$7)
+		`, newID("mail"), invite.ID, input.RecipientEmail, input.EmailSubject, input.EmailTextBody, input.EmailHTMLBody, createdAt); err != nil {
+			return domain.WorkRequestInvite{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.WorkRequestInvite{}, err
 	}
 	return invite, nil
 }
@@ -51,7 +88,7 @@ func (s *PostgresStore) ListWorkRequestInvites(ctx context.Context, homeownerUse
 		return nil, ErrWorkRequestNotFound
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		select id, work_request_id, homeowner_user_id, expires_at, revoked_at, created_at
+		select id, work_request_id, homeowner_user_id, recipient_name, recipient_email, delivery_status, expires_at, revoked_at, created_at
 		from work_request_invites where work_request_id=$1 order by created_at desc
 	`, strings.TrimSpace(workRequestID))
 	if err != nil {
@@ -70,17 +107,37 @@ func (s *PostgresStore) ListWorkRequestInvites(ctx context.Context, homeownerUse
 }
 
 func (s *PostgresStore) RevokeWorkRequestInvite(ctx context.Context, homeownerUserID string, workRequestID string, inviteID string, now time.Time) (domain.WorkRequestInvite, error) {
-	row := s.db.QueryRowContext(ctx, `
-		update work_request_invites i set revoked_at=$4
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return domain.WorkRequestInvite{}, err
+	}
+	defer rollback(tx)
+	row := tx.QueryRowContext(ctx, `
+		update work_request_invites i
+		set revoked_at=$4,
+		    delivery_status=case when i.delivery_status in ('queued','processing') then 'canceled' else i.delivery_status end
 		from work_requests wr
 		where i.id=$1 and i.work_request_id=$2 and wr.id=i.work_request_id and wr.requested_by_user_id=$3
-		returning i.id, i.work_request_id, i.homeowner_user_id, i.expires_at, i.revoked_at, i.created_at
+		returning i.id, i.work_request_id, i.homeowner_user_id, i.recipient_name, i.recipient_email, i.delivery_status, i.expires_at, i.revoked_at, i.created_at
 	`, strings.TrimSpace(inviteID), strings.TrimSpace(workRequestID), strings.TrimSpace(homeownerUserID), now.UTC())
 	invite, err := scanWorkRequestInvite(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.WorkRequestInvite{}, ErrInviteNotFound
 	}
-	return invite, err
+	if err != nil {
+		return domain.WorkRequestInvite{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		update email_outbox
+		set status='canceled', locked_until=null, last_error='invitation revoked before delivery', text_body='', html_body=''
+		where kind='work_request_invite' and aggregate_id=$1 and status in ('queued','processing')
+	`, invite.ID); err != nil {
+		return domain.WorkRequestInvite{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.WorkRequestInvite{}, err
+	}
+	return invite, nil
 }
 
 func (s *PostgresStore) GetInviteTask(ctx context.Context, tokenHash string, now time.Time) (domain.InviteTask, error) {
@@ -234,9 +291,10 @@ func getInviteByTokenHashUsing(ctx context.Context, db sqlQuerier, tokenHash str
 	var revokedAt sql.NullTime
 	var invite domain.WorkRequestInvite
 	err := db.QueryRowContext(ctx, `
-		select id, work_request_id, homeowner_user_id, expires_at, revoked_at, created_at
+		select id, work_request_id, homeowner_user_id, recipient_name, recipient_email, delivery_status, expires_at, revoked_at, created_at
 		from work_request_invites where token_hash=$1
-	`, tokenHash).Scan(&invite.ID, &invite.WorkRequestID, &invite.HomeownerUserID, &invite.ExpiresAt, &revokedAt, &invite.CreatedAt)
+	`, tokenHash).Scan(&invite.ID, &invite.WorkRequestID, &invite.HomeownerUserID, &invite.RecipientName, &invite.RecipientEmail,
+		&invite.DeliveryStatus, &invite.ExpiresAt, &revokedAt, &invite.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.WorkRequestInvite{}, ErrInviteNotFound
 	}
@@ -256,7 +314,8 @@ func getInviteByTokenHashUsing(ctx context.Context, db sqlQuerier, tokenHash str
 func scanWorkRequestInvite(scanner interface{ Scan(...any) error }) (domain.WorkRequestInvite, error) {
 	var invite domain.WorkRequestInvite
 	var revokedAt sql.NullTime
-	err := scanner.Scan(&invite.ID, &invite.WorkRequestID, &invite.HomeownerUserID, &invite.ExpiresAt, &revokedAt, &invite.CreatedAt)
+	err := scanner.Scan(&invite.ID, &invite.WorkRequestID, &invite.HomeownerUserID, &invite.RecipientName, &invite.RecipientEmail,
+		&invite.DeliveryStatus, &invite.ExpiresAt, &revokedAt, &invite.CreatedAt)
 	if revokedAt.Valid {
 		invite.RevokedAt = &revokedAt.Time
 	}

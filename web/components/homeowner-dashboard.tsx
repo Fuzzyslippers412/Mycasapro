@@ -41,6 +41,7 @@ export function HomeownerDashboardView() {
   const [invites, setInvites] = useState<WorkRequestInvite[]>([]);
   const [loadingInvites, setLoadingInvites] = useState(false);
   const [creatingInvite, setCreatingInvite] = useState(false);
+  const [emailDeliveryAvailable, setEmailDeliveryAvailable] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [estimateRequest, setEstimateRequest] = useState<WorkRequest | null>(null);
   const [guestEstimates, setGuestEstimates] = useState<GuestEstimate[]>([]);
@@ -64,13 +65,47 @@ export function HomeownerDashboardView() {
 
   useEffect(() => {
     void loadDashboard();
+    void loadCapabilities();
   }, [user.id]);
+
+  async function loadCapabilities() {
+    try {
+      const response = await apiFetch("/api/v1/meta");
+      if (!response.ok) return;
+      const payload = (await response.json()) as { email_delivery?: boolean };
+      setEmailDeliveryAvailable(Boolean(payload.email_delivery));
+    } catch {
+      setEmailDeliveryAvailable(false);
+    }
+  }
 
   const currentProperty = dashboard.properties[0];
   const propertyByID = useMemo(
     () => new Map(dashboard.properties.map((property) => [property.id, property])),
     [dashboard.properties],
   );
+  const invitationDeliveryPending = invites.some((invite) => invite.delivery_status === "queued" || invite.delivery_status === "processing");
+
+  useEffect(() => {
+    if (!sharingRequest || !invitationDeliveryPending) return;
+    const requestID = sharingRequest.id;
+    const interval = window.setInterval(async () => {
+      try {
+        const response = await apiFetch(`/api/v1/homeowners/${user.id}/work-requests/${requestID}/invites`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as { invites: WorkRequestInvite[] };
+        setInvites(payload.invites);
+        setShareResult((current) => {
+          if (!current) return current;
+          const refreshed = payload.invites.find((invite) => invite.id === current.invite.id);
+          return refreshed ? { ...current, invite: refreshed } : current;
+        });
+      } catch {
+        // A temporary refresh failure must not interrupt the invitation flow.
+      }
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [invitationDeliveryPending, sharingRequest, user.id]);
 
   async function handleCreateProperty(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -182,22 +217,39 @@ export function HomeownerDashboardView() {
     }
   }
 
-  async function createShareLink() {
-    if (!sharingRequest) return;
+  async function createInvite(recipient?: { name: string; email: string }) {
+    if (!sharingRequest) return false;
     setCreatingInvite(true);
     setCopiedInvite(false);
     setError(null);
     try {
-      const response = await apiFetch(`/api/v1/homeowners/${user.id}/work-requests/${sharingRequest.id}/invites`, { method: "POST" });
+      const response = await apiFetch(`/api/v1/homeowners/${user.id}/work-requests/${sharingRequest.id}/invites`, {
+        method: "POST",
+        headers: recipient ? { "Content-Type": "application/json" } : undefined,
+        body: recipient ? JSON.stringify({ recipient_name: recipient.name, recipient_email: recipient.email }) : undefined,
+      });
       if (!response.ok) throw new Error(await apiError(response, "Unable to create a share link"));
       const result = (await response.json()) as { invite: WorkRequestInvite; share_url: string };
       setShareResult(result);
       setInvites((current) => [result.invite, ...current]);
+      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create a share link");
+      setError(err instanceof Error ? err.message : "Unable to create the invitation");
+      return false;
     } finally {
       setCreatingInvite(false);
     }
+  }
+
+  async function sendInviteEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const created = await createInvite({
+      name: String(formData.get("recipient_name") || ""),
+      email: String(formData.get("recipient_email") || ""),
+    });
+    if (created) form.reset();
   }
 
   async function copyShareLink() {
@@ -397,21 +449,34 @@ export function HomeownerDashboardView() {
               <button className="icon-button" type="button" onClick={() => setSharingRequest(null)} aria-label="Close">×</button>
             </div>
             <div className="share-modal-body">
+              {error ? <div className="form-error" role="alert">{error}</div> : null}
               <div className="share-scope-note">
                 <strong>The contractor does not need a MyCasaPro account.</strong>
                 <p>They will see the issue, room, timing, photos, and approximate location—not your street address or account details. The link expires after seven days.</p>
               </div>
               {shareResult ? (
                 <div className="share-link-panel">
-                  <label className="field full-field"><span>New private estimate link</span><input value={shareResult.share_url} readOnly onFocus={(event) => event.currentTarget.select()} /></label>
+                  <label className="field full-field"><span>{shareResult.invite.recipient_email ? `${deliveryLabel(shareResult.invite.delivery_status)} · ${shareResult.invite.recipient_email}` : "New private estimate link"}</span><input value={shareResult.share_url} readOnly onFocus={(event) => event.currentTarget.select()} /></label>
                   <div className="share-link-actions">
                     <button className="primary-button" type="button" onClick={() => void copyShareLink()}>{copiedInvite ? "Copied" : "Copy link"}</button>
+                    <a className="secondary-button" href={shareViaEmailURL(shareResult.share_url)}>Email link</a>
                     <a className="secondary-button" href={shareResult.share_url} target="_blank" rel="noreferrer">Preview</a>
                   </div>
                 </div>
+              ) : null}
+              {emailDeliveryAvailable ? (
+                <form className="invite-delivery-form" onSubmit={(event) => void sendInviteEmail(event)}>
+                  <div className="invite-delivery-heading"><h3>Email the contractor</h3><p>We will send the private link and record its delivery status.</p></div>
+                  <div className="form-row two-columns">
+                    <label className="field"><span>Contractor name <em>Optional</em></span><input name="recipient_name" autoComplete="name" maxLength={120} /></label>
+                    <label className="field"><span>Email</span><input name="recipient_email" type="email" autoComplete="email" required /></label>
+                  </div>
+                  <button className="primary-button" type="submit" disabled={creatingInvite}>{creatingInvite ? "Preparing invitation..." : "Send private invitation"}</button>
+                </form>
               ) : (
-                <button className="primary-button" type="button" disabled={creatingInvite} onClick={() => void createShareLink()}>{creatingInvite ? "Creating secure link..." : "Create private link"}</button>
+                <div className="invite-delivery-unavailable"><strong>Email delivery is not configured here.</strong><p>Create a private link and send it through your usual email or messaging app.</p></div>
               )}
+              <div className="share-link-only"><span>Or share it yourself</span><button className="secondary-button" type="button" disabled={creatingInvite} onClick={() => void createInvite()}>{creatingInvite ? "Creating..." : "Create private link"}</button></div>
               <section className="invite-register" aria-labelledby="invite-register-title">
                 <div className="invite-register-heading"><h3 id="invite-register-title">Invitation history</h3><span>{invites.length}</span></div>
                 {loadingInvites ? <p className="muted-copy">Loading invitation history...</p> : null}
@@ -420,7 +485,7 @@ export function HomeownerDashboardView() {
                   const inactive = Boolean(invite.revoked_at) || new Date(invite.expires_at).getTime() <= Date.now();
                   return (
                     <div className="invite-register-row" key={invite.id}>
-                      <div><strong>{inactive ? (invite.revoked_at ? "Revoked" : "Expired") : "Active link"}</strong><small>Created {formatShortDate(invite.created_at)} · expires {formatDateTime(invite.expires_at)}</small></div>
+                      <div><strong>{invite.recipient_name || invite.recipient_email || (inactive ? (invite.revoked_at ? "Revoked link" : "Expired link") : "Private link")}</strong><small>{invite.recipient_email ? `${deliveryLabel(invite.delivery_status)} · ` : ""}Created {formatShortDate(invite.created_at)} · expires {formatDateTime(invite.expires_at)}</small></div>
                       {!inactive ? <button className="text-button danger-text" type="button" onClick={() => void revokeInvite(invite.id)}>Revoke</button> : null}
                     </div>
                   );
@@ -481,6 +546,17 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`status-badge status-${status}`}>{status.replaceAll("_", " ")}</span>;
 }
 
+function deliveryLabel(status: WorkRequestInvite["delivery_status"]) {
+  switch (status) {
+    case "queued": return "Email queued";
+    case "processing": return "Sending email";
+    case "sent": return "Email sent";
+    case "failed": return "Email delivery failed";
+    case "canceled": return "Email canceled";
+    default: return "Private link";
+  }
+}
+
 function CompactEmpty({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
   return <div className="compact-empty"><strong>{title}</strong><p>{body}</p>{action}</div>;
 }
@@ -503,4 +579,10 @@ function formatDateTime(value: string) {
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value / 100);
+}
+
+function shareViaEmailURL(shareURL: string) {
+  const subject = encodeURIComponent("Repair request for estimate");
+  const body = encodeURIComponent(`I would like you to review this repair request and provide an estimate. The private link expires in seven days.\n\n${shareURL}`);
+  return `mailto:?subject=${subject}&body=${body}`;
 }

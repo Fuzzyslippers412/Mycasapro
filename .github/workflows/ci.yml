@@ -19,6 +19,8 @@ jobs:
           cache-dependency-path: app/go.sum
       - run: go test ./...
         working-directory: app
+      - run: go vet ./...
+        working-directory: app
       - run: go build -o ../bin/mycasapro-server ./cmd/server
         working-directory: app
 
@@ -39,6 +41,23 @@ jobs:
           cmp infra/docker-compose.local.yml cli/internal/assets/compose.yaml
           MYCASAPRO_DB_PASSWORD=ci-test-password-0123456789abcdef docker compose -f infra/docker-compose.local.yml config >/dev/null
           docker compose -f infra/docker-compose.local-build.yml config >/dev/null
+      - name: Validate production deployment definition
+        env:
+          MYCASAPRO_DOMAIN: repairs.example.com
+          MYCASAPRO_TLS_EMAIL: ops@example.com
+          MYCASAPRO_DB_PASSWORD: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          MYCASAPRO_MAIL_FROM_EMAIL: repairs@example.com
+          MYCASAPRO_SMTP_HOST: smtp.example.com
+          MYCASAPRO_SMTP_USERNAME: ci-user
+          MYCASAPRO_SMTP_PASSWORD: ci-secret
+        run: |
+          sh -n infra/production/deploy.sh infra/production/backup.sh
+          docker compose -f infra/production/compose.yml config --quiet
+          docker run --rm \
+            -e MYCASAPRO_DOMAIN="$MYCASAPRO_DOMAIN" \
+            -e MYCASAPRO_TLS_EMAIL="$MYCASAPRO_TLS_EMAIL" \
+            -v "$PWD/infra/production/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile
 
   web:
     runs-on: ubuntu-latest

@@ -14,11 +14,15 @@ import (
 	"github.com/Fuzzyslippers412/Mycasapro/app/internal/database"
 	"github.com/Fuzzyslippers412/Mycasapro/app/internal/filestore"
 	"github.com/Fuzzyslippers412/Mycasapro/app/internal/httpapi"
+	"github.com/Fuzzyslippers412/Mycasapro/app/internal/notification"
 	"github.com/Fuzzyslippers412/Mycasapro/app/internal/store"
 )
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatal(err)
+	}
 	ctx := context.Background()
 
 	appStore, cleanup, err := buildStore(ctx, cfg)
@@ -34,6 +38,11 @@ func main() {
 		log.Fatal(err)
 	}
 	server := httpapi.NewServerWithFileStore(cfg, appStore, fileStore)
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	defer stopWorker()
+	if cfg.EmailDeliveryEnabled() {
+		go notification.NewWorker(appStore, notification.NewSMTPSender(cfg)).Run(workerCtx)
+	}
 
 	log.Printf("mycasapro app listening on %s (%s, store=%s)", cfg.Addr, cfg.Env, cfg.StoreBackend)
 
@@ -46,6 +55,7 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
+	stopWorker()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

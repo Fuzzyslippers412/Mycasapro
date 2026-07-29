@@ -68,12 +68,43 @@ type WorkRequest struct {
 }
 
 type WorkRequestInvite struct {
-	ID              string     `json:"id"`
-	WorkRequestID   string     `json:"work_request_id"`
-	HomeownerUserID string     `json:"homeowner_user_id"`
-	ExpiresAt       time.Time  `json:"expires_at"`
-	RevokedAt       *time.Time `json:"revoked_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID              string              `json:"id"`
+	WorkRequestID   string              `json:"work_request_id"`
+	HomeownerUserID string              `json:"homeowner_user_id"`
+	RecipientName   string              `json:"recipient_name,omitempty"`
+	RecipientEmail  string              `json:"recipient_email,omitempty"`
+	DeliveryStatus  EmailDeliveryStatus `json:"delivery_status"`
+	ExpiresAt       time.Time           `json:"expires_at"`
+	RevokedAt       *time.Time          `json:"revoked_at,omitempty"`
+	CreatedAt       time.Time           `json:"created_at"`
+}
+
+type EmailDeliveryStatus string
+
+const (
+	EmailDeliveryLinkCreated EmailDeliveryStatus = "link_created"
+	EmailDeliveryQueued      EmailDeliveryStatus = "queued"
+	EmailDeliveryProcessing  EmailDeliveryStatus = "processing"
+	EmailDeliverySent        EmailDeliveryStatus = "sent"
+	EmailDeliveryFailed      EmailDeliveryStatus = "failed"
+	EmailDeliveryCanceled    EmailDeliveryStatus = "canceled"
+)
+
+type EmailNotification struct {
+	ID             string              `json:"id"`
+	Kind           string              `json:"kind"`
+	AggregateID    string              `json:"aggregate_id"`
+	RecipientEmail string              `json:"recipient_email"`
+	Subject        string              `json:"subject"`
+	TextBody       string              `json:"-"`
+	HTMLBody       string              `json:"-"`
+	DeliveryStatus EmailDeliveryStatus `json:"status"`
+	Attempts       int                 `json:"attempts"`
+	NextAttemptAt  time.Time           `json:"next_attempt_at"`
+	LockedUntil    *time.Time          `json:"locked_until,omitempty"`
+	LastError      string              `json:"last_error,omitempty"`
+	CreatedAt      time.Time           `json:"created_at"`
+	SentAt         *time.Time          `json:"sent_at,omitempty"`
 }
 
 type InviteProperty struct {

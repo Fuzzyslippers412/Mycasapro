@@ -51,6 +51,9 @@ export type WorkRequestInvite = {
   id: string;
   work_request_id: string;
   homeowner_user_id: string;
+  recipient_name?: string;
+  recipient_email?: string;
+  delivery_status: "link_created" | "queued" | "processing" | "sent" | "failed" | "canceled";
   expires_at: string;
   revoked_at?: string;
   created_at: string;

@@ -26,6 +26,7 @@ var (
 	ErrInviteNotFound         = errors.New("invite not found")
 	ErrInviteExpired          = errors.New("invite expired")
 	ErrInviteRevoked          = errors.New("invite revoked")
+	ErrInviteRateLimited      = errors.New("invite rate limited")
 	ErrForbidden              = errors.New("forbidden")
 )
 
@@ -83,6 +84,11 @@ type CreateWorkRequestInviteInput struct {
 	HomeownerUserID string
 	WorkRequestID   string
 	TokenHash       string
+	RecipientName   string
+	RecipientEmail  string
+	EmailSubject    string
+	EmailTextBody   string
+	EmailHTMLBody   string
 	ExpiresAt       time.Time
 }
 
@@ -164,6 +170,7 @@ type CreateProjectMessageInput struct {
 }
 
 type Store interface {
+	Ping(context.Context) error
 	CreateUser(context.Context, CreateUserInput) (domain.User, error)
 	GetUserByID(context.Context, string) (domain.User, error)
 	GetUserCredentialsByEmail(context.Context, string) (UserCredentials, error)
@@ -183,6 +190,9 @@ type Store interface {
 	RevokeWorkRequestInvite(context.Context, string, string, string, time.Time) (domain.WorkRequestInvite, error)
 	GetInviteTask(context.Context, string, time.Time) (domain.InviteTask, error)
 	GetWorkRequestAttachmentForInvite(context.Context, string, string, time.Time) (domain.Attachment, error)
+	ClaimEmailNotifications(context.Context, time.Time, time.Time, int) ([]domain.EmailNotification, error)
+	MarkEmailNotificationSent(context.Context, string, time.Time) error
+	MarkEmailNotificationFailed(context.Context, string, string, time.Time, bool) error
 	CreateGuestEstimate(context.Context, CreateGuestEstimateInput) (domain.GuestEstimate, error)
 	ListGuestEstimates(context.Context, string, string) ([]domain.GuestEstimate, error)
 	GetHomeownerDashboard(context.Context, string) (domain.HomeownerDashboard, error)

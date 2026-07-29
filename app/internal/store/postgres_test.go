@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -340,6 +341,112 @@ func TestPostgresStoreCreateProjectMessage(t *testing.T) {
 	}
 	if message.Visibility != domain.MessageVisibilityInternal {
 		t.Fatalf("message visibility mismatch: got=%s", message.Visibility)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations: %v", err)
+	}
+}
+
+func TestPostgresStoreQueuesAndCompletesInvitationEmail(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+	repo := NewPostgresStore(db)
+	expiresAt := time.Now().UTC().Add(24 * time.Hour)
+
+	mock.ExpectBegin()
+	tokenHash := strings.Repeat("a", 64)
+	mock.ExpectExec("select pg_advisory_xact_lock").
+		WithArgs("homeowner-mail").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`select count\(\*\) from work_request_invites`).
+		WithArgs("homeowner-mail", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectExec("insert into work_request_invites").
+		WithArgs(sqlmock.AnyArg(), "request-mail", "homeowner-mail", tokenHash, "Jordan", "jordan@example.com", string(domain.EmailDeliveryQueued), expiresAt, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("insert into email_outbox").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "jordan@example.com", "Repair invitation", "Review the repair", "<p>Review the repair</p>", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	invite, err := repo.CreateWorkRequestInvite(context.Background(), CreateWorkRequestInviteInput{
+		HomeownerUserID: "homeowner-mail", WorkRequestID: "request-mail", TokenHash: tokenHash,
+		RecipientName: "Jordan", RecipientEmail: "jordan@example.com", EmailSubject: "Repair invitation",
+		EmailTextBody: "Review the repair", EmailHTMLBody: "<p>Review the repair</p>", ExpiresAt: expiresAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invite.DeliveryStatus != domain.EmailDeliveryQueued {
+		t.Fatalf("delivery status = %s, want queued", invite.DeliveryStatus)
+	}
+
+	now := time.Now().UTC()
+	lockedUntil := now.Add(2 * time.Minute)
+	createdAt := now.Add(-time.Minute)
+	mock.ExpectQuery("with candidates as").
+		WithArgs(now, lockedUntil, 10).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "kind", "aggregate_id", "recipient_email", "subject", "text_body", "html_body", "status",
+			"attempts", "next_attempt_at", "locked_until", "last_error", "created_at", "sent_at",
+		}).AddRow("mail-1", "work_request_invite", invite.ID, "jordan@example.com", "Repair invitation", "Review", "<p>Review</p>",
+			"processing", 1, createdAt, lockedUntil, "", createdAt, nil))
+	claimed, err := repo.ClaimEmailNotifications(context.Background(), now, lockedUntil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 || claimed[0].AggregateID != invite.ID || claimed[0].Attempts != 1 {
+		t.Fatalf("claimed email mismatch: %+v", claimed)
+	}
+
+	sentAt := now.Add(time.Second)
+	mock.ExpectBegin()
+	mock.ExpectQuery("update email_outbox").
+		WithArgs("mail-1", sentAt).
+		WillReturnRows(sqlmock.NewRows([]string{"kind", "aggregate_id"}).AddRow("work_request_invite", invite.ID))
+	mock.ExpectExec("update work_request_invites set delivery_status='sent'").
+		WithArgs(invite.ID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := repo.MarkEmailNotificationSent(context.Background(), "mail-1", sentAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations: %v", err)
+	}
+}
+
+func TestPostgresStoreRevocationCancelsQueuedInvitationEmail(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+	repo := NewPostgresStore(db)
+	now := time.Now().UTC()
+	expiresAt := now.Add(24 * time.Hour)
+	createdAt := now.Add(-time.Minute)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("update work_request_invites").
+		WithArgs("invite-1", "request-1", "homeowner-1", now).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "work_request_id", "homeowner_user_id", "recipient_name", "recipient_email", "delivery_status", "expires_at", "revoked_at", "created_at",
+		}).AddRow("invite-1", "request-1", "homeowner-1", "Jordan", "jordan@example.com", "canceled", expiresAt, now, createdAt))
+	mock.ExpectExec("update email_outbox").
+		WithArgs("invite-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	invite, err := repo.RevokeWorkRequestInvite(context.Background(), "homeowner-1", "request-1", "invite-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invite.RevokedAt == nil || invite.DeliveryStatus != domain.EmailDeliveryCanceled {
+		t.Fatalf("revoked invitation mismatch: %+v", invite)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("expectations: %v", err)

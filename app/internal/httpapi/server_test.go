@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Fuzzyslippers412/Mycasapro/app/internal/config"
 	"github.com/Fuzzyslippers412/Mycasapro/app/internal/domain"
@@ -16,7 +18,11 @@ import (
 )
 
 func newTestServer() *http.Server {
-	server := newRawTestServer()
+	return newSecuredTestServer(testConfig(), store.NewMemoryStore())
+}
+
+func newSecuredTestServer(cfg config.Config, repository store.Store) *http.Server {
+	server := NewServerWithStore(cfg, repository)
 	securedHandler := server.Handler
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		scope, actorID, scoped := scopedActorPath(r.URL.Path)
@@ -33,13 +39,17 @@ func newTestServer() *http.Server {
 }
 
 func newRawTestServer() *http.Server {
-	return NewServerWithStore(config.Config{
+	return NewServerWithStore(testConfig(), store.NewMemoryStore())
+}
+
+func testConfig() config.Config {
+	return config.Config{
 		Addr:           ":0",
 		Env:            "test",
 		AppName:        "MyCasaPro",
 		WebURL:         "http://localhost:3000",
 		AllowedOrigins: []string{"http://localhost:3000"},
-	}, store.NewMemoryStore())
+	}
 }
 
 func TestRegisterCurrentUserAndLogout(t *testing.T) {
@@ -119,6 +129,25 @@ func TestHealthRoute(t *testing.T) {
 	}
 }
 
+type failingHealthStore struct {
+	store.Store
+}
+
+func (failingHealthStore) Ping(context.Context) error {
+	return errors.New("database unavailable")
+}
+
+func TestHealthRouteFailsWhenStoreIsUnavailable(t *testing.T) {
+	repository := store.NewMemoryStore()
+	server := NewServerWithStore(testConfig(), failingHealthStore{Store: repository})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	resp := httptest.NewRecorder()
+	server.Handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusServiceUnavailable || !strings.Contains(resp.Body.String(), `"ok":false`) {
+		t.Fatalf("unhealthy store response: got=%d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestMetaRoute(t *testing.T) {
 	server := newTestServer()
 
@@ -131,8 +160,9 @@ func TestMetaRoute(t *testing.T) {
 	}
 
 	var payload struct {
-		Product string   `json:"product"`
-		Modules []string `json:"modules"`
+		Product       string   `json:"product"`
+		Modules       []string `json:"modules"`
+		EmailDelivery bool     `json:"email_delivery"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
@@ -142,6 +172,122 @@ func TestMetaRoute(t *testing.T) {
 	}
 	if len(payload.Modules) == 0 {
 		t.Fatal("expected modules")
+	}
+	if payload.EmailDelivery {
+		t.Fatal("email delivery should be disabled in the default test environment")
+	}
+}
+
+func TestMetaReportsEmailDeliveryCapability(t *testing.T) {
+	cfg := testConfig()
+	cfg.MailMode = "smtp"
+	server := newSecuredTestServer(cfg, store.NewMemoryStore())
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/meta", nil)
+	resp := httptest.NewRecorder()
+	server.Handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status mismatch: got=%d", resp.Code)
+	}
+	var payload struct {
+		EmailDelivery bool `json:"email_delivery"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.EmailDelivery {
+		t.Fatal("configured email delivery capability was not reported")
+	}
+}
+
+func TestEmailInvitationQueuesDurableDelivery(t *testing.T) {
+	repository := store.NewMemoryStore()
+	cfg := testConfig()
+	cfg.MailMode = "smtp"
+	server := newSecuredTestServer(cfg, repository)
+	ctx := context.Background()
+	property, err := repository.CreateProperty(ctx, store.CreatePropertyInput{
+		HomeownerUserID: "homeowner-email", Label: "Home", AddressLine1: "1 Main St", City: "Oakland", Region: "CA", PostalCode: "94607",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workRequest, err := repository.CreateWorkRequest(ctx, store.CreateWorkRequestInput{
+		HomeownerUserID: "homeowner-email", PropertyID: property.ID, Title: "Repair the porch light", Category: "electrical",
+		Area: "front porch", Urgency: "medium", Description: "The light no longer turns on.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := "/api/v1/homeowners/homeowner-email/work-requests/" + workRequest.ID + "/invites"
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{"recipient_name":"Jordan Lee","recipient_email":"JORDAN@example.com"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.Handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("create emailed invite: got=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload struct {
+		Invite   domain.WorkRequestInvite `json:"invite"`
+		ShareURL string                   `json:"share_url"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Invite.RecipientEmail != "jordan@example.com" || payload.Invite.DeliveryStatus != domain.EmailDeliveryQueued {
+		t.Fatalf("queued invite mismatch: %+v", payload.Invite)
+	}
+
+	queued, err := repository.ClaimEmailNotifications(ctx, time.Now().UTC().Add(time.Second), time.Now().UTC().Add(time.Minute), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 1 || queued[0].AggregateID != payload.Invite.ID || !strings.Contains(queued[0].TextBody, payload.ShareURL) {
+		t.Fatalf("email outbox mismatch: %+v", queued)
+	}
+	if err := repository.MarkEmailNotificationSent(ctx, queued[0].ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	invites, err := repository.ListWorkRequestInvites(ctx, "homeowner-email", workRequest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(invites) != 1 || invites[0].DeliveryStatus != domain.EmailDeliverySent {
+		t.Fatalf("sent invitation status mismatch: %+v", invites)
+	}
+}
+
+func TestEmailInvitationRequiresConfiguredDelivery(t *testing.T) {
+	repository := store.NewMemoryStore()
+	server := newSecuredTestServer(testConfig(), repository)
+	ctx := context.Background()
+	property, err := repository.CreateProperty(ctx, store.CreatePropertyInput{
+		HomeownerUserID: "homeowner-no-email", Label: "Home", AddressLine1: "2 Main St", City: "Oakland", Region: "CA", PostalCode: "94607",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workRequest, err := repository.CreateWorkRequest(ctx, store.CreateWorkRequestInput{
+		HomeownerUserID: "homeowner-no-email", PropertyID: property.ID, Title: "Repair", Category: "general",
+		Area: "entry", Urgency: "medium", Description: "Repair needed.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/homeowners/homeowner-no-email/work-requests/" + workRequest.ID + "/invites"
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{"recipient_email":"contractor@example.com"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.Handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusServiceUnavailable || !strings.Contains(resp.Body.String(), "email_unavailable") {
+		t.Fatalf("email-disabled response: got=%d body=%s", resp.Code, resp.Body.String())
+	}
+	invites, err := repository.ListWorkRequestInvites(ctx, "homeowner-no-email", workRequest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(invites) != 0 {
+		t.Fatalf("disabled email should not create invite: %+v", invites)
 	}
 }
 

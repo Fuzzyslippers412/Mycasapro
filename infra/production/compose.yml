@@ -1,0 +1,125 @@
+name: mycasapro-production
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mycasapro
+      POSTGRES_USER: mycasapro
+      POSTGRES_PASSWORD: ${MYCASAPRO_DB_PASSWORD:?Set MYCASAPRO_DB_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mycasapro -d mycasapro"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    shm_size: 256mb
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data
+
+  app:
+    image: ghcr.io/fuzzyslippers412/mycasapro-api:${MYCASAPRO_VERSION:-latest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APP_ENV: production
+      APP_STORE_BACKEND: postgres
+      APP_DATABASE_URL: postgres://mycasapro:${MYCASAPRO_DB_PASSWORD}@postgres:5432/mycasapro?sslmode=disable
+      APP_AUTO_MIGRATE: "true"
+      APP_PUBLIC_URL: https://${MYCASAPRO_DOMAIN:?Set MYCASAPRO_DOMAIN in .env}
+      APP_WEB_URL: https://${MYCASAPRO_DOMAIN}
+      APP_ALLOWED_ORIGINS: https://${MYCASAPRO_DOMAIN}
+      APP_MAIL_MODE: smtp
+      APP_MAIL_FROM_EMAIL: ${MYCASAPRO_MAIL_FROM_EMAIL:?Set MYCASAPRO_MAIL_FROM_EMAIL in .env}
+      APP_MAIL_FROM_NAME: ${MYCASAPRO_MAIL_FROM_NAME:-MyCasaPro}
+      APP_SMTP_HOST: ${MYCASAPRO_SMTP_HOST:?Set MYCASAPRO_SMTP_HOST in .env}
+      APP_SMTP_PORT: ${MYCASAPRO_SMTP_PORT:-587}
+      APP_SMTP_USERNAME: ${MYCASAPRO_SMTP_USERNAME:-}
+      APP_SMTP_PASSWORD: ${MYCASAPRO_SMTP_PASSWORD:-}
+      APP_SMTP_TLS_MODE: ${MYCASAPRO_SMTP_TLS_MODE:-starttls}
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 30s
+    networks:
+      - data
+      - edge
+
+  web:
+    image: ghcr.io/fuzzyslippers412/mycasapro-web:${MYCASAPRO_VERSION:-latest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+    networks:
+      - edge
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    environment:
+      MYCASAPRO_DOMAIN: ${MYCASAPRO_DOMAIN}
+      MYCASAPRO_TLS_EMAIL: ${MYCASAPRO_TLS_EMAIL:?Set MYCASAPRO_TLS_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - edge
+
+volumes:
+  postgres-data:
+  uploads:
+  caddy-data:
+  caddy-config:
+
+networks:
+  data:
+    driver: bridge
+    internal: true
+  edge:
+    driver: bridge

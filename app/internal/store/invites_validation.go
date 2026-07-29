@@ -5,7 +5,39 @@ import (
 	"strings"
 )
 
-const maxGuestEstimateTotalCents int64 = 100_000_000
+const (
+	maxGuestEstimateTotalCents int64 = 100_000_000
+	maxEmailInvitesPerHour           = 20
+)
+
+func normalizeWorkRequestInviteInput(input CreateWorkRequestInviteInput) (CreateWorkRequestInviteInput, bool) {
+	input.HomeownerUserID = strings.TrimSpace(input.HomeownerUserID)
+	input.WorkRequestID = strings.TrimSpace(input.WorkRequestID)
+	input.TokenHash = strings.TrimSpace(input.TokenHash)
+	input.RecipientName = strings.TrimSpace(input.RecipientName)
+	input.EmailSubject = strings.TrimSpace(input.EmailSubject)
+	input.EmailTextBody = strings.TrimSpace(input.EmailTextBody)
+	input.EmailHTMLBody = strings.TrimSpace(input.EmailHTMLBody)
+
+	if input.HomeownerUserID == "" || input.WorkRequestID == "" || len(input.TokenHash) != 64 ||
+		len(input.RecipientName) > 120 || len(input.EmailSubject) > 300 || len(input.EmailTextBody) > 100_000 || len(input.EmailHTMLBody) > 200_000 {
+		return CreateWorkRequestInviteInput{}, false
+	}
+	if strings.TrimSpace(input.RecipientEmail) == "" {
+		if input.EmailSubject != "" || input.EmailTextBody != "" || input.EmailHTMLBody != "" {
+			return CreateWorkRequestInviteInput{}, false
+		}
+		input.RecipientEmail = ""
+		return input, true
+	}
+
+	var emailOK bool
+	input.RecipientEmail, emailOK = normalizeGuestEmail(input.RecipientEmail)
+	if !emailOK || len(input.RecipientEmail) > 320 || input.EmailSubject == "" || input.EmailTextBody == "" || input.EmailHTMLBody == "" {
+		return CreateWorkRequestInviteInput{}, false
+	}
+	return input, true
+}
 
 func normalizeGuestEmail(value string) (string, bool) {
 	email := strings.ToLower(strings.TrimSpace(value))

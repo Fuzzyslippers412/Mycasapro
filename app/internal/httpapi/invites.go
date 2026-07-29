@@ -7,9 +7,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
 
+	"github.com/Fuzzyslippers412/Mycasapro/app/internal/notification"
 	"github.com/Fuzzyslippers412/Mycasapro/app/internal/store"
 )
 
@@ -30,6 +32,11 @@ type guestEstimateLineItemRequest struct {
 	AmountCents int64  `json:"amount_cents"`
 }
 
+type createWorkRequestInviteRequest struct {
+	RecipientName  string `json:"recipient_name"`
+	RecipientEmail string `json:"recipient_email"`
+}
+
 func (s *Server) handleCreateWorkRequestInvite(w http.ResponseWriter, r *http.Request) {
 	homeownerID, workRequestID, ok := attachmentPathValues(w, r)
 	if !ok {
@@ -40,11 +47,44 @@ func (s *Server) handleCreateWorkRequestInvite(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, "invite_failed", "unable to create a secure share link")
 		return
 	}
+	var req createWorkRequestInviteRequest
+	if r.ContentLength != 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_invitation", "send a valid contractor name and email")
+			return
+		}
+	}
+	req.RecipientName = strings.TrimSpace(req.RecipientName)
+	req.RecipientEmail = strings.ToLower(strings.TrimSpace(req.RecipientEmail))
+	if len(req.RecipientName) > 120 {
+		writeError(w, http.StatusBadRequest, "invalid_invitation", "contractor name is too long")
+		return
+	}
+	shareURL := strings.TrimRight(s.cfg.WebURL, "/") + "/invite/" + token
+	expiresAt := time.Now().UTC().Add(inviteLifetime)
+	message := notification.Message{}
+	if req.RecipientEmail != "" {
+		address, parseErr := mail.ParseAddress(req.RecipientEmail)
+		if parseErr != nil || !strings.EqualFold(address.Address, req.RecipientEmail) || len(req.RecipientEmail) > 320 {
+			writeError(w, http.StatusBadRequest, "invalid_invitation", "enter a valid contractor email")
+			return
+		}
+		if !s.cfg.EmailDeliveryEnabled() {
+			writeError(w, http.StatusServiceUnavailable, "email_unavailable", "email delivery is not configured; create a private link instead")
+			return
+		}
+		message = notification.WorkRequestInvitation(s.cfg.AppName, req.RecipientName, shareURL, expiresAt)
+	}
 	invite, err := s.store.CreateWorkRequestInvite(r.Context(), store.CreateWorkRequestInviteInput{
 		HomeownerUserID: homeownerID,
 		WorkRequestID:   workRequestID,
 		TokenHash:       tokenHash,
-		ExpiresAt:       time.Now().UTC().Add(inviteLifetime),
+		RecipientName:   req.RecipientName,
+		RecipientEmail:  req.RecipientEmail,
+		EmailSubject:    message.Subject,
+		EmailTextBody:   message.TextBody,
+		EmailHTMLBody:   message.HTMLBody,
+		ExpiresAt:       expiresAt,
 	})
 	if err != nil {
 		writeInviteStoreError(w, err)
@@ -52,7 +92,7 @@ func (s *Server) handleCreateWorkRequestInvite(w http.ResponseWriter, r *http.Re
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"invite":    invite,
-		"share_url": strings.TrimRight(s.cfg.WebURL, "/") + "/invite/" + token,
+		"share_url": shareURL,
 	})
 }
 
@@ -206,6 +246,9 @@ func writeInviteStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusGone, "invite_expired", "this share link has expired")
 	case errors.Is(err, store.ErrInviteRevoked):
 		writeError(w, http.StatusGone, "invite_revoked", "this share link has been revoked")
+	case errors.Is(err, store.ErrInviteRateLimited):
+		w.Header().Set("Retry-After", "3600")
+		writeError(w, http.StatusTooManyRequests, "invitation_rate_limited", "too many email invitations were created recently; try again later")
 	case errors.Is(err, store.ErrAttachmentNotFound):
 		writeError(w, http.StatusNotFound, "attachment_not_found", "attachment not found")
 	case errors.Is(err, store.ErrEstimateUnavailable):

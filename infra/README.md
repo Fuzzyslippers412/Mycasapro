@@ -1,6 +1,6 @@
 # Infrastructure
 
-Local PostgreSQL and complete Docker appliance infrastructure for MyCasaPro.
+Local PostgreSQL, complete Docker appliance, and public single-server deployment infrastructure for MyCasaPro.
 
 ```bash
 make run-db
@@ -24,3 +24,5 @@ MYCASAPRO_VERSION=latest ./infra/smoke-test.sh
 ```
 
 It verifies PostgreSQL migrations, the web-to-API proxy, account creation, container restart, and durable session state, then removes its isolated test volumes.
+
+For a public HTTPS deployment with PostgreSQL, private uploads, SMTP invitations, and backup tooling, use `infra/production/` and follow `infra/production/README.md`.

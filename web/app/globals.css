@@ -319,7 +319,17 @@ a.repair-row:hover .repair-copy strong { color: var(--blue); }
 .share-link-panel { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: .8rem; padding: 1rem; border-left: 2px solid var(--blue); background: var(--blue-soft); }
 .share-link-panel .field { min-width: 0; }
 .share-link-panel input { background: var(--surface); }
-.share-link-actions { display: flex; gap: .55rem; }
+.share-link-actions { display: flex; flex-wrap: wrap; gap: .55rem; }
+.invite-delivery-form { display: grid; gap: 1rem; padding: 1.2rem; border: 1px solid var(--line-strong); background: color-mix(in srgb, var(--surface) 88%, var(--blue-soft)); }
+.invite-delivery-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1.5rem; }
+.invite-delivery-heading h3 { margin: 0; font-family: var(--font-editorial), serif; font-size: 1.3rem; font-weight: 500; }
+.invite-delivery-heading p { margin: 0; color: var(--ink-soft); font-size: .76rem; line-height: 1.5; text-align: right; }
+.invite-delivery-form > .primary-button { justify-self: start; }
+.invite-delivery-unavailable { padding: 1rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.invite-delivery-unavailable strong { font-size: .82rem; }
+.invite-delivery-unavailable p { margin: .35rem 0 0; color: var(--ink-soft); font-size: .78rem; line-height: 1.55; }
+.share-link-only { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.share-link-only > span { color: var(--ink-faint); font-size: .72rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
 .invite-register { border-top: 1px solid var(--line-strong); }
 .invite-register-heading { display: flex; align-items: center; justify-content: space-between; padding: 1rem 0 .4rem; }
 .invite-register-heading h3 { margin: 0; font-family: var(--font-editorial), serif; font-size: 1.2rem; font-weight: 500; }
@@ -513,6 +523,11 @@ a.repair-row:hover .repair-copy strong { color: var(--blue); }
   .modal-actions .primary-button { flex: 1; }
   .share-link-panel { grid-template-columns: 1fr; }
   .share-link-actions .primary-button, .share-link-actions .secondary-button { flex: 1; }
+  .invite-delivery-form { padding: 1rem; }
+  .invite-delivery-heading { align-items: flex-start; flex-direction: column; gap: .35rem; }
+  .invite-delivery-heading p { text-align: left; }
+  .invite-delivery-form > .primary-button { width: 100%; }
+  .share-link-only { align-items: stretch; flex-direction: column; }
   .guest-header > p { display: none; }
   .guest-task-column > h1, .guest-unavailable h1, .guest-success h1 { font-size: 3rem; }
   .estimate-builder-row { grid-template-columns: minmax(0,1fr) 7.5rem 1.5rem; gap: .4rem; }

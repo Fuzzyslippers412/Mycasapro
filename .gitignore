@@ -16,6 +16,8 @@
 # Runtime data and secrets
 /app/.env
 /.env
+/infra/production/.env
+/infra/production/backups/
 /var/
 /.local-run/
 

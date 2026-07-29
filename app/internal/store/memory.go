@@ -20,6 +20,7 @@ type MemoryStore struct {
 	workRequests   []domain.WorkRequest
 	attachments    []domain.Attachment
 	invites        []memoryWorkRequestInvite
+	emailOutbox    []domain.EmailNotification
 	guestEstimates []domain.GuestEstimate
 	organizations  []domain.Organization
 	projects       []domain.Project
@@ -57,6 +58,7 @@ func NewMemoryStore() *MemoryStore {
 		workRequests:   []domain.WorkRequest{},
 		attachments:    []domain.Attachment{},
 		invites:        []memoryWorkRequestInvite{},
+		emailOutbox:    []domain.EmailNotification{},
 		guestEstimates: []domain.GuestEstimate{},
 		organizations:  []domain.Organization{},
 		projects:       []domain.Project{},
@@ -66,6 +68,10 @@ func NewMemoryStore() *MemoryStore {
 		messages:       []domain.ProjectMessage{},
 		memberships:    []organizationMembership{},
 	}
+}
+
+func (s *MemoryStore) Ping(context.Context) error {
+	return nil
 }
 
 func (s *MemoryStore) CreateUser(_ context.Context, input CreateUserInput) (domain.User, error) {

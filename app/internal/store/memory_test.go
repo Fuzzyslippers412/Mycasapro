@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -115,6 +116,42 @@ func TestMemoryStoreInviteExpiryAndRevocation(t *testing.T) {
 	}
 	if _, err := repo.GetInviteTask(ctx, revokedHash, now); err != ErrInviteRevoked {
 		t.Fatalf("expected revoked invite, got=%v", err)
+	}
+}
+
+func TestMemoryStoreLimitsEmailInvitationAbuse(t *testing.T) {
+	repo := NewMemoryStore()
+	ctx := context.Background()
+	property, err := repo.CreateProperty(ctx, CreatePropertyInput{
+		HomeownerUserID: "homeowner-rate", Label: "Home", AddressLine1: "1 Main St", City: "Oakland", Region: "CA", PostalCode: "94607",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := repo.CreateWorkRequest(ctx, CreateWorkRequestInput{
+		HomeownerUserID: "homeowner-rate", PropertyID: property.ID, Title: "Repair", Category: "general",
+		Area: "entry", Urgency: "medium", Description: "Repair needed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < maxEmailInvitesPerHour; index++ {
+		_, err := repo.CreateWorkRequestInvite(ctx, CreateWorkRequestInviteInput{
+			HomeownerUserID: "homeowner-rate", WorkRequestID: request.ID, TokenHash: fmt.Sprintf("%064x", index+1),
+			RecipientEmail: fmt.Sprintf("contractor-%d@example.com", index), EmailSubject: "Invitation",
+			EmailTextBody: "Review", EmailHTMLBody: "<p>Review</p>", ExpiresAt: time.Now().UTC().Add(time.Hour),
+		})
+		if err != nil {
+			t.Fatalf("create invitation %d: %v", index, err)
+		}
+	}
+	_, err = repo.CreateWorkRequestInvite(ctx, CreateWorkRequestInviteInput{
+		HomeownerUserID: "homeowner-rate", WorkRequestID: request.ID, TokenHash: strings.Repeat("f", 64),
+		RecipientEmail: "overflow@example.com", EmailSubject: "Invitation", EmailTextBody: "Review",
+		EmailHTMLBody: "<p>Review</p>", ExpiresAt: time.Now().UTC().Add(time.Hour),
+	})
+	if err != ErrInviteRateLimited {
+		t.Fatalf("email invitation over limit returned %v", err)
 	}
 }
 

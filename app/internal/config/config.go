@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +19,14 @@ type Config struct {
 	MigrationsDir  string
 	AllowedOrigins []string
 	UploadDir      string
+	MailMode       string
+	MailFromEmail  string
+	MailFromName   string
+	SMTPHost       string
+	SMTPPort       int
+	SMTPUsername   string
+	SMTPPassword   string
+	SMTPTLSMode    string
 }
 
 func Load() Config {
@@ -43,7 +52,19 @@ func Load() Config {
 		MigrationsDir:  resolveMigrationsDir(),
 		AllowedOrigins: splitCSV(envOr("APP_ALLOWED_ORIGINS", "http://localhost:3000")),
 		UploadDir:      envOr("APP_UPLOAD_DIR", filepath.Join("var", "uploads")),
+		MailMode:       strings.ToLower(envOr("APP_MAIL_MODE", "disabled")),
+		MailFromEmail:  strings.ToLower(strings.TrimSpace(os.Getenv("APP_MAIL_FROM_EMAIL"))),
+		MailFromName:   envOr("APP_MAIL_FROM_NAME", "MyCasaPro"),
+		SMTPHost:       strings.TrimSpace(os.Getenv("APP_SMTP_HOST")),
+		SMTPPort:       envIntDefault("APP_SMTP_PORT", 587),
+		SMTPUsername:   strings.TrimSpace(os.Getenv("APP_SMTP_USERNAME")),
+		SMTPPassword:   os.Getenv("APP_SMTP_PASSWORD"),
+		SMTPTLSMode:    strings.ToLower(envOr("APP_SMTP_TLS_MODE", "starttls")),
 	}
+}
+
+func (c Config) EmailDeliveryEnabled() bool {
+	return c.MailMode == "smtp"
 }
 
 func envOr(key string, fallback string) string {
@@ -82,6 +103,18 @@ func envBoolDefault(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func envIntDefault(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func resolveMigrationsDir() string {
