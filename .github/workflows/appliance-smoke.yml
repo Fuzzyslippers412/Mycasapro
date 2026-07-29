@@ -1,0 +1,23 @@
+name: Appliance Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "web/**"
+      - "infra/docker-compose.local.yml"
+      - "infra/smoke-test.sh"
+      - ".github/workflows/appliance-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - run: ./infra/smoke-test.sh

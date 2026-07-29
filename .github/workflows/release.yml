@@ -105,6 +105,17 @@ jobs:
             "ghcr.io/fuzzyslippers412/mycasapro-${{ matrix.name }}:${GITHUB_REF_NAME}-amd64" \
             "ghcr.io/fuzzyslippers412/mycasapro-${{ matrix.name }}:${GITHUB_REF_NAME}-arm64"
 
+  smoke:
+    needs: manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test published appliance
+        env:
+          MYCASAPRO_VERSION: ${{ github.ref_name }}
+        run: ./infra/smoke-test.sh
+
   cli:
     needs: test
     runs-on: ubuntu-latest
@@ -154,7 +165,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [manifests, cli]
+    needs: [smoke, cli]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v5

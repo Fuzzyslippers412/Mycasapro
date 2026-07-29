@@ -16,3 +16,11 @@ make local-up
 ```
 
 Open `http://127.0.0.1:3210`. Stop it with `make local-down`. The published-image definition in `docker-compose.local.yml` is embedded in the `mycasapro` CLI and must remain byte-for-byte identical.
+
+Run the same published-appliance integration test used by release automation:
+
+```bash
+MYCASAPRO_VERSION=latest ./infra/smoke-test.sh
+```
+
+It verifies PostgreSQL migrations, the web-to-API proxy, account creation, container restart, and durable session state, then removes its isolated test volumes.
