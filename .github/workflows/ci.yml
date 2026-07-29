@@ -22,6 +22,24 @@ jobs:
       - run: go build -o ../bin/mycasapro-server ./cmd/server
         working-directory: app
 
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache: false
+      - run: go test ./...
+        working-directory: cli
+      - run: go build -o ../bin/mycasapro ./cmd/mycasapro
+        working-directory: cli
+      - name: Validate local appliance definition
+        run: |
+          cmp infra/docker-compose.local.yml cli/internal/assets/compose.yaml
+          MYCASAPRO_DB_PASSWORD=ci-test-password-0123456789abcdef docker compose -f infra/docker-compose.local.yml config >/dev/null
+          docker compose -f infra/docker-compose.local-build.yml config >/dev/null
+
   web:
     runs-on: ubuntu-latest
     steps:

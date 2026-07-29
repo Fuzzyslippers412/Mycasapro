@@ -31,6 +31,26 @@ MyCasaPro gives homeowners and contractors one clear record for repair work—fr
 
 ## Run locally
 
+### Personal installation
+
+MyCasaPro can run as a private appliance on a macOS, Linux, or Windows computer. It binds only to `127.0.0.1`, stores its database and uploads in durable Docker volumes, and exposes one local web address.
+
+macOS or Linux:
+
+```bash
+curl -fsSL https://www.mycasapro.com/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://www.mycasapro.com/install.ps1 | iex
+```
+
+Docker Desktop or Docker Engine with Compose is required. After setup, run `mycasapro` to start or open the app. Use `mycasapro help` for status, logs, upgrades, backup, restore, and uninstall commands.
+
+### Source development
+
 Requirements: Go 1.25+, Node.js 22+, npm, and Docker for PostgreSQL.
 
 ```bash
@@ -73,8 +93,9 @@ make build
 ## Repository
 
 - `app/` — Go API, domain logic, persistence, private file storage, and SQL migrations
+- `cli/` — cross-platform local appliance lifecycle, diagnostics, and backups
 - `web/` — homeowner, contractor, and no-account estimate interfaces
-- `infra/` — local PostgreSQL infrastructure
+- `infra/` — PostgreSQL and complete local Docker appliance definitions
 - `docs/` — active product, design, build, and deployment decisions
 
 ## Invitation security
@@ -83,4 +104,4 @@ Contractor share links use 256-bit random tokens. Only SHA-256 token hashes are 
 
 ## Production status
 
-This is active production-oriented development, not a hosted public release yet. Remaining launch work includes managed deployment, email delivery, private object storage, monitoring, backups, and live payment processing. See `docs/github-and-production-deployment.md` and `docs/mycasapro-premium-home-and-pro-plan.md`.
+The local appliance is designed to provide a complete private workflow without a hosted dependency. Public marketplace launch work still includes managed deployment, email delivery, object storage, monitoring, and live payment processing. See `docs/github-and-production-deployment.md` and `docs/mycasapro-premium-home-and-pro-plan.md`.

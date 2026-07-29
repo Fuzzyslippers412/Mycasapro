@@ -1,0 +1,62 @@
+name: mycasapro
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mycasapro
+      POSTGRES_USER: mycasapro
+      POSTGRES_PASSWORD: ${MYCASAPRO_DB_PASSWORD:?Run mycasapro setup to create local credentials}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mycasapro -d mycasapro"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - private
+
+  app:
+    image: ghcr.io/fuzzyslippers412/mycasapro-api:${MYCASAPRO_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      APP_ENV: local
+      APP_STORE_BACKEND: postgres
+      APP_DATABASE_URL: postgres://mycasapro:${MYCASAPRO_DB_PASSWORD}@postgres:5432/mycasapro?sslmode=disable
+      APP_AUTO_MIGRATE: "true"
+      APP_PUBLIC_URL: http://127.0.0.1:${MYCASAPRO_PORT:-3210}
+      APP_WEB_URL: http://127.0.0.1:${MYCASAPRO_PORT:-3210}
+      APP_ALLOWED_ORIGINS: http://127.0.0.1:${MYCASAPRO_PORT:-3210},http://localhost:${MYCASAPRO_PORT:-3210}
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - private
+
+  web:
+    image: ghcr.io/fuzzyslippers412/mycasapro-web:${MYCASAPRO_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MYCASAPRO_PORT:-3210}:3000"
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - private
+
+volumes:
+  postgres-data:
+  uploads:
+
+networks:
+  private:
+    driver: bridge

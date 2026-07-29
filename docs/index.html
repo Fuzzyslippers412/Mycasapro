@@ -20,7 +20,11 @@
     .lead { max-width:35rem; margin:2rem 0 0; color:var(--muted); font:400 1rem/1.75 Arial,sans-serif; }
     aside { padding-left:2rem; border-left:1px solid var(--line); }
     aside p { margin:0; color:var(--muted); font:400 .9rem/1.7 Arial,sans-serif; }
-    aside a { display:inline-block; margin-top:1.5rem; padding:.85rem 1rem; color:white; background:var(--green); font:700 .8rem Arial,sans-serif; text-decoration:none; }
+    aside a { display:inline-block; margin-top:1.5rem; color:var(--green); font:700 .75rem Arial,sans-serif; letter-spacing:.04em; text-underline-offset:.25rem; }
+    .install { margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--line); }
+    .install strong { display:block; margin-bottom:.65rem; font:700 .68rem Arial,sans-serif; letter-spacing:.12em; text-transform:uppercase; }
+    code { display:block; overflow:auto; padding:.85rem 1rem; color:#f7f4ed; background:#252a25; font:500 .72rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; white-space:nowrap; }
+    code + code { margin-top:.55rem; }
     footer { min-height:6rem; display:flex; align-items:center; border-top:1px solid var(--line); }
     @media (max-width:760px) { header small{display:none} main{grid-template-columns:1fr;gap:3rem;padding:4rem 0} aside{padding:2rem 0 0;border-left:0;border-top:1px solid var(--line)} h1{font-size:4.2rem} }
   </style>
@@ -29,7 +33,11 @@
   <header><div class="brand">MyCasa<span>Pro</span></div><small>Home repair, clearly documented</small></header>
   <main>
     <section><p class="kicker">A private home register</p><h1>Care for the place that is yours.</h1><p class="lead">MyCasaPro keeps repairs, contractor estimates, visits, documents, and payment history with the home—not scattered across messages and folders.</p></section>
-    <aside><p>The homeowner and contractor application is under active development. The source, architecture, and current implementation are public on GitHub.</p><a href="https://github.com/Fuzzyslippers412/Mycasapro">View the project</a></aside>
+    <aside>
+      <p>Run a private homeowner and contractor workspace on your own computer. Your database and repair documents remain in durable local storage.</p>
+      <div class="install"><strong>Install on your computer</strong><code>curl -fsSL https://www.mycasapro.com/install.sh | sh</code><code>irm https://www.mycasapro.com/install.ps1 | iex</code></div>
+      <a href="https://github.com/Fuzzyslippers412/Mycasapro">Source and documentation on GitHub</a>
+    </aside>
   </main>
   <footer>Private by default. Shared only when the work requires it.</footer>
 </body>
